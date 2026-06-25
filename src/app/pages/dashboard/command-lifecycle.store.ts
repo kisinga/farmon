@@ -3,7 +3,7 @@ import { ActivatedRoute } from '@angular/router';
 import {
   confirmDescriptor, HOLD_RECLAIM_MS, graceFloorMs,
   type CommandAction, type CommandPhase, type ConfirmDescriptor, type ConfirmObservation,
-  type RouteControl, type ActuatorControl, type SetpointControl, type StopSpecOverride,
+  type RouteControl, type ActuatorControl, type StopSpecOverride,
 } from '@core';
 import { BackendService } from '../../core/services/backend.service';
 import { DashboardStore } from './dashboard.store';
@@ -18,11 +18,7 @@ const LINGER_ERR_MS = 4_000;
 export interface CommandCtx {
   route?: RouteControl;
   actuator?: ActuatorControl;
-  setpoint?: SetpointControl;
-  /** Generic config_set target (any tunable number id); preferred over `setpoint`. */
-  configKey?: string;
   on?: boolean;
-  value?: number;
   /** route_start only: the per-run StopSpec (volume / duration / level targets). The
    *  same shape an automation stores, so a manual targeted run and a schedule end
    *  identically. Absent ⇒ the route's own defaults. */
@@ -145,6 +141,37 @@ export class CommandLifecycleStore implements OnDestroy {
     return this.dispatch(key, controller, 'node_set', { actuator, on });
   }
 
+  /**
+   * Write desired tunables / calibration to the server-owned config. This is the
+   * SINGLE config write path (config_set is gone, no back-compat): the dashboard
+   * upserts the controller's `desired` key→value bag into the `controller_config`
+   * collection, and a server Register hook recomputes the canonical payload + sha256
+   * `version` and republishes the retained /config message (the device applies it and
+   * round-trips the version back as the snapshot `config_version`). The client never
+   * hashes and never sends a per-key command — convergence is the server's
+   * desired-vs-applied reconcile, and the shadow heals the displayed value once the
+   * device re-publishes the applied numbers. One row per controller, joined on the
+   * `controller` text id (unique index); `desired` is the only field a client writes.
+   */
+  async writeDesiredConfig(controller: string, patch: Record<string, number>): Promise<void> {
+    if (Object.keys(patch).length === 0) return;
+    const pb = this.backend.pb;
+    const existing = await pb
+      .collection('controller_config')
+      .getFirstListItem(pb.filter('controller = {:c}', { c: controller }))
+      .catch(() => null);
+    if (existing) {
+      const desired = { ...(existing['desired'] as Record<string, number> | null ?? {}), ...patch };
+      await pb.collection('controller_config').update(existing.id, { desired });
+    } else {
+      await pb.collection('controller_config').create({
+        site: this.siteId,
+        controller,
+        desired: patch,
+      });
+    }
+  }
+
   ngOnDestroy(): void {
     // Stop the tick → held claims stop re-asserting → the device lease lapses and
     // each held actuator fail-safe stops/closes. This is the actuator safety net.
@@ -228,8 +255,6 @@ export class CommandLifecycleStore implements OnDestroy {
         return { nodeId: ctx.actuator?.id, on: ctx.on };
       case 'safety_override':
         return { on: ctx.on };
-      case 'config_set':
-        return { key: ctx.configKey ?? ctx.setpoint?.key, value: ctx.value };
       default:
         return {};
     }

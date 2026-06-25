@@ -15,7 +15,7 @@ import {
   routeStateSensor, COMMAND_TTL_S,
   type CommandAction,
 } from './codegen-ids';
-import type { RouteControl, ActuatorControl, SetpointControl } from './dashboard-spec';
+import type { RouteControl, ActuatorControl } from './dashboard-spec';
 
 /** Lifecycle phase a control renders. `pending` = in flight / not yet reflected;
  *  `confirmed` = the device acted; `refused` = a guard/queue rejected it (carries a
@@ -94,18 +94,17 @@ function refusal(correlated?: { to: string; reason: string }): { phase: CommandP
 
 /**
  * Build the descriptor for a command. `ctx` carries the entity it targets and the
- * desired value (`on` for switches, `value` for `config_set`).
+ * desired value (`on` for switches). Runtime tunables / calibration are no longer
+ * an operator command — the dashboard writes the desired config to the DB and the
+ * server delivers it retained, so there is no per-command confirmation here for them
+ * (config convergence is the server's desired-vs-applied config_version reconcile).
  */
 export function confirmDescriptor(
   action: CommandAction,
   ctx: {
     route?: RouteControl;
     actuator?: ActuatorControl;
-    setpoint?: SetpointControl;
-    /** Generic config_set target (any tunable number id); preferred over `setpoint`. */
-    configKey?: string;
     on?: boolean;
-    value?: number;
     /** Derived sustained-claim grace (ms); defaults to HOLD_GRACE_MS when absent. */
     graceMs?: number;
   } = {},
@@ -197,23 +196,6 @@ export function confirmDescriptor(
         sensor: 'safety_override',
         classify: (obs) => {
           if (obs.reported != null && isOn(obs.reported) === on) return { phase: 'confirmed' };
-          if (expiredIf(obs)) return { phase: 'expired' };
-          return { phase: 'pending' };
-        },
-      };
-    }
-
-    // --- Numeric setpoint: confirmed when the reported value converges to the
-    //     written one. No event channel and no refusal (the UI clamps in range). ---
-    case 'config_set': {
-      const target = ctx.value ?? 0;
-      return {
-        ...base,
-        sensor: ctx.configKey ?? ctx.setpoint?.key,
-        classify: (obs) => {
-          if (obs.reported != null && Math.round(obs.reported) === Math.round(target)) {
-            return { phase: 'confirmed' };
-          }
           if (expiredIf(obs)) return { phase: 'expired' };
           return { phase: 'pending' };
         },

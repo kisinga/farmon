@@ -500,7 +500,6 @@ function commandLabel(c: CommandLogRow, routeName: (routeId: number) => string):
     case 'route_stop': return `Stop ${route()}`;
     case 'fault_reset': return `Reset ${route()} fault`;
     case 'safety_override': return `Safety override ${c.on ? 'on' : 'off'}`;
-    case 'config_set': return `Set ${c.configKey ?? 'value'}`;
     case 'stop_all': return 'Stop all';
     case 'reset_faults': return 'Reset faults';
     case 'clear_queue': return 'Clear queue';

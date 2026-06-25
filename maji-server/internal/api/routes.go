@@ -161,8 +161,12 @@ func Register(se *core.ServeEvent, cfg config.Config, pub Publisher) {
 		return e.JSON(http.StatusOK, out)
 	})
 
-	// GET /telemetry?site=&controller=&sensor=&from=&to= — history, with the
-	// storage tier (raw / 5min / 1hr) chosen from the requested span.
+	// GET /telemetry?site=&controller=&sensor=&tier=&from=&to= — history from an
+	// EXPLICIT storage tier. The client always picks the tier (telemetry_raw |
+	// telemetry_5min | telemetry_1hr): it reads the 5min rollup for the bulk and a
+	// short raw tail for the live edge, then merges them raw-wins-at-seam. The server
+	// no longer infers a tier from the span (the old pickTier is gone) — it just
+	// validates the requested tier and serves it.
 	g.GET("/telemetry", func(e *core.RequestEvent) error {
 		q := e.Request.URL.Query()
 		site := q.Get("site")
@@ -173,6 +177,10 @@ func Register(se *core.ServeEvent, cfg config.Config, pub Publisher) {
 		if ctrl == "" || sensor == "" {
 			return apis.NewBadRequestError("controller and sensor are required", nil)
 		}
+		table, timeCol, ok := tierTable(q.Get("tier"))
+		if !ok {
+			return apis.NewBadRequestError("tier must be one of telemetry_raw, telemetry_5min, telemetry_1hr", nil)
+		}
 		from, err := time.Parse(time.RFC3339, q.Get("from"))
 		if err != nil {
 			return apis.NewBadRequestError("invalid 'from' (RFC3339)", nil)
@@ -182,7 +190,6 @@ func Register(se *core.ServeEvent, cfg config.Config, pub Publisher) {
 			return apis.NewBadRequestError("invalid 'to' (RFC3339)", nil)
 		}
 
-		table, timeCol := pickTier(to.Sub(from))
 		filter := "site = {:s} && controller = {:c} && sensor = {:n} && " +
 			timeCol + " >= {:from} && " + timeCol + " <= {:to}"
 		params := dbx.Params{
@@ -380,8 +387,6 @@ func Register(se *core.ServeEvent, cfg config.Config, pub Publisher) {
 			RouteID    *int     `json:"route_id"`
 			NodeID     string   `json:"node_id"`
 			On         *bool    `json:"on"`
-			Key        string   `json:"key"`
-			Value      *float64 `json:"value"`
 			OverrideMask      *int `json:"override_mask"`
 			OvSourceMinPct    *int `json:"ov_source_min_pct"`
 			OvDestMaxPct      *int `json:"ov_dest_max_pct"`
@@ -409,8 +414,6 @@ func Register(se *core.ServeEvent, cfg config.Config, pub Publisher) {
 			RouteID: body.RouteID,
 			NodeID:  body.NodeID,
 			On:      body.On,
-			Key:     body.Key,
-			Value:   body.Value,
 			// route_start StopSpec override (forwarded verbatim; absent ⇒ route defaults).
 			OverrideMask:      body.OverrideMask,
 			OvSourceMinPct:    body.OvSourceMinPct,
@@ -468,12 +471,6 @@ func Register(se *core.ServeEvent, cfg config.Config, pub Publisher) {
 		}
 		if body.On != nil {
 			rec.Set("node_on", *body.On)
-		}
-		if body.Key != "" {
-			rec.Set("config_key", body.Key)
-		}
-		if body.Value != nil {
-			rec.Set("config_value", *body.Value)
 		}
 		rec.Set("status", "sent")
 		rec.Set("issued_by", e.Auth.Id)
@@ -837,16 +834,20 @@ func firmwareBaseURL(cfg config.Config, e *core.RequestEvent) string {
 	return "http://" + host
 }
 
-// pickTier maps a requested time span to the storage tier that serves it
-// without flooding the client: short windows hit raw, longer ones the rollups.
-func pickTier(span time.Duration) (table, timeCol string) {
-	switch {
-	case span <= 6*time.Hour:
-		return "telemetry_raw", "ts"
-	case span <= 7*24*time.Hour:
-		return "telemetry_5min", "window"
+// tierTable validates the client-supplied tier and returns its backing table +
+// time column. The client always chooses the tier (it reads the 5min rollup for the
+// bulk plus a short raw tail for the live edge, merged raw-wins-at-seam), so the
+// server no longer infers one from the span. An unknown tier is rejected (ok=false).
+func tierTable(tier string) (table, timeCol string, ok bool) {
+	switch tier {
+	case "telemetry_raw":
+		return "telemetry_raw", "ts", true
+	case "telemetry_5min":
+		return "telemetry_5min", "window", true
+	case "telemetry_1hr":
+		return "telemetry_1hr", "window", true
 	default:
-		return "telemetry_1hr", "window"
+		return "", "", false
 	}
 }
 

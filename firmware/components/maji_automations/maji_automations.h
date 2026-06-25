@@ -12,6 +12,7 @@
 #include "esphome/core/time.h"
 #include <cstddef>
 #include <cstdint>
+#include <string>
 
 namespace esphome {
 namespace maji_automations {
@@ -26,6 +27,14 @@ class MajiAutomations : public Component {
   // Fill the table from a retained binary message (mqtt on_message). Validates magic +
   // route_set_version + length; on mismatch keeps the last-good set and flags stale.
   void apply_set(const uint8_t *data, size_t len);
+
+  // Desired-config version round-trip. The server computes an opaque version string for
+  // the retained /config message and embeds it; the device stores it verbatim (it NEVER
+  // hashes) and re-emits it in the snapshot as `config_version`, so the server can
+  // reconcile desired vs applied config. The per-number applies are done in the generated
+  // config-apply lambda (mqtt.ts) — this only carries the version string.
+  void set_config_version(const std::string &v) { config_version_ = v; }
+  const std::string &config_version() const { return config_version_; }
 
   // Generic 5s evaluator. Time triggers gate on `time_trusted`; level triggers read the
   // route's source tank via the control engine. A fire goes through start_route (all
@@ -45,6 +54,7 @@ class MajiAutomations : public Component {
   maji_auto::EdgeState edges_[maji_auto::MAX_AUTOMATIONS];
   uint16_t applied_route_set_version_{0};
   bool stale_{false};  // last set refused (version mismatch)
+  std::string config_version_;  // opaque desired-config version last applied (round-tripped, never hashed)
 };
 
 }  // namespace maji_automations

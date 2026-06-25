@@ -893,14 +893,28 @@ assert((mqttYamlSched.match(/id: sntp_time/g) ?? []).length === 1, "mqtt: exactl
 assert(mqttYamlSched.includes("id(autos).apply_set"), "mqtt: subscribes to the retained automation set");
 assert(!mqttYamlSched.includes("auto_time1_enabled"), "mqtt: no baked automation enable-switch dispatch");
 
-// config_set still works (unchanged by the cutover).
-assert(mqttYamlSched.includes('strcmp(action, "config_set")'), "mqtt: handles the config_set command");
+// config_set is gone (no backward compat): the one-shot imperative is replaced by
+// the server-owned retained desired-config message on the config topic. The command
+// handler must no longer dispatch a config_set action or read a key/value pair.
+assert(!mqttYamlSched.includes('strcmp(action, "config_set")'), "mqtt: no config_set command handler");
+// The retained /config handler applies each enumerated number from the `config` kv:
+// only when present + numeric (a partial config never zeroes an unlisted key).
 assert(
-  mqttYamlSched.includes('strcmp(key, "route_0_source_min_pct")') &&
-    mqttYamlSched.includes("id(route_0_source_min_pct).make_call().set_value(value).perform()"),
-  "mqtt: config_set writes the matching route setpoint number",
+  mqttYamlSched.includes('auto cfg = x["config"];') &&
+    mqttYamlSched.includes('cfg["route_0_source_min_pct"].is<float>()') &&
+    mqttYamlSched.includes('id(route_0_source_min_pct).make_call().set_value(cfg["route_0_source_min_pct"].as<float>()).perform()'),
+  "mqtt: /config handler applies the matching route setpoint from the config kv",
 );
-assert(mqttYamlSched.includes("id(route_0_source_min_pct).state"), "mqtt: publishes the current setpoint value");
+// The opaque server version round-trips: stored verbatim (never hashed on-device) and
+// re-reported as the snapshot text `config_version`.
+assert(
+  mqttYamlSched.includes('id(autos).set_config_version(version)') &&
+    mqttYamlSched.includes('\\"config_version\\":'),
+  "mqtt: stores the opaque config version and round-trips it as config_version",
+);
+// No-snapshot-emit: the setpoint number's live value no longer echoes into readings
+// (the server owns the desired config; the snapshot carries only config_version).
+assert(!mqttYamlSched.includes("id(route_0_source_min_pct).state"), "mqtt: setpoint value no longer published in the snapshot");
 
 // Telemetry: no baked automation enable channels.
 const schedChannels = collectTelemetryChannels(schedManifest);
@@ -909,13 +923,13 @@ assert(
   "telemetry: no baked automation enable channels",
 );
 
-// Dashboard spec: no baked automation controls; route setpoints still surface.
+// Dashboard spec: no baked automation controls; route level setpoints surface as tunables.
 const schedSpec = buildDashboardSpec(scheduledTopo);
 const schedCtrl = schedSpec.controllers[0];
 assert(!("automations" in schedCtrl), "dashboard: no baked automation controls (managed on the automations page)");
 assert(
-  schedCtrl.setpoints.some((s) => s.key === "route_0_source_min_pct" && s.field === "source_min_pct"),
-  "dashboard: route source-min exposed as a setpoint control",
+  schedCtrl.tunables.some((t) => t.key === "route_0_source_min_pct" && t.field === "source_min_pct"),
+  "dashboard: route source-min exposed as a tunable",
 );
 
 // --- Summary ---

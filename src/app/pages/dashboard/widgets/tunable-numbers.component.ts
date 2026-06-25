@@ -15,10 +15,13 @@ interface TuningGroup {
  * TunableNumbersComponent — the "Tuning" editor: every `tier: 'tuning'` device
  * number (controller safety timings, per-route max-runtime + level setpoints),
  * grouped by controller → (controller-wide, then per route). Each field reads its
- * live value from the shadow and writes back with a per-field `config_set` through
- * the command-lifecycle store (so it shows the same pending → ✓ feedback as every
- * other control). Bounded-safe values — gated by control, not the operator-mode
- * unlock (calibration lives in its own editor).
+ * live value from the shadow and writes the desired value into the server-owned
+ * `controller_config` (via the command-lifecycle store's single config write path —
+ * config_set is gone). The server recomputes + republishes the retained /config
+ * message and the device applies it; convergence shows when the shadow re-publishes
+ * the applied number (the field falls back to the live value once the edit clears).
+ * Bounded-safe values — gated by control, not the operator-mode unlock (calibration
+ * lives in its own editor).
  */
 @Component({
   selector: 'app-tunable-numbers',
@@ -110,6 +113,8 @@ export class TunableNumbersComponent {
 
   /** In-progress edits, keyed `${controller}/${key}`. */
   private edited = signal<Map<string, number>>(new Map());
+  /** True while a desired-config write is in flight (Save button spinner). */
+  private savingCfg = signal(false);
 
   protected groups = computed<TuningGroup[]>(() => {
     const sc = this.scope();
@@ -161,7 +166,7 @@ export class TunableNumbersComponent {
     return this.lifecycle.phaseFor(this.key(controller, t));
   }
   protected anyPending(): boolean {
-    return this.controllers().some((c) => c.tunables.some((t) => this.lifecycle.isBusy(this.key(c.controller, t))));
+    return this.savingCfg();
   }
 
   /** Live value from the shadow (rounded to the field's step granularity). */
@@ -201,8 +206,9 @@ export class TunableNumbersComponent {
     });
   }
 
-  /** A dirty edit targets an online controller (a config_set to an offline one is
-   *  TTL-dropped on reconnect — it would silently no-op). */
+  /** A dirty edit targets an online controller. The desired config persists
+   *  server-side regardless, but we gate Save on presence so the operator sees the
+   *  device apply it (an offline controller converges on its next reconnect). */
   protected hasSendableEdit = computed(() => {
     const ed = this.edited();
     if (ed.size === 0) return false;
@@ -211,22 +217,34 @@ export class TunableNumbersComponent {
     );
   });
 
-  protected save(): void {
+  /** Write every dirty edit as desired config: one upsert per online controller into
+   *  `controller_config` (the server recomputes + republishes the retained /config).
+   *  The edit clears once written; the shadow re-publishes the applied value so the
+   *  field converges on the device's reading. */
+  protected async save(): Promise<void> {
     if (!this.canEdit() || this.edited().size === 0) return;
-    const sent: string[] = [];
-    for (const c of this.controllers()) {
-      if (!this.store.presence(c.controller).online) continue;
-      for (const t of c.tunables) {
-        const ek = `${c.controller}/${t.key}`;
-        const v = this.edited().get(ek);
-        if (v === undefined || Number.isNaN(v)) continue;
-        const clamped = Math.max(t.min, Math.min(t.max, v));
-        void this.lifecycle.dispatch(this.key(c.controller, t), c.controller, 'config_set', { configKey: t.key, value: clamped });
-        sent.push(ek);
+    this.savingCfg.set(true);
+    try {
+      const writes: Promise<void>[] = [];
+      const sent: string[] = [];
+      for (const c of this.controllers()) {
+        if (!this.store.presence(c.controller).online) continue;
+        const patch: Record<string, number> = {};
+        for (const t of c.tunables) {
+          const ek = `${c.controller}/${t.key}`;
+          const v = this.edited().get(ek);
+          if (v === undefined || Number.isNaN(v)) continue;
+          patch[t.key] = Math.max(t.min, Math.min(t.max, v));
+          sent.push(ek);
+        }
+        if (Object.keys(patch).length) writes.push(this.lifecycle.writeDesiredConfig(c.controller, patch));
       }
-    }
-    if (sent.length) {
-      this.edited.update((m) => { const n = new Map(m); for (const k of sent) n.delete(k); return n; });
+      await Promise.all(writes);
+      if (sent.length) {
+        this.edited.update((m) => { const n = new Map(m); for (const k of sent) n.delete(k); return n; });
+      }
+    } finally {
+      this.savingCfg.set(false);
     }
   }
 }
