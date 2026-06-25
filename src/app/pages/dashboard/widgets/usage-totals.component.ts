@@ -1,18 +1,16 @@
-import { Component, computed, input, signal } from '@angular/core';
+import { Component, computed, inject, input, signal } from '@angular/core';
 import { NgxEchartsDirective } from 'ngx-echarts';
 import type { EChartsOption } from 'echarts';
 import { formatDurationS, formatLitres, findRoute, routeLabel, type DashboardSpec } from '@core';
 import { SpanSelectorComponent } from './span-selector.component';
 import { SPAN_PRESETS } from '../telemetry.store';
+import { DashboardStore, USAGE_SPAN_DEFAULT_HOURS } from '../dashboard.store';
 import { CHART } from '../../../core/util/chart-theme';
 import { CONTROLLER_PALETTE } from '../../../core/util/site-colors';
 import type { UsageRun } from '../../../core/models/runtime';
 
 /** Distinct route series before the tail folds into one "Other" bar (palette size). */
 const MAX_SERIES = CONTROLLER_PALETTE.length;
-/** Hours of run history the store loads (its ~30d ledger). A comparison window needs
- *  the prior equal-length span to be fully inside this, else there's no baseline. */
-const LOADED_WINDOW_HOURS = 24 * 30;
 
 interface WindowTotals {
   count: number;
@@ -106,15 +104,19 @@ function runGroup(
           <span class="text-[0.7rem] text-base-content/40">{{ subtitle() }}</span>
         </div>
         <div class="flex items-center gap-1.5">
-          <div class="join">
-            <button type="button"
-              class="join-item btn btn-xs {{ mode() === 'used' ? 'btn-primary' : 'btn-ghost' }}"
-              (click)="mode.set('used')">Used</button>
-            <button type="button"
-              class="join-item btn btn-xs {{ mode() === 'moved' ? 'btn-primary' : 'btn-ghost' }}"
-              (click)="mode.set('moved')">Moved</button>
-          </div>
-          <app-span-selector [span]="span()" (spanChange)="span.set($event)" />
+          @if (hasTransfers()) {
+            <div class="join">
+              <button type="button"
+                title="Water delivered to a destination like a field or tap. Excludes tank-to-tank transfers."
+                class="join-item btn btn-xs {{ mode() === 'used' ? 'btn-primary' : 'btn-ghost' }}"
+                (click)="mode.set('used')">Used</button>
+              <button type="button"
+                title="All water pumped, including tank-to-tank transfers, split by route."
+                class="join-item btn btn-xs {{ mode() === 'moved' ? 'btn-primary' : 'btn-ghost' }}"
+                (click)="mode.set('moved')">Moved</button>
+            </div>
+          }
+          <app-span-selector [span]="span()" (spanChange)="onSpan($event)" />
         </div>
       </div>
 
@@ -143,20 +145,36 @@ function runGroup(
           }
         </div>
 
+        @if (mode() === 'used' && transferLitres() > 0) {
+          <p class="mt-1 text-[0.7rem] text-base-content/40">
+            + {{ transferLitresLabel() }} moved in transfers, not counted as used
+          </p>
+        }
+
         <div echarts [options]="chart()" [autoResize]="true" class="mt-2 h-52 w-full"></div>
       }
     </div>
   `,
 })
 export class UsageTotalsComponent {
-  /** Completed runs (the store's ~30d ledger fetch). */
-  readonly runs = input.required<UsageRun[]>();
+  private store = inject(DashboardStore);
+
+  /** Completed runs for the currently-loaded window; the store fetches them lazily
+   *  (default window on init, widened by {@link onSpan}). */
+  protected readonly runs = this.store.runs;
   /** The dashboard spec, for resolving a run's (controller, route) -> route label. */
   readonly spec = input.required<DashboardSpec>();
 
-  /** Selected window in hours (default 7d). Capped at 30d by the span presets, which
-   *  matches the store's run-fetch window, so every range is derivable client-side. */
-  protected span = signal(24 * 7);
+  /** Selected window in hours. Defaults to the store's preloaded view span; widening it
+   *  past what's loaded triggers a fetch (see {@link onSpan}). */
+  protected span = signal(USAGE_SPAN_DEFAULT_HOURS);
+
+  /** Apply a new span and ensure the run window covers it plus the delta's prior window
+   *  (2x). Narrowing is a no-op fetch (the store serves it from the loaded window). */
+  protected onSpan(hours: number): void {
+    this.span.set(hours);
+    void this.store.loadRuns(hours * 2);
+  }
 
   /** Used (delivered, by endpoint) by default; toggle to Moved (throughput, by route). */
   protected mode = signal<UsageMode>('used');
@@ -176,6 +194,30 @@ export class UsageTotalsComponent {
   protected hasMovedOnly = computed(
     () => this.mode() === 'used' && this.totals().count === 0 && this.filtered().length > 0,
   );
+
+  /** Whether any loaded run is a transfer (not a delivery to an endpoint). Used and
+   *  Moved only diverge when transfers exist, so the toggle shows only then — on a
+   *  delivery-only site it would be two buttons for the same number, which is the
+   *  "hard to know what this does" problem. Reads the full ledger, not the window, so
+   *  it doesn't flicker as the span changes. */
+  protected hasTransfers = computed(() => {
+    const spec = this.spec();
+    return this.runs().some((r) => runGroup(spec, 'used', r) === null);
+  });
+
+  /** Metered litres carried by transfer runs in the window — the volume Used omits.
+   *  Surfaced under the Used headline so the Used-vs-Moved gap is visible, not silent. */
+  protected transferLitres = computed(() => {
+    const spec = this.spec();
+    let litres = 0;
+    for (const r of this.filtered()) {
+      if (runGroup(spec, 'used', r) === null && r.metered && r.delivered_l != null) {
+        litres += r.delivered_l;
+      }
+    }
+    return litres;
+  });
+  protected transferLitresLabel = computed(() => formatLitres(this.transferLitres()));
 
   /** Label shown in the delta tooltip ("vs previous 24h"). */
   protected spanLabel = computed(
@@ -238,11 +280,11 @@ export class UsageTotalsComponent {
   });
 
   /** Percent change of this window's lead metric vs the prior equal window. Null when
-   *  uncomparable: the prior window isn't fully loaded (span ≥ half the ledger), there
-   *  was no prior baseline, or the two windows lead on different metrics (one metered,
-   *  one not — litres-vs-time would be nonsense). */
+   *  uncomparable: the prior window isn't fully loaded (span x2 exceeds what the store
+   *  has fetched), there was no prior baseline, or the two windows lead on different
+   *  metrics (one metered, one not — litres-vs-time would be nonsense). */
   protected delta = computed(() => {
-    if (this.span() * 2 > LOADED_WINDOW_HOURS) return null;
+    if (this.span() * 2 > this.store.runsWindowHours()) return null;
     const cur = this.totals();
     const prev = this.prevTotals();
     let a: number;

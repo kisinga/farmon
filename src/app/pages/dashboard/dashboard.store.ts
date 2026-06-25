@@ -12,10 +12,12 @@ import { resolveInitiator, type InitiatorCtx } from './widgets/initiator';
  *  4 deep, so far fewer are ever live at once). */
 const MAX_TRACKED_OUTCOMES = 100;
 
-/** How far back the totals widget's run fetch reaches. The widget re-windows
- *  client-side up to this span (the span presets cap at 30d), so every range is
- *  derivable from one fetch. The activity FEED uses recentRuns (newest-N), not this. */
-const USAGE_TOTALS_WINDOW_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+/** The totals widget's default view span. The store preloads twice this on init (so the
+ *  widget's "vs previous window" delta has its baseline), then the widget widens the
+ *  fetch on demand from there. The activity FEED uses recentRuns (newest-N), not this. */
+export const USAGE_SPAN_DEFAULT_HOURS = 24 * 7; // 7d
+/** Ceiling for the run fetch — the aggregate-tier retention; a wider span returns empty. */
+export const USAGE_WINDOW_MAX_HOURS = 24 * 30; // 30d
 
 /** Floor between reconnect gap-fills. A proxy idle-timeout (Cloudflare cuts an idle
  *  SSE after ~60-100s) reconnects the stream on a loop; this coalesces any rapid
@@ -67,9 +69,14 @@ export class DashboardStore implements OnDestroy {
   /** Configuration changes (automation create/edit/enable/disable/delete) — the
    *  Activity timeline's third source. Append-only; capped newest-first on update. */
   readonly configEvents = signal<ConfigEventRow[]>([]);
-  /** Completed runs over a 30d window from the `/usage` facade — the source for the
-   *  timeframe-totals widget (it re-windows client-side). Refreshed on resync. */
+  /** Completed runs over the currently-loaded window from the `/usage` facade — the
+   *  source for the timeframe-totals widget (it re-windows client-side). Loaded lazily:
+   *  the default window on init, widened on demand via {@link loadRuns}. */
   readonly runs = signal<UsageRun[]>([]);
+  /** Hours of run history currently loaded into {@link runs}. The totals widget reads
+   *  this to know whether its delta's prior window is covered — the SSOT for "how much
+   *  is loaded", replacing the widget's old hardcoded 30d assumption. 0 until first load. */
+  readonly runsWindowHours = signal(0);
   /** Newest completed runs from the live `runs` collection — the Activity timeline's
    *  fourth source. Lean (newest-N) + live (subscribeRuns), so a finished run appears
    *  at once without the 30d over-fetch, and each carries its own duration + volume +
@@ -93,6 +100,10 @@ export class DashboardStore implements OnDestroy {
   private unsubs: UnsubscribeFunc[] = [];
   private clock = 0;
   private siteId = '';
+  /** Widest run window already fetched (hours); a narrower request is served from cache. */
+  private maxRunsHours = 0;
+  /** Per-load token so a slow wide run fetch can't land on top of a newer one. */
+  private runsReqSeq = 0;
   private lastResyncAt = 0;
 
   constructor() {
@@ -143,20 +154,43 @@ export class DashboardStore implements OnDestroy {
     // Slow-changing + heavy: the config-event feed and the 30d usage totals don't
     // move during a brief drop, so they ride init only, never a reconnect gap-fill.
     if (!gap) {
-      const to = new Date();
-      const from = new Date(to.getTime() - USAGE_TOTALS_WINDOW_MS);
-      const [cfgs, runs] = await Promise.all([
+      // Preload only the default view window (plus the delta's prior window); the totals
+      // widget widens this on demand. Runs concurrently with the config-event fetch.
+      const [cfgs] = await Promise.all([
         this.realtime.recentConfigEvents(siteId, 100),
-        // 30d window for the totals widget; best-effort (a failure just empties totals).
-        this.realtime.usage(siteId, from, to).then((r) => r.runs).catch(() => [] as UsageRun[]),
+        this.loadRuns(USAGE_SPAN_DEFAULT_HOURS * 2),
       ]);
       this.configEvents.set(cfgs);
+    }
+  }
+
+  /** Ensure at least `hours` of run history is loaded for the totals widget (capped at
+   *  {@link USAGE_WINDOW_MAX_HOURS}). A request already covered by the loaded window is a
+   *  no-op, so narrowing the span never refetches; widening fetches the full window and
+   *  replaces {@link runs}. Best-effort: a failed fetch leaves the prior window in place.
+   *  Writes signals only after the await, so it is safe to call from a reactive context. */
+  async loadRuns(hours: number): Promise<void> {
+    const capped = Math.min(Math.max(hours, 0), USAGE_WINDOW_MAX_HOURS);
+    if (capped <= this.maxRunsHours) return; // already covered by a prior load
+    const siteId = this.siteId;
+    if (!siteId) return;
+    const token = ++this.runsReqSeq;
+    const to = new Date();
+    const from = new Date(to.getTime() - capped * 3_600_000);
+    const runs = await this.realtime.usage(siteId, from, to).then((r) => r.runs).catch(() => null);
+    if (token !== this.runsReqSeq) return; // superseded by a wider/newer load
+    if (runs) {
       this.runs.set(runs);
+      this.maxRunsHours = capped;
+      this.runsWindowHours.set(capped);
     }
   }
 
   async init(siteId: string, spec: DashboardSpec, timing?: SiteTiming, owners: string[] = [], people: { id: string; name?: string; email?: string }[] = []): Promise<void> {
     this.siteId = siteId;
+    // Re-init (store reused for another site) must refetch runs, not trust a stale window.
+    this.maxRunsHours = 0;
+    this.runsWindowHours.set(0);
     this.spec.set(spec);
     this.timing.set(timing ?? null);
     this.owners = new Set(owners);

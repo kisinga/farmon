@@ -13,6 +13,7 @@ import { RouteCardComponent } from './widgets/route-card.component';
 import { UsageTotalsComponent } from './widgets/usage-totals.component';
 import { SiteControlsComponent } from './widgets/site-controls.component';
 import { ControllerHealthComponent } from './widgets/controller-health.component';
+import { HealthHistoryComponent } from './widgets/health-history.component';
 import { LiveMapComponent } from './canvas/live-map.component';
 import { CONTROLLER_PALETTE } from '../../core/util/site-colors';
 import type { SiteTopology } from '../../core/models/topology.model';
@@ -31,7 +32,7 @@ interface DashSection { id: string; label: string; widgets: DashboardWidget[] }
 @Component({
   selector: 'app-dashboard',
   standalone: true,
-  imports: [NgTemplateOutlet, DashboardCardComponent, RouteCardComponent, UsageTotalsComponent, SiteControlsComponent, ControllerHealthComponent, LiveMapComponent],
+  imports: [NgTemplateOutlet, DashboardCardComponent, RouteCardComponent, UsageTotalsComponent, SiteControlsComponent, ControllerHealthComponent, HealthHistoryComponent, LiveMapComponent],
   providers: [DashboardStore, TelemetryStore, CommandLifecycleStore],
   host: { class: 'flex-1 overflow-auto' },
   styles: [`
@@ -351,12 +352,32 @@ interface DashSection { id: string; label: string; widgets: DashboardWidget[] }
         @if (hasRoutes()) {
           <section class="mb-6">
             <h2 class="section-label mb-3">Water usage</h2>
-            <app-usage-totals [runs]="store.runs()" [spec]="store.spec()" />
+            <app-usage-totals [spec]="store.spec()" />
           </section>
         }
         @for (section of activitySections(); track section.id) {
           <ng-container [ngTemplateOutlet]="cardSection" [ngTemplateOutletContext]="{ $implicit: section }" />
         }
+
+        <!-- Device health history — diagnostic, so it sits at the foot of the
+             Reporting zone, collapsed by default (same idiom as the flow charts /
+             monitor routes). WiFi / RAM / temp / uptime read the same telemetry tiers
+             as the trend charts; the panel lazy-loads on first open. -->
+        <section class="mb-6">
+          <button type="button"
+            class="flex items-center gap-2 mb-3 w-full text-left group"
+            [attr.aria-expanded]="healthExpanded()"
+            [attr.aria-label]="(healthExpanded() ? 'Hide' : 'Show') + ' device health history'"
+            [title]="healthExpanded() ? 'Hide device health history' : 'Show WiFi, RAM, temperature and uptime over time'"
+            (click)="toggleHealth()">
+            <h2 class="section-label">Device health</h2>
+            <span class="grow"></span>
+            <svg class="h-4 w-4 shrink-0 text-base-content/40 transition-transform group-hover:text-base-content/70" [class.rotate-180]="healthExpanded()" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+          </button>
+          @if (healthExpanded()) {
+            <app-health-history class="dash-reveal" [siteId]="siteId" [active]="healthExpanded()" />
+          }
+        </section>
       }
     </div>
   `,
@@ -551,6 +572,16 @@ export class DashboardComponent {
     this.flowExpanded.set(v);
     try { localStorage.setItem(this.flowKey(), v ? '1' : '0'); } catch { /* private mode */ }
   }
+
+  /** Device-health history collapses by default — it's diagnostic, not the headline.
+   *  Remembered per site; lazy-loads its series only once opened. */
+  protected healthExpanded = signal(false);
+  private healthKey(): string { return `mf:health:history:${this.siteId}`; }
+  protected toggleHealth(): void {
+    const v = !this.healthExpanded();
+    this.healthExpanded.set(v);
+    try { localStorage.setItem(this.healthKey(), v ? '1' : '0'); } catch { /* private mode */ }
+  }
   /** Monitor-only = no actuator to control (a flow meter and/or level, but no valve or
    *  pump). Missing caps (non-spec literals) default to controllable, so nothing hides
    *  by accident. */
@@ -672,6 +703,7 @@ export class DashboardComponent {
     if (this.siteId) {
       try { this.showMonitorRoutes.set(localStorage.getItem(this.monitorKey()) === '1'); } catch { /* private mode */ }
       try { this.flowExpanded.set(localStorage.getItem(this.flowKey()) === '1'); } catch { /* private mode */ }
+      try { this.healthExpanded.set(localStorage.getItem(this.healthKey()) === '1'); } catch { /* private mode */ }
       void this.load();
     }
   }
