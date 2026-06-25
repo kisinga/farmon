@@ -12,8 +12,10 @@ const SYNC_TOL = 0.05;
  * terms the topology designer used (tank height, sensor drop), not raw psi.
  *
  * The physical inputs are a lens over the device's psi anchors: editing them
- * derives `cal_empty`/`cal_full` (deriveTankCalibration), which Save writes via
- * config_set behind a hard confirm. The device's actual anchors + live level are
+ * derives `cal_empty`/`cal_full` (deriveTankCalibration), which Save writes as desired
+ * config into the server-owned `controller_config` (one upsert, behind a hard confirm
+ * — config_set is gone; the server republishes the retained /config and the device
+ * applies it). The device's actual anchors + live level are
  * shown for comparison; "Match device" pulls the physical model back from the
  * device's current calibration (the inverse) so a raw/out-of-band change reconciles.
  * Physical params are never written back to the topology.
@@ -283,7 +285,9 @@ export class TankCalibrationComponent {
     this.edits.set({ height: cal.tankHeightM, drop: cal.sensorDropM });
   }
 
-  /** Write the derived anchors (+ sensor range) via config_set, behind a hard confirm. */
+  /** Write the derived anchors as desired config (one upsert into controller_config),
+   *  behind a hard confirm. The server recomputes + republishes the retained /config
+   *  and the device applies both anchors; convergence shows once the shadow re-reports. */
   protected async save(): Promise<void> {
     if (!this.canEdit() || !this.dirty() || !this.valid()) return;
     const ok = await this.confirm.confirm({
@@ -296,13 +300,11 @@ export class TankCalibrationComponent {
     this.saving.set(true);
     try {
       const cal = this.cal(), c = this.controller(), d = this.derived();
-      const write = (key: string, value: number) =>
-        this.lifecycle.dispatch(`${c}/cfg/${key}`, c, 'config_set', { configKey: key, value: round2(value) });
-      await Promise.all([
-        write(cal.calEmptyKey, d.p_empty_psi),
-        write(cal.calFullKey, d.p_full_psi),
-      ]);
-      this.edits.set({}); // device now drives the display; convergence shows via phase
+      await this.lifecycle.writeDesiredConfig(c, {
+        [cal.calEmptyKey]: round2(d.p_empty_psi),
+        [cal.calFullKey]: round2(d.p_full_psi),
+      });
+      this.edits.set({}); // device now drives the display; convergence shows on the next snapshot
     } finally {
       this.saving.set(false);
     }

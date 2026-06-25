@@ -97,8 +97,9 @@ bool MajiAutomations::tick(ESPTime now, bool time_trusted) {
 }
 
 void MajiAutomations::dump_config() {
-  ESP_LOGCONFIG(TAG, "MajiAutomations: route_set_version=%u, %u loaded%s", route_set_version_, count_,
-                stale_ ? " (last set stale)" : "");
+  ESP_LOGCONFIG(TAG, "MajiAutomations: route_set_version=%u, %u loaded%s, config_version=%s",
+                route_set_version_, count_, stale_ ? " (last set stale)" : "",
+                config_version_.empty() ? "(none)" : config_version_.c_str());
 }
 
 }  // namespace maji_automations

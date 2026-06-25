@@ -5,6 +5,12 @@ automation table filled from a retained MQTT message; a generated 5s interval ca
 tick(), firing triggers through the maji_control engine so the route state machine
 still gates safety. The route_set_version (manifest-derived) is config — the device
 refuses any set authored against a different route table.
+
+Also the holder for the desired-config version round-trip: the server computes an
+opaque version for the retained /config message (runtime tunables + calibration); the
+generated config-apply lambda (mqtt.ts) applies each number and calls
+set_config_version() here, and the snapshot re-emits config_version() so the server can
+reconcile desired vs applied config. The device NEVER hashes — it stores the string.
 """
 
 import esphome.codegen as cg

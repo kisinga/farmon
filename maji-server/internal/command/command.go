@@ -26,7 +26,6 @@ const (
 	ClearQueue     Action = "clear_queue"
 	NodeSet        Action = "node_set"
 	SafetyOverride Action = "safety_override"
-	ConfigSet      Action = "config_set"
 	FirmwareUpdate Action = "firmware_update"
 )
 
@@ -40,7 +39,7 @@ const TTLSeconds = 120
 var operatorActions = map[Action]bool{
 	RouteStart: true, RouteStop: true, FaultReset: true,
 	StopAll: true, ResetFaults: true, ClearQueue: true,
-	NodeSet: true, SafetyOverride: true, ConfigSet: true,
+	NodeSet: true, SafetyOverride: true,
 }
 
 // routeActions require a route_id; onActions require an `on` bool.
@@ -57,11 +56,9 @@ type Command struct {
 	IssuedAt  int64
 	Actor     string // issuing user id; the device re-publishes it as a run's origin
 
-	RouteID *int     // route_start / route_stop / fault_reset
-	NodeID  string   // node_set
-	On      *bool    // node_set / safety_override
-	Key     string   // config_set — the runtime number entity id
-	Value   *float64 // config_set — the new setpoint
+	RouteID *int   // route_start / route_stop / fault_reset
+	NodeID  string // node_set
+	On      *bool  // node_set / safety_override
 
 	// route_start only: a per-run StopSpec override. OverrideMask selects which
 	// ov_* fields are active (mirrors OVERRIDE_BITS / enum OverrideBit); an unset
@@ -91,8 +88,6 @@ type envelope struct {
 	RouteID   *int     `json:"route_id,omitempty"`
 	NodeID    string   `json:"node_id,omitempty"`
 	On        *bool    `json:"on,omitempty"`
-	Key       string   `json:"key,omitempty"`
-	Value     *float64 `json:"value,omitempty"`
 	OverrideMask      *int `json:"override_mask,omitempty"`
 	OvSourceMinPct    *int `json:"ov_source_min_pct,omitempty"`
 	OvDestMaxPct      *int `json:"ov_dest_max_pct,omitempty"`
@@ -120,9 +115,6 @@ func (c Command) ValidateOperator() error {
 	if onActions[c.Action] && c.On == nil {
 		return fmt.Errorf("on is required for %s", c.Action)
 	}
-	if c.Action == ConfigSet && (c.Key == "" || c.Value == nil) {
-		return fmt.Errorf("key and value are required for %s", c.Action)
-	}
 	return nil
 }
 
@@ -137,8 +129,6 @@ func (c Command) Encode() []byte {
 		RouteID:   c.RouteID,
 		NodeID:    c.NodeID,
 		On:        c.On,
-		Key:       c.Key,
-		Value:     c.Value,
 		OverrideMask:      c.OverrideMask,
 		OvSourceMinPct:    c.OvSourceMinPct,
 		OvDestMaxPct:      c.OvDestMaxPct,

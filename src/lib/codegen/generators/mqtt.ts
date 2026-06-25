@@ -1,6 +1,6 @@
 import type { Manifest, BoardDef } from '@core';
 import {
-  MQTT_ROOT, commandTopic, automationsTopic, statusTopic, identityTopic, snapshotTopic, runsAckTopic,
+  MQTT_ROOT, commandTopic, automationsTopic, statusTopic, identityTopic, snapshotTopic, runsAckTopic, configTopic,
   HEAP_FREE_SENSOR, HEAP_MIN_SENSOR, HEAP_TOTAL_SENSOR, UPTIME_SENSOR, TEMP_SENSOR, WIFI_SIGNAL_SENSOR,
   collectTelemetryChannels, type TelemetryChannel,
   SYSTEM_STATE_TOKENS, STOP_REASON_TOKENS, FAULT_TOKENS, ORIGIN_TOKENS,
@@ -60,23 +60,19 @@ export function generateMqtt(m: Manifest, metadata: GenerationMetadata, board: B
   // same list the dashboard chart spec builds widgets from, so what the firmware
   // publishes and what the UI reads can never drift.
   const channels = collectTelemetryChannels(m);
-  // config_set: write any runtime-tunable number entity (level setpoints, route
-  // max-runtime, controller safety timings, pressure calibration) by id.
-  // set_value().perform() fires the number's restore so the change persists across
-  // reboot; out-of-range values clamp to the topology-baked default in the getter.
-  // The new value re-publishes on the next telemetry tick (see the publisher below).
-  // The allow-list is the enumerated tunables — ESPHome can't id() by runtime string.
+  // The enumerated runtime tunables (level setpoints, route max-runtime, controller
+  // safety timings, pressure calibration). These are no longer set by an operator
+  // command — the server owns the desired config and delivers it RETAINED on the
+  // config topic; the device applies each number from the message's kv (see the
+  // config-apply lambda below). The allow-list is enumerated because ESPHome can't
+  // id() a number by a runtime string. The applied value re-publishes in the snapshot.
   const tunables = collectTunableNumbers(m);
-  const configCases = tunables.length === 0 ? [] : [
-    '} else if (strcmp(action, "config_set") == 0) {',
-    '  const char* key = x["key"] | "";',
-    '  float value = x["value"] | 0.0f;',
-    ...tunables.map((t, i) => {
-      const lead = i === 0 ? 'if' : 'else if';
-      return `  ${lead} (strcmp(key, "${t.key}") == 0) { id(${t.key}).make_call().set_value(value).perform(); }`;
-    }),
-    '  id(control).record_outcome(command_id, "APPLIED", "");',
-  ];
+  // Per-tunable apply line: pull the desired value from the config kv (absent ⇒ leave
+  // the number at its current/default — a partial config never zeroes an unlisted key)
+  // and drive the entity. No restore_value on these numbers; the retained /config
+  // message is the single source of truth and re-applies on every (re)connect.
+  const configApplyLines = tunables.map((t) =>
+    `if (cfg["${t.key}"].is<float>()) { id(${t.key}).make_call().set_value(cfg["${t.key}"].as<float>()).perform(); }`);
 
   // SNTP wall clock — the single `time: sntp` (id: sntp_time) on every device.
   // Drives the command-TTL gate and the runtime automation engine's time triggers
@@ -193,7 +189,6 @@ export function generateMqtt(m: Manifest, metadata: GenerationMetadata, board: B
     '    id(control).record_outcome(command_id, "APPLIED", "");  // ack before the flash reboots us',
     '    id(do_ota_flash).execute();',
     '  }',
-    ...configCases,
     '} else {',
     '  ESP_LOGW("cmd", "unknown action: %s", action);',
     '  return;  // nothing handled — no outcome to fast-path',
@@ -201,6 +196,28 @@ export function generateMqtt(m: Manifest, metadata: GenerationMetadata, board: B
     '// Fast-path hint: publish a snapshot now so the dashboard sees this command outcome',
     '// + current state immediately, not on the next periodic interval. A dropped publish',
     '// self-heals on the next interval (the snapshot stays the single source of truth).',
+    'id(publish_snapshot).execute();',
+  ];
+
+  // --- Desired-config handler (retained JSON on the config topic) ------------
+  // The server owns the "desired controller config" (runtime tunables + calibration)
+  // and republishes it RETAINED on a change; a (re)connecting device replays the
+  // current one. Shape: { "version": "<opaque>", "config": { "<number_id>": <value> } }.
+  // The device applies each enumerated number from the kv (an unlisted key is left
+  // untouched — a partial config never zeroes a value), stores the opaque `version`
+  // string verbatim (it NEVER hashes), and round-trips it back as the snapshot
+  // `config_version` so the server can reconcile desired vs applied. The applied
+  // numbers re-publish in the next snapshot's readings.
+  const configBody = [
+    '// `x` is the parsed object; `cfg` is the nested desired-config kv. Each apply line',
+    '// only fires when the key is present and numeric (a partial config never zeroes a',
+    '// value), so it is safe even if `config` is absent (every is<float>() is then false).',
+    'auto cfg = x["config"];',
+    ...configApplyLines,
+    'const char* version = x["version"] | "";',
+    'id(autos).set_config_version(version);',
+    '// Fast-path hint: publish a snapshot now so the server confirms the applied',
+    '// config_version immediately, not on the next periodic interval (self-heals if dropped).',
     'id(publish_snapshot).execute();',
   ];
 
@@ -220,7 +237,9 @@ export function generateMqtt(m: Manifest, metadata: GenerationMetadata, board: B
   // +runs[]: the billing outbox (maji_meter::OUTBOX_CAP=16) the device re-asserts until
   // acked. A full outbox would otherwise crowd out the rest of the snapshot; a dropped run
   // self-heals (FIFO drain over snapshots), but headroom keeps steady state intact.
-  const BUFSZ = Math.max(2048, (readingCh.length + textCh.length + tunables.length) * 44 + m.routes.length * 192 + 1024 + 16 * 150);
+  // Tunables no longer echo into readings (the server owns the desired config), so they
+  // are not sized here — only the one `config_version` text field rides the snapshot now.
+  const BUFSZ = Math.max(2048, (readingCh.length + textCh.length) * 44 + m.routes.length * 192 + 1024 + 16 * 150);
 
   const readingLine = (c: TelemetryChannel): string => {
     if (c.kind === 'bool') return `put(snprintf(buf+n, sizeof(buf)-n, "%s\\"${c.sensor}\\":%d", sep(), id(${c.ref}).state ? 1 : 0));`;
@@ -276,7 +295,6 @@ export function generateMqtt(m: Manifest, metadata: GenerationMetadata, board: B
     'long long ts = id(time_trusted) ? (long long) id(sntp_time).now().timestamp : 0;',
     'put(snprintf(buf+n, sizeof(buf)-n, "{\\"ts\\":%lld,\\"readings\\":{", ts));',
     ...readingCh.map(readingLine),
-    ...tunables.map(t => `if (!std::isnan(id(${t.key}).state)) put(snprintf(buf+n, sizeof(buf)-n, "%s\\"${t.key}\\":%g", sep(), id(${t.key}).state));`),
     `put(snprintf(buf+n, sizeof(buf)-n, "%s\\"${HEAP_FREE_SENSOR}\\":%u", sep(), (unsigned) esp_get_free_heap_size()));`,
     `put(snprintf(buf+n, sizeof(buf)-n, "%s\\"${HEAP_MIN_SENSOR}\\":%u", sep(), (unsigned) esp_get_minimum_free_heap_size()));`,
     // Managed-heap pool size — the deterministic, partition-aware denominator for the
@@ -294,6 +312,11 @@ export function generateMqtt(m: Manifest, metadata: GenerationMetadata, board: B
     '// Running firmware version (metadata sensor) — the server confirms an OTA release',
     '// once the device re-reports the version it was told to flash (see reconcileFirmware).',
     'if (id(majiflow_generation_version).state.length()) put(snprintf(buf+n, sizeof(buf)-n, "%s\\"fw_version\\":\\"%s\\"", sep(), maji_ctl::json_esc(id(majiflow_generation_version).state.c_str())));',
+    '// Applied desired-config version: the opaque string the server published on the',
+    "// config topic, round-tripped verbatim (the device never hashes). The server",
+    '// compares it against the version it currently publishes to reconcile desired vs',
+    '// applied config. Empty until the first retained /config message is applied.',
+    'if (id(autos).config_version().length()) put(snprintf(buf+n, sizeof(buf)-n, "%s\\"config_version\\":\\"%s\\"", sep(), maji_ctl::json_esc(id(autos).config_version().c_str())));',
     `put(snprintf(buf+n, sizeof(buf)-n, "},\\"system\\":{\\"state\\":\\"%s\\",\\"queue\\":%d,\\"safety\\":%s},\\"routes\\":[", (id(system_state) >= 0 && id(system_state) < ${NS}) ? SYS_TOK[id(system_state)] : "", (int) id(queue_depth).state, id(safety_override).state ? "true" : "false"));`,
     'first = true;',
     ...m.routes.map((_r, i) => routeLine(i)),
@@ -414,6 +437,16 @@ ${indent(onConnectBody, 8)}
       then:
         - lambda: |-
 ${indent(cmdBody, 12)}
+    # Retained desired-config (JSON). The server owns it (runtime tunables +
+    # calibration) and republishes it retained on a change; a (re)connecting device
+    # replays the current one. The device applies each enumerated number from the
+    # 'config' kv and stores the opaque 'version' to round-trip as config_version —
+    # it never hashes. QoS 1 so the change isn't lost across a brief drop.
+    - topic: "${configTopic(site, ctrl)}"
+      qos: 1
+      then:
+        - lambda: |-
+${indent(configBody, 12)}
   on_message:
     # Retained automation set (packed binary). Delivered on connect (retained
     # replay) and on every server-side change. The maji_automations component

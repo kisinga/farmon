@@ -235,6 +235,23 @@ export const snapshotTopic = (site: string, ctrl: string) =>
 export const runsAckTopic = (site: string, ctrl: string) =>
   `${MQTT_ROOT}/${site}/${ctrl}/runs_ack`;
 
+/**
+ * Retained desired-config topic (server → broker → device):
+ *   majiflow/{site}/{ctrl}/config
+ * ONE RETAINED JSON message: the server-owned "desired controller config" — the
+ * runtime tunables + calibration anchors as a flat `{ <number_id>: <value> }` kv,
+ * plus an opaque `version` string the SERVER computes (a canonical hash, computed
+ * Go-side only at publish time). The device NEVER hashes: it applies each kv entry
+ * to the matching `number:` entity via make_call().set_value().perform() and
+ * round-trips `version` back verbatim as the snapshot text `config_version`, which
+ * the server compares against the version it published (desired-vs-applied
+ * reconcile). Retained ⇒ a rebooting/reprovisioning device pulls the current config
+ * on connect; the server republishes on any change. Inside the device ACL namespace.
+ * Mirrors ConfigTopic() in the Go server.
+ */
+export const configTopic = (site: string, ctrl: string) =>
+  `${MQTT_ROOT}/${site}/${ctrl}/config`;
+
 
 /** Fixed (non-node) telemetry sensor ids the firmware always publishes. */
 export const SYSTEM_STATE_SENSOR = 'system_state';
@@ -247,39 +264,11 @@ export const STOP_REASON_SENSOR = 'stop_reason';
 export const routeStateSensor = (routeId: number): string => `route_${routeId}_state`;
 
 /** ESPHome `number:` id for a route's runtime-tunable tank-% setpoints. This one
- *  string is the firmware entity id, the `config_set` payload key, the telemetry
- *  sensor the current value is published under, AND the id the dashboard editor
- *  reads/writes — single-sourced so none of those four can drift. */
+ *  string is the firmware entity id, the desired-config kv key (configTopic), the
+ *  telemetry sensor the current value is published under, AND the id the dashboard
+ *  editor reads/writes — single-sourced so none of those four can drift. */
 export const routeSourceMinNumber = (routeId: number): string => `route_${routeId}_source_min_pct`;
 export const routeDestMaxNumber = (routeId: number): string => `route_${routeId}_dest_max_pct`;
-
-/** A runtime-settable config number: `key` is its ESPHome number id (also the
- *  config_set key + the telemetry sensor it publishes under); `routeId`/`field`
- *  let the UI label it and seed the placeholder from the route's baked default. */
-export interface ConfigSetpoint {
-  key: string;
-  routeId: number;
-  field: 'source_min_pct' | 'dest_max_pct';
-}
-
-/** Enumerate the per-route setpoints a controller exposes for live tuning, in
- *  stable route order. One list drives the config_set dispatch, the config
- *  telemetry publish, and the dashboard editor — so they can never disagree.
- *
- *  A setpoint exists only when its tank endpoint has a level reading: the
- *  firmware emits the `number:` entity under the SAME `source_has_level` /
- *  `dest_has_level` gate (sensors.ts), so enumerating an ungated route would name
- *  an `id()` that was never declared. Pass the manifest routes, not a count. */
-export function collectConfigSetpoints(
-  routes: ReadonlyArray<{ source_has_level?: boolean; dest_has_level?: boolean }>,
-): ConfigSetpoint[] {
-  const out: ConfigSetpoint[] = [];
-  routes.forEach((r, i) => {
-    if (r.source_has_level) out.push({ key: routeSourceMinNumber(i), routeId: i, field: 'source_min_pct' });
-    if (r.dest_has_level) out.push({ key: routeDestMaxNumber(i), routeId: i, field: 'dest_max_pct' });
-  });
-  return out;
-}
 
 // ---------------------------------------------------------------------------
 // Command vocabulary — issued by the dashboard, relayed + audited by the
@@ -296,8 +285,7 @@ export type CommandAction =
   | 'reset_faults'     // (no args)
   | 'clear_queue'      // (no args)
   | 'node_set'         // { node_id, on } — manual claim/release of any actuator
-  | 'safety_override'  // { on } — toggle the commissioning bypass switch (see note)
-  | 'config_set';      // { key, value } — set a runtime number entity (see note)
+  | 'safety_override'; // { on } — toggle the commissioning bypass switch (see note)
 
 /**
  * Commands older than this many seconds (now - issued_at, by the device's SNTP
@@ -335,11 +323,10 @@ export type CommandEnvelope = { command_id: string; issued_at: number; actor?: s
   // and lets a pump run without an owning route. Enabling it is dangerous — gate
   // behind a hard confirm. Reverts to OFF on device reboot.
   | { action: 'safety_override'; on: boolean }
-  // config_set: write a runtime-tunable `number:` entity by its id (`key`) — e.g.
-  // a route's source-min / dest-max tank-% setpoint (see collectConfigSetpoints).
-  // The device persists it (restore_value) and re-publishes the value; an
-  // out-of-range value falls back to the topology-baked default in the getter.
-  | { action: 'config_set'; key: string; value: number }
+  // Runtime tunables / calibration are NOT set by an operator command anymore: the
+  // dashboard writes the desired config to the DB, the server recomputes the retained
+  // /config message (configTopic), and the device applies each number entity from it.
+  // The old one-shot `config_set` command is gone (no back-compat).
   // firmware_update: pull-OTA. NOT an operator /command action — it is published
   // only by the server's /firmware/deploy endpoint, so it is absent from the generic
   // commandActions allow-list. The device fetches the image at `url` and flashes it
@@ -709,8 +696,14 @@ export interface ControllerSnapshot {
    *  numerics (heap/uptime/temp/wifi). The server writes these to telemetry_raw. */
   readings: Record<string, number>;
   /** Categorical/text channels keyed by sensor id (reset_reason, ip, queue text…).
-   *  Shadow-only; no history rows. */
-  text?: Record<string, string>;
+   *  Shadow-only; never written to telemetry_raw.
+   *
+   *  Reserved key `config_version`: the opaque version string of the desired config
+   *  the device last applied (the value the server published on configTopic, round-
+   *  tripped verbatim — the device never hashes). The server compares it against the
+   *  version it currently publishes to drive the desired-vs-applied config reconcile.
+   *  Also carries `fw_version` (the running firmware build, for the OTA-release flip). */
+  text?: Record<string, string> & { config_version?: string };
   /** System-wide state (the former system_state / queue_depth / safety_override). */
   system: { state: string; queue: number; safety: boolean };
   /** Per-route current run — the source for the dashboard route cards + the

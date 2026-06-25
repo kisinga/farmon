@@ -322,7 +322,7 @@ export class AutomationsManagerComponent {
         this.topology = parseTopology(topology);
         this.routes.set(listAutomatableRoutes(this.topology));
         // Live per-route tunables (the "Route defaults" the automations override)
-        // ride the same dashboard store + config_set pipe as on the dashboard.
+        // ride the same dashboard store + desired-config write path as on the dashboard.
         await this.dash.init(siteId, buildDashboardSpec(this.topology));
       }
       this.rows.set(await this.svc.list(siteId));

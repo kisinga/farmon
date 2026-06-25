@@ -13,7 +13,7 @@ import type { SiteTopology } from './topology.types';
 import {
   SYSTEM_STATE_SENSOR, STOP_REASON_SENSOR,
   SYSTEM_STATE_MEANINGS, STOP_REASON_MEANINGS,
-  collectConfigSetpoints, ROLE_META,
+  ROLE_META,
   type StateMeaning, type TelemetryRole,
 } from './codegen-ids';
 import { collectTelemetryChannels, type TelemetryChannel } from './telemetry-channels';
@@ -122,31 +122,13 @@ export interface ActuatorControl {
   reportedSensor: string;
 }
 
-/** A runtime-tunable route setpoint an operator can edit via `config_set`. `key`
- *  is the device's `number:` id — also the config_set key AND the telemetry sensor
- *  the live value publishes under, so the editor reads the current value from the
- *  shadow and writes back to the same name. `default` is the topology-baked
- *  fallback the firmware uses when the override is unset. */
-export interface SetpointControl {
-  key: string;
-  routeId: number;
-  routeName: string;
-  field: 'source_min_pct' | 'dest_max_pct';
-  /** Short editor label, e.g. "Source min" / "Dest max". */
-  label: string;
-  /** Topology-baked default — shown as the input placeholder. */
-  default: number;
-  min: number;
-  max: number;
-  unit: string;
-}
-
 /** A level-monitored tank's pressure-sensor calibration, presented to the operator
  *  in physical terms. The physical fields are the saved topology's design inputs —
  *  a *lens* the editor seeds from and translates to the device's psi anchors via
  *  `deriveTankCalibration` (and back via `tankCalibrationToPhysical`); the dashboard
- *  never writes them back to topology. The editor writes the psi `*Key` numbers via
- *  config_set and reads the live values (device cal + level %) from the shadow. */
+ *  never writes them back to topology. The editor writes the psi `*Key` numbers into
+ *  the desired config (the DB; the server delivers them via the retained /config
+ *  message) and reads the live values (applied cal + level %) from the shadow. */
 export interface CalibrationControl {
   nodeId: string;
   nodeName: string;
@@ -154,7 +136,7 @@ export interface CalibrationControl {
   tankHeightM: number;
   sensorDropM: number;
   sensorMaxPsi: number;
-  /** Device `number:` ids written via config_set (the two field-cal anchors). */
+  /** Device `number:` ids written into the desired config (the two field-cal anchors). */
   calEmptyKey: string;
   calFullKey: string;
   /** Live telemetry ids: level % (published) and raw pressure (published only if
@@ -174,11 +156,8 @@ export interface ControllerControls {
    *  consumers — the live map's runtime projection — read the SAME source the
    *  widgets/actuators derive from, instead of re-joining node→sensor→shadow. */
   channels: TelemetryChannel[];
-  /** Per-route tank-% setpoints, live-tunable via config_set. */
-  setpoints: SetpointControl[];
-  /** Every runtime-tunable device number (timings, runtime, setpoints,
-   *  calibration), for the operator-mode editors. `setpoints` above is the
-   *  per-route level subset (also surfaced by the Tuning editor). */
+  /** Every runtime-tunable device number (timings, runtime, level setpoints,
+   *  calibration), for the operator-mode editors. */
   tunables: TunableNumber[];
   /** Per level-monitored tank pressure-sensor calibration (physical-model editor). */
   calibrations: CalibrationControl[];
@@ -337,23 +316,6 @@ export function buildDashboardSpec(topology: SiteTopology): DashboardSpec {
       }),
       actuators,
       channels,
-      // Per-route tank-% setpoints, live-tunable via config_set. Gated on the
-      // same source/dest level flags the firmware emits the number entities under.
-      setpoints: collectConfigSetpoints(manifest.routes).map((sp) => {
-        const r = manifest.routes[sp.routeId];
-        const isSource = sp.field === 'source_min_pct';
-        return {
-          key: sp.key,
-          routeId: sp.routeId,
-          routeName: r?.name || r?.key || `Route ${sp.routeId}`,
-          field: sp.field,
-          label: isSource ? 'Source min' : 'Dest max',
-          default: (isSource ? r?.source_min_pct : r?.dest_max_pct) ?? 0,
-          min: 0,
-          max: 100,
-          unit: '%',
-        };
-      }),
       // Every runtime-tunable number this controller exposes (operator-mode editors).
       tunables: collectTunableNumbers(manifest),
       // Per level-monitored tank: physical-model calibration (same emit condition as

@@ -1,16 +1,20 @@
 /**
  * Runtime-tunable device numbers — the single enumeration of every ESPHome
- * `number:` entity an operator can set at runtime via `config_set`.
+ * `number:` entity the server-owned desired config drives at runtime.
  *
- * One definition, three consumers: the firmware config_set handler + value
- * publish ([codegen/generators/mqtt.ts]), the dashboard operator editors, and a
+ * One definition, three consumers: the firmware config-apply (each number set from
+ * the retained /config kv) + value publish ([codegen/generators/mqtt.ts]), the
+ * dashboard operator editors (which write the desired value to the DB), and a
  * drift-guard test that asserts this list matches exactly the `number:` ids and
  * bounds the codegen emits — so the runtime/UI view can never silently diverge
  * from what the device actually exposes.
  *
- * Each `number:` is `entity_category: config`, `restore_value`, persisted; the
- * value publishes on set + connect (see mqtt.ts), and the dashboard reads the
- * live value from the shadow under the same id.
+ * Each `number:` is `entity_category: config` and stateless re config: it does NOT
+ * restore_value — the server + the retained /config message are the single source of
+ * truth, so the device re-applies the desired value from /config on every (re)connect.
+ * The applied value publishes in the snapshot under the same id, and the dashboard
+ * reads it from the shadow. `tunableKvKeys()` is the ordered kv-key contract the
+ * server packs the /config payload from.
  */
 import type { Manifest } from './manifest.types';
 import { SYSTEM_ENTITY_NAMES, routeEntityNames } from './entity-names';
@@ -34,8 +38,8 @@ export type TunableField =
   | 'cal_empty' | 'cal_full'
   | 'travel_time';
 
-/** One runtime-settable number. `key` is the ESPHome number id == the config_set
- *  key == the telemetry sensor its live value publishes under. */
+/** One runtime-settable number. `key` is the ESPHome number id == the desired-config
+ *  kv key == the telemetry sensor its live value publishes under. */
 export interface TunableNumber {
   key: string;
   scope: TunableScope;
@@ -160,6 +164,19 @@ export function collectTunableNumbers(m: Manifest): TunableNumber[] {
   }
 
   return out;
+}
+
+/**
+ * The ordered list of `number:` ids (kv keys) the server packs into the retained
+ * desired-config payload (configTopic), in the same stable order as
+ * collectTunableNumbers. This is the wire contract the server's config-payload
+ * builder iterates and the firmware config-apply dispatch is generated against —
+ * one owner so the kv keys, the apply dispatch, and the drift-guard can't diverge.
+ * (The server reads the desired VALUE for each key from the controller_config doc;
+ * this list is only the key set + order.)
+ */
+export function tunableKvKeys(m: Manifest): string[] {
+  return collectTunableNumbers(m).map((t) => t.key);
 }
 
 const round2 = (v: number): number => Math.round(v * 100) / 100;
