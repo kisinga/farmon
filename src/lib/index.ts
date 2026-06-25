@@ -87,9 +87,10 @@ export type { RuntimeState, NodeRuntime, ChannelReading } from './node-runtime';
 export {
   HEAP_FREE_SENSOR, HEAP_MIN_SENSOR, HEAP_TOTAL_SENSOR, HEAP_WARN_BYTES, HEAP_CRIT_BYTES,
   WIFI_SIGNAL_SENSOR, UPTIME_SENSOR, TEMP_SENSOR,
-  HEALTH_SEVERITY, controllerHealth, worstHealth,
+  WIFI_STRONG_DBM, WIFI_GOOD_DBM, WIFI_FAIR_DBM, TEMP_WARM_C, TEMP_HOT_C,
+  HEALTH_SEVERITY, controllerHealth, worstHealth, heapBand, wifiBand, tempBand,
 } from './health';
-export type { HealthLevel } from './health';
+export type { HealthLevel, VitalLevel, VitalBand } from './health';
 
 // --- Dashboard chart spec (derived from the saved topology, in the browser) ---
 export { buildDashboardSpec, routeLabel, findRoute } from './dashboard-spec';

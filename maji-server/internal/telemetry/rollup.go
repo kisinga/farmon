@@ -38,6 +38,16 @@ func Rollup(app core.App, now time.Time) error {
 func rollup(app core.App, srcTable, dstTable, timeCol string, windowSec int64, now time.Time, weighted bool) error {
 	cutoff := (now.UTC().Unix() / windowSec) * windowSec
 
+	// Incremental bound: only (re)aggregate windows that can still change — from the
+	// last already-rolled window forward. A closed window is immutable (its source
+	// rows are final), so re-deriving 30d of history every 5 minutes was pure churn
+	// (the periodic spike). Re-including the last rolled window folds in any sample
+	// that landed late; an empty destination ('' bound) backfills in full once, and a
+	// restart after downtime just catches up the gap. The source time column and the
+	// destination window are both RFC3339 UTC, so a lexical `>=` is chronological.
+	var lower string
+	_ = app.DB().NewQuery("SELECT COALESCE(MAX(window), '') AS w FROM " + dstTable).Row(&lower)
+
 	value := "AVG(value) AS avg, MIN(value) AS min, MAX(value) AS max, COUNT(*) AS n"
 	if weighted {
 		// Aggregating already-bucketed rows: weight averages by sample count.
@@ -49,13 +59,14 @@ func rollup(app core.App, srcTable, dstTable, timeCol string, windowSec int64, n
 			(CAST(strftime('%%s', %[1]s) AS INTEGER)/%[2]d)*%[2]d AS win,
 			%[3]s
 		 FROM %[4]s
+		 WHERE %[1]s >= {:lower}
 		 GROUP BY site, controller, sensor, win
 		 HAVING win < {:cutoff}`,
 		timeCol, windowSec, value, srcTable,
 	)
 
 	var rows []aggRow
-	if err := app.DB().NewQuery(sql).Bind(dbx.Params{"cutoff": cutoff}).All(&rows); err != nil {
+	if err := app.DB().NewQuery(sql).Bind(dbx.Params{"cutoff": cutoff, "lower": lower}).All(&rows); err != nil {
 		return err
 	}
 

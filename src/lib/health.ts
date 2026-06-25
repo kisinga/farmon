@@ -68,3 +68,45 @@ export function worstHealth(levels: HealthLevel[]): HealthLevel {
   if (levels.length === 0) return 'offline';
   return levels.reduce((worst, l) => (HEALTH_SEVERITY[l] > HEALTH_SEVERITY[worst] ? l : worst), 'healthy');
 }
+
+/**
+ * Per-vital "is this value good" bands — the SINGLE source for the qualitative
+ * read of WiFi / temperature / free RAM, shared by the header health pill and the
+ * device-health history chips so the two can't disagree. `level` drives the
+ * traffic-light colour; `label` is the plain word that tells an operator the good
+ * direction without needing to know the unit (a −58 dBm reading just says "Strong").
+ *
+ * Direction of "good": free RAM higher is better, WiFi higher (less negative dBm) is
+ * stronger, temperature lower is cooler — see {@link VITAL_DIRECTION}.
+ */
+export type VitalLevel = 'good' | 'warn' | 'bad';
+export interface VitalBand { level: VitalLevel; label: string }
+
+/** WiFi RSSI (dBm) band edges. Green at/above FAIR (the pill's long-standing line),
+ *  amber below — the label sharpens it (Strong/Good/Fair) without recolouring. */
+export const WIFI_STRONG_DBM = -60;
+export const WIFI_GOOD_DBM = -70;
+export const WIFI_FAIR_DBM = -80;
+/** SoC temperature (°C) band edges: warm is a caution, hot is act-now. */
+export const TEMP_WARM_C = 60;
+export const TEMP_HOT_C = 80;
+
+/** Free heap → health band, using the SAME cliffs as {@link controllerHealth}. */
+export function heapBand(freeBytes: number): VitalBand {
+  if (freeBytes <= HEAP_CRIT_BYTES) return { level: 'bad', label: 'Critical' };
+  if (freeBytes <= HEAP_WARN_BYTES) return { level: 'warn', label: 'Low' };
+  return { level: 'good', label: 'Healthy' };
+}
+/** WiFi RSSI → signal band. Higher (less negative) is stronger. */
+export function wifiBand(dbm: number): VitalBand {
+  if (dbm >= WIFI_STRONG_DBM) return { level: 'good', label: 'Strong' };
+  if (dbm >= WIFI_GOOD_DBM) return { level: 'good', label: 'Good' };
+  if (dbm >= WIFI_FAIR_DBM) return { level: 'good', label: 'Fair' };
+  return { level: 'warn', label: 'Weak' };
+}
+/** SoC temperature → thermal band. Lower is cooler. */
+export function tempBand(celsius: number): VitalBand {
+  if (celsius >= TEMP_HOT_C) return { level: 'bad', label: 'Hot' };
+  if (celsius >= TEMP_WARM_C) return { level: 'warn', label: 'Warm' };
+  return { level: 'good', label: 'Cool' };
+}

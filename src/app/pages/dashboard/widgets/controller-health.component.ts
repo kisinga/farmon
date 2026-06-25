@@ -1,5 +1,5 @@
 import { Component, computed, inject } from '@angular/core';
-import { controllerHealth, worstHealth, describeState, SYSTEM_STATE_MEANINGS, STOP_REASON_MEANINGS, SYSTEM_STATE_SENSOR, STOP_REASON_SENSOR, HEAP_FREE_SENSOR, HEAP_MIN_SENSOR, HEAP_TOTAL_SENSOR, HEAP_WARN_BYTES, WIFI_SIGNAL_SENSOR, UPTIME_SENSOR, TEMP_SENSOR, type HealthLevel, type StateKind, type StateMeaning } from '@core';
+import { controllerHealth, worstHealth, describeState, SYSTEM_STATE_MEANINGS, STOP_REASON_MEANINGS, SYSTEM_STATE_SENSOR, STOP_REASON_SENSOR, HEAP_FREE_SENSOR, HEAP_MIN_SENSOR, HEAP_TOTAL_SENSOR, HEAP_WARN_BYTES, WIFI_SIGNAL_SENSOR, UPTIME_SENSOR, TEMP_SENSOR, wifiBand, tempBand, type HealthLevel, type StateKind, type StateMeaning } from '@core';
 import { DashboardStore } from '../dashboard.store';
 
 /** `reset_reason` tokens (esp_reset_reason) that mean a firmware fault — the controller
@@ -277,22 +277,12 @@ export class ControllerHealthComponent {
   protected wifiText(controller: string): string {
     const dbm = this.wifiRssi(controller);
     if (dbm === null) return '';
-    const quality = dbm >= -60 ? 'strong' : dbm >= -70 ? 'good' : dbm >= -80 ? 'fair' : 'weak';
-    return `${Math.round(dbm)} dBm · ${quality}`;
+    return `${Math.round(dbm)} dBm · ${wifiBand(dbm).label.toLowerCase()}`;
   }
   /** Compact signal figure for the gauge row ("−55 dBm"); '' when never reported. */
   protected wifiDbm(controller: string): string {
     const dbm = this.wifiRssi(controller);
     return dbm === null ? '' : `${Math.round(dbm)} dBm`;
-  }
-  /** Coarse signal band (1-4), 0 when unreported — drives the tone thresholds. */
-  protected wifiLevel(controller: string): number {
-    const dbm = this.wifiRssi(controller);
-    if (dbm === null) return 0;
-    if (dbm >= -60) return 4;
-    if (dbm >= -70) return 3;
-    if (dbm >= -80) return 2;
-    return 1;
   }
   /** Signal as a gauge fill (0-100) across the usable −90…−50 dBm span, so WiFi
    *  reads as one horizontal bar like RAM and temp (not a second icon). */
@@ -301,14 +291,15 @@ export class ControllerHealthComponent {
     if (dbm === null) return 0;
     return Math.max(0, Math.min(100, Math.round(((dbm + 90) / 40) * 100)));
   }
-  /** Gauge tone: amber once we drop to the weak/fair end, green otherwise. */
+  /** Gauge tone: amber once the signal drops into the weak band, green otherwise. */
   protected wifiBarClass(controller: string): string {
-    return this.wifiLevel(controller) <= 1 ? 'bg-warning' : 'bg-success';
+    const dbm = this.wifiRssi(controller);
+    return dbm !== null && wifiBand(dbm).level === 'good' ? 'bg-success' : 'bg-warning';
   }
-  /** WiFi in the weak band (< −80 dBm) — tints the figure amber. */
+  /** WiFi in the weak band — tints the figure amber. */
   protected wifiWeak(controller: string): boolean {
     const dbm = this.wifiRssi(controller);
-    return dbm !== null && dbm < -80;
+    return dbm !== null && wifiBand(dbm).level !== 'good';
   }
 
   /** Uptime as a coarse "3d 4h" / "5h 12m" / "8m" string, '' when unreported. */
@@ -341,19 +332,17 @@ export class ControllerHealthComponent {
   protected tempBarClass(controller: string): string {
     const t = this.tempC(controller);
     if (t === null) return 'bg-base-content/20';
-    if (t >= 80) return 'bg-error';
-    if (t >= 60) return 'bg-warning';
-    return 'bg-success';
+    return { good: 'bg-success', warn: 'bg-warning', bad: 'bg-error' }[tempBand(t).level];
   }
-  /** Hot (≥ 80 °C) — tints the figure red. */
+  /** Hot — tints the figure red. */
   protected tempHot(controller: string): boolean {
     const t = this.tempC(controller);
-    return t !== null && t >= 80;
+    return t !== null && tempBand(t).level === 'bad';
   }
-  /** Warm (60-80 °C) — tints the figure amber. */
+  /** Warm — tints the figure amber. */
   protected tempWarm(controller: string): boolean {
     const t = this.tempC(controller);
-    return t !== null && t >= 60 && t < 80;
+    return t !== null && tempBand(t).level === 'warn';
   }
 
   /** Why the controller last restarted, as a friendly label — '' when unreported.

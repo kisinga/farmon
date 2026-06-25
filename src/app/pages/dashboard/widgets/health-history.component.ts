@@ -4,7 +4,8 @@ import type { EChartsOption } from 'echarts';
 import {
   HEAP_FREE_SENSOR, WIFI_SIGNAL_SENSOR, UPTIME_SENSOR, TEMP_SENSOR,
   BRAND, STATE_COLORS, UI_COLORS, NEUTRAL,
-  type DashboardWidget,
+  heapBand, wifiBand, tempBand,
+  type DashboardWidget, type VitalBand, type VitalLevel,
 } from '@core';
 import type { TelemetryPoint } from '../../../core/models/runtime';
 import {
@@ -36,6 +37,12 @@ interface ChartMetric {
   fmt: (scaled: number) => string;
   liveFmt: (raw: number) => string;
   axis: Omit<MultiAxisDef, 'color'>;
+  /** Raw value -> good/warn/bad band, for the colour-coded status word on the chip. */
+  band: (raw: number) => VitalBand;
+  /** Which way is healthy — drives the "↑/↓ healthier" caption + the chip tooltip. */
+  dir: 'higher' | 'lower';
+  /** Plain-language good-direction hint (chip tooltip). */
+  hint: string;
 }
 
 /** Uptime (seconds) as a coarse "3d 4h" / "5h 12m" / "8m" for the live chip. */
@@ -64,24 +71,39 @@ const CHART_METRICS: readonly ChartMetric[] = [
     short: 'RAM', sensor: HEAP_FREE_SENSOR, name: 'RAM (KB)', color: BRAND.cyan, axisIndex: 0,
     scale: 1 / 1000, axis: { position: 'left', min: 0 },
     fmt: (v) => `${Math.round(v)} KB`, liveFmt: (v) => `${Math.round(v / 1000)} KB`,
+    band: heapBand, dir: 'higher', hint: 'Free RAM — higher is better (low RAM risks a reboot)',
   },
   {
     short: 'WiFi', sensor: WIFI_SIGNAL_SENSOR, name: 'WiFi (dBm)', color: STATE_COLORS.active, axisIndex: 1,
     scale: 1, axis: { position: 'right' },
     fmt: (v) => `${Math.round(v)} dBm`, liveFmt: (v) => `${Math.round(v)} dBm`,
+    band: wifiBand, dir: 'higher', hint: 'WiFi signal — higher (less-negative dBm) is stronger',
   },
   {
     short: 'Temp', sensor: TEMP_SENSOR, name: 'Temp (°C)', color: UI_COLORS.warning, axisIndex: 2,
     scale: 1, axis: { position: 'right', offset: 44, formatter: '{value}°' },
     fmt: (v) => `${Math.round(v)} °C`, liveFmt: (v) => `${Math.round(v)} °C`,
+    band: tempBand, dir: 'lower', hint: 'Temperature — lower is cooler / better',
   },
 ];
 
-/** Live-value chips: the three charted vitals plus uptime (the band's series). */
-const VITAL_CHIPS: readonly { short: string; sensor: string; color: string; liveFmt: (raw: number) => string }[] = [
-  ...CHART_METRICS.map((m) => ({ short: m.short, sensor: m.sensor, color: m.color, liveFmt: m.liveFmt })),
-  { short: 'Up', sensor: UPTIME_SENSOR, color: NEUTRAL.slate400, liveFmt: fmtUptimeSeconds },
+/** Live-value chips: the three charted vitals (with a good/warn/bad band) plus uptime
+ *  (no band — longer is mildly good, but it's not a health signal). */
+const VITAL_CHIPS: readonly { short: string; sensor: string; color: string; liveFmt: (raw: number) => string; band?: (raw: number) => VitalBand; hint: string }[] = [
+  ...CHART_METRICS.map((m) => ({ short: m.short, sensor: m.sensor, color: m.color, liveFmt: m.liveFmt, band: m.band, hint: m.hint })),
+  { short: 'Up', sensor: UPTIME_SENSOR, color: NEUTRAL.slate400, liveFmt: fmtUptimeSeconds, hint: 'Uptime since the last reboot' },
 ];
+
+/** Tailwind text tone per band level — the traffic light on the chip's status word. */
+const BAND_TEXT: Record<VitalLevel, string> = { good: 'text-success', warn: 'text-warning', bad: 'text-error' };
+
+/** "↑ healthier: RAM, WiFi · ↓ healthier: Temp" — names the good direction for the
+ *  chart lines, the part a real-units multi-axis plot can't show on its own. */
+const DIRECTION_HINT = (() => {
+  const up = CHART_METRICS.filter((m) => m.dir === 'higher').map((m) => m.short).join(', ');
+  const down = CHART_METRICS.filter((m) => m.dir === 'lower').map((m) => m.short).join(', ');
+  return `↑ healthier: ${up} · ↓ healthier: ${down}`;
+})();
 
 /** A telemetry point's numeric value across tiers (raw `value`, rollup `avg`). */
 function pointValue(p: TelemetryPoint): number | null {
@@ -146,16 +168,22 @@ function buildBand(pts: { t: number; v: number | null }[]): ConnectivityBand {
           <app-span-selector [span]="span(c.controller)" (spanChange)="onSpan(c.controller, $event)" />
         </div>
 
-        <!-- Current readings, colour-keyed to the chart lines. -->
-        <div class="flex flex-wrap items-center gap-x-4 gap-y-1 mb-3">
+        <!-- Current readings, colour-keyed to the chart lines, each with a traffic-light
+             status word (Strong / Hot / Healthy …) so the good/bad read needs no unit
+             knowledge — and a caption naming the healthy direction for the chart. -->
+        <div class="flex flex-wrap items-center gap-x-4 gap-y-1 mb-1.5">
           @for (chip of chips; track chip.sensor) {
-            <span class="inline-flex items-center gap-1.5 text-[11px]">
+            <span class="inline-flex items-center gap-1.5 text-[11px]" [title]="chip.hint">
               <span class="w-1.5 h-1.5 rounded-full shrink-0" [style.background-color]="chip.color"></span>
               <span class="text-base-content/45">{{ chip.short }}</span>
               <span class="font-semibold tabular-nums text-base-content/80">{{ liveText(c.controller, chip.sensor, chip.liveFmt) }}</span>
+              @if (chipBand(c.controller, chip); as b) {
+                <span class="font-medium" [class]="bandText(b.level)">· {{ b.label }}</span>
+              }
             </span>
           }
         </div>
+        <div class="text-[10px] text-base-content/40 mb-3">{{ directionHint }}</div>
 
         @if (!chartLoaded(c.controller)) {
           <div class="h-72 flex items-center justify-center gap-2 text-base-content/30">
@@ -185,9 +213,21 @@ export class HealthHistoryComponent {
   readonly siteId = input.required<string>();
 
   protected readonly chips = VITAL_CHIPS;
+  protected readonly directionHint = DIRECTION_HINT;
   /** Multi-controller sites label each block; a single controller doesn't need it
    *  (the page header already carries its online count). */
   protected showController = computed(() => this.store.spec().controllers.length > 1);
+
+  /** The good/warn/bad band for a chip's current value — null when the chip has no
+   *  band (uptime), the value is unknown, or the device is offline (a stale reading
+   *  shouldn't read green). */
+  protected chipBand(controller: string, chip: { sensor: string; band?: (raw: number) => VitalBand }): VitalBand | null {
+    if (!chip.band) return null;
+    const v = this.store.row(controller, chip.sensor)?.reported;
+    if (v == null || !Number.isFinite(v) || !this.store.presence(controller).online) return null;
+    return chip.band(v);
+  }
+  protected bandText(level: VitalLevel): string { return BAND_TEXT[level]; }
 
   /** Synthetic `line` widgets per controller — the three charted vitals plus uptime.
    *  Ids are `${controller}/${sensor}`, distinct from any real widget (health sensors
