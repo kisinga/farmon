@@ -204,6 +204,15 @@ function blankDraft(): NewAutomationRow & { id?: string } {
                 <div class="flex items-center gap-2">
                   <span class="font-medium text-sm truncate">{{ a.name || 'Untitled automation' }}</span>
                   @if (!a.enabled) { <span class="badge badge-ghost badge-sm shrink-0">Paused</span> }
+                  @if (staleness(a); as s) {
+                    @if (s === 'stale') {
+                      <span class="badge badge-warning badge-sm shrink-0"
+                            title="Set up against an older route layout — the controller won't run it. Open it and Save to re-apply. If the device is on older firmware than the current design, re-flash it.">Needs re-save</span>
+                    } @else if (s === 'missing') {
+                      <span class="badge badge-error badge-sm shrink-0"
+                            title="This automation's route no longer exists in the site design. Edit it to pick a current route, or delete it.">Route removed</span>
+                    }
+                  }
                 </div>
                 <p class="text-xs text-base-content/50 truncate mt-0.5">{{ routeName(a.route_key) }} · {{ triggerSummary(a) }}{{ overrideSummary(a) }}</p>
               </div>
@@ -381,6 +390,14 @@ export class AutomationsManagerComponent {
     this.saving.set(true);
     try {
       const { id, ...row } = d;
+      // Re-stamp the route identity from the live route table on every write. route_index
+      // + route_set_version are otherwise set only when the route is (re)picked, so editing
+      // an automation re-sends a version stamped against an older route table — which the
+      // device refuses wholesale (apply_set's route_set_version gate), and nothing runs.
+      // Re-deriving here heals the row to the current manifest. Stamp index + version
+      // together (never the version alone) or a matching version could run the wrong route.
+      const r = this.routes().find((x) => x.routeKey === row.route_key);
+      if (r) { row.controller = r.controllerId; row.route_index = r.routeIndex; row.route_set_version = r.routeSetVersion; }
       if (id) await this.svc.update(id, row); else await this.svc.create(row);
       this.draft.set(null);
       await this.refresh();
@@ -392,7 +409,13 @@ export class AutomationsManagerComponent {
   }
 
   protected async toggleEnabled(a: AutomationRecord): Promise<void> {
-    try { await this.svc.update(a.id, { enabled: !a.enabled }); await this.refresh(); }
+    // Re-stamp the route identity alongside the flag (see save()): a pause/resume is the
+    // most common reason a long-lived automation re-publishes, so it's the cheapest place
+    // to heal a stale route_set_version the device would otherwise refuse.
+    const patch: Partial<NewAutomationRow> = { enabled: !a.enabled };
+    const r = this.routes().find((x) => x.routeKey === a.route_key);
+    if (r) { patch.route_index = r.routeIndex; patch.route_set_version = r.routeSetVersion; }
+    try { await this.svc.update(a.id, patch); await this.refresh(); }
     catch (e) { this.error.set(e instanceof Error ? e.message : 'Update failed.'); }
   }
 
@@ -410,6 +433,17 @@ export class AutomationsManagerComponent {
 
   // --- list display ---
   protected routeName(key: string): string { return this.routes().find((r) => r.routeKey === key)?.routeName ?? key; }
+  /** Whether the row's stamped route table still matches the current site design. The
+   *  device refuses any automation set whose route_set_version differs from the firmware's
+   *  baked value, so a drift means "won't run until re-saved"; 'missing' means the route
+   *  was removed from the design entirely. Compared against the dashboard's manifest — the
+   *  version a re-save writes — so a device on older firmware than the design is a separate
+   *  "re-flash" case the badge can't see, called out in the tooltip. */
+  protected staleness(a: AutomationRecord): 'ok' | 'stale' | 'missing' {
+    const r = this.routes().find((x) => x.routeKey === a.route_key);
+    if (!r) return 'missing';
+    return r.routeSetVersion === a.route_set_version ? 'ok' : 'stale';
+  }
   protected triggerSummary(a: AutomationRecord): string {
     if (a.trigger_type === 'level') return `when source > ${a.level_threshold_pct}%`;
     const days = a.days_mask === 0 ? 'daily' : DAY_LABELS.filter((_, i) => a.days_mask & (1 << i)).join(' ');

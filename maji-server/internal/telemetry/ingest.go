@@ -379,10 +379,21 @@ func IngestSnapshot(app core.App, site, ctrl string, payload []byte, now time.Ti
 	// release once the device reports the version it was told to flash. Version match
 	// after reboot is the reliable success signal (the pre-reboot command ack can be
 	// lost when the flash reboots the device before the next snapshot publishes).
-	// This is now PURELY the deployed→confirmed flip: the reflash-republish special
-	// case has been collapsed into reconcileConfig's desired-vs-applied compare below.
 	if fw := s.Text["fw_version"]; fw != "" {
-		reconcileFirmware(app, ctrl, fw)
+		// On a version transition (a reflash/OTA, or the first-ever snapshot) the device
+		// boots with an empty in-RAM automation table. reconcileConfig below re-pushes the
+		// retained sets on a config_version drift — but only for a controller that already
+		// has a desired-config row; one whose config was never edited has none, so its
+		// automations would otherwise never be re-asserted after a reflash and would stop
+		// running. Re-push the automation set directly on the fw change to close that gap,
+		// independent of the config row. (Config itself needs no kick here: a no-config
+		// controller has nothing to converge to, and a configured one is covered by
+		// reconcileConfig's drift compare.) Off this goroutine and retained — same
+		// constraints as the runs_ack uplink above (re-entering the broker synchronously
+		// from its OnPublish hook can deadlock).
+		if reconcileFirmware(app, ctrl, fw) && AutomationsRepublisher != nil {
+			go func() { _ = AutomationsRepublisher(app, site, ctrl) }()
+		}
 	}
 
 	// Desired-vs-applied reconcile (the generalized republish, replacing the old
@@ -402,24 +413,27 @@ func IngestSnapshot(app core.App, site, ctrl string, payload []byte, now time.Ti
 
 // reconcileFirmware records the controller's running firmware version and flips any
 // release it was deploying to "confirmed" once the device reports that version.
-// Idempotent — a repeated snapshot with an unchanged version is a no-op. The
-// reflash-republish piggyback is gone (collapsed into reconcileConfig): this now only
-// keeps the running version current and performs the deployed→confirmed release flip.
-func reconcileFirmware(app core.App, ctrl, version string) {
+// Idempotent — a repeated snapshot with an unchanged version is a no-op. Returns true
+// when the recorded version actually transitioned (the reflash/OTA edge, or the
+// first-ever snapshot), so the caller can re-assert the device's retained automation set
+// that the reflash emptied.
+func reconcileFirmware(app core.App, ctrl, version string) (changed bool) {
 	if c, err := app.FindRecordById("controllers", ctrl); err == nil && c != nil {
 		if c.GetString("firmware_version") != version {
 			c.Set("firmware_version", version)
 			_ = app.Save(c)
+			changed = true
 		}
 	}
 	rec, _ := app.FindFirstRecordByFilter("firmware_releases",
 		"controller = {:c} && version = {:v} && status = 'deployed'",
 		dbx.Params{"c": ctrl, "v": version})
 	if rec == nil {
-		return
+		return changed
 	}
 	rec.Set("status", "confirmed")
 	_ = app.Save(rec)
+	return changed
 }
 
 // configReconcileGate debounces the desired-vs-applied republish so a lagging device
