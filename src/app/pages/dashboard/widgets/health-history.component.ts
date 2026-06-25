@@ -7,13 +7,16 @@ import {
   type DashboardWidget,
 } from '@core';
 import type { TelemetryPoint } from '../../../core/models/runtime';
-import { multiAxisHistoryOption, type MultiAxisSeries, type MultiAxisDef } from '../../../core/util/chart-theme';
+import {
+  vitalsConnectivityOption,
+  type MultiAxisSeries, type MultiAxisDef, type ConnectivityBand,
+} from '../../../core/util/chart-theme';
 import { DashboardStore } from '../dashboard.store';
 import { TelemetryStore } from '../telemetry.store';
 import { SpanSelectorComponent } from './span-selector.component';
 
 /** A gap between consecutive samples wider than this reads as an offline stretch on
- *  the connectivity ribbon. 2.5x the 5min rollup window: one missed window is jitter,
+ *  the connectivity band. 2.5x the 5min rollup window: one missed window is jitter,
  *  several in a row means the device wasn't reporting. Derived from data we already
  *  store (the absence of samples), not a logged disconnect event. */
 const OFFLINE_GAP_MS = 12.5 * 60 * 1000;
@@ -44,16 +47,13 @@ function fmtUptimeSeconds(s: number): string {
   return `${m}m`;
 }
 
-/** A duration in ms as a coarse "23m" / "1h 5m" — for offline-stretch labels. */
+/** A duration in ms as a coarse "23m" / "1h 5m" — for the offline summary. */
 function fmtDur(ms: number): string {
   const m = Math.round(ms / 60000);
   if (m < 60) return `${m}m`;
   const h = Math.floor(m / 60), mm = m % 60;
   return mm ? `${h}h ${mm}m` : `${h}h`;
 }
-
-const fmtClock = (ms: number) => new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-const fmtStamp = (ms: number) => new Date(ms).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 
 /** The three differently-united vitals sharing the combined chart: free RAM (KB, left
  *  axis), WiFi (dBm, right axis), SoC temp (°C, far-right axis). Already captured +
@@ -77,17 +77,11 @@ const CHART_METRICS: readonly ChartMetric[] = [
   },
 ];
 
-/** Live-value chips: the three charted vitals plus uptime (the ribbon's series). */
+/** Live-value chips: the three charted vitals plus uptime (the band's series). */
 const VITAL_CHIPS: readonly { short: string; sensor: string; color: string; liveFmt: (raw: number) => string }[] = [
   ...CHART_METRICS.map((m) => ({ short: m.short, sensor: m.sensor, color: m.color, liveFmt: m.liveFmt })),
   { short: 'Up', sensor: UPTIME_SENSOR, color: NEUTRAL.slate400, liveFmt: fmtUptimeSeconds },
 ];
-
-/** One stretch of the connectivity ribbon. */
-interface RibbonSeg { start: number; end: number; online: boolean; unknown?: boolean }
-/** A controller's connectivity over the chart window: contiguous online/offline
- *  stretches + reboot instants, all clamped to `[from, to]`. */
-interface Ribbon { segments: RibbonSeg[]; reboots: number[]; from: number; to: number }
 
 /** A telemetry point's numeric value across tiers (raw `value`, rollup `avg`). */
 function pointValue(p: TelemetryPoint): number | null {
@@ -95,56 +89,43 @@ function pointValue(p: TelemetryPoint): number | null {
   return v == null || !Number.isFinite(v) ? null : v;
 }
 
-/** Reconstruct connectivity over `[from, to]` from an uptime series: merge samples
- *  closer than {@link OFFLINE_GAP_MS} into online runs, fill the gaps with offline,
- *  and mark reboots where uptime drops. Edges extend to the window bounds when the
- *  nearest sample is close enough (and, at the live edge, the device is online now). */
-function buildRibbon(pts: { t: number; v: number | null }[], from: number, to: number, onlineNow: boolean): Ribbon {
+/** Reconstruct the connectivity band from an uptime series (sorted, epoch ms): each
+ *  interval between consecutive samples is online when they're closer than
+ *  {@link OFFLINE_GAP_MS} (else offline), merged into contiguous stretches; a drop in
+ *  uptime marks a reboot. Spans only the sampled extent — the chart x-axis matches. */
+function buildBand(pts: { t: number; v: number | null }[]): ConnectivityBand {
+  if (pts.length === 0) return { segments: [], reboots: [] };
   const reboots: number[] = [];
   for (let i = 1; i < pts.length; i++) {
     const a = pts[i - 1].v, b = pts[i].v;
-    if (a != null && b != null && b < a - 1 && pts[i].t >= from && pts[i].t <= to) reboots.push(pts[i].t);
+    if (a != null && b != null && b < a - 1) reboots.push(pts[i].t);
   }
-  if (pts.length === 0) return { segments: [{ start: from, end: to, online: false, unknown: true }], reboots, from, to };
-
-  const runs: [number, number][] = [];
-  let s = pts[0].t, e = pts[0].t;
+  if (pts.length === 1) return { segments: [{ start: pts[0].t, end: pts[0].t, online: true }], reboots };
+  const segments: ConnectivityBand['segments'] = [];
   for (let i = 1; i < pts.length; i++) {
-    if (pts[i].t - pts[i - 1].t <= OFFLINE_GAP_MS) e = pts[i].t;
-    else { runs.push([s, e]); s = pts[i].t; e = pts[i].t; }
+    const online = pts[i].t - pts[i - 1].t <= OFFLINE_GAP_MS;
+    const last = segments[segments.length - 1];
+    if (last && last.online === online) last.end = pts[i].t;
+    else segments.push({ start: pts[i - 1].t, end: pts[i].t, online });
   }
-  runs.push([s, e]);
-  if (runs[0][0] - from <= OFFLINE_GAP_MS) runs[0][0] = from;
-  const last = runs[runs.length - 1];
-  if (onlineNow && to - last[1] <= OFFLINE_GAP_MS) last[1] = to;
-
-  const segments: RibbonSeg[] = [];
-  let cursor = from;
-  for (const [rs, re] of runs) {
-    const a = Math.max(rs, from), b = Math.min(re, to);
-    if (a > cursor) segments.push({ start: cursor, end: a, online: false });
-    if (b > a) segments.push({ start: a, end: b, online: true });
-    cursor = Math.max(cursor, b);
-  }
-  if (cursor < to) segments.push({ start: cursor, end: to, online: false });
-  return { segments, reboots, from, to };
+  return { segments, reboots };
 }
 
 /**
- * HealthHistoryComponent — per-controller vitals history for the dashboard's
+ * HealthHistoryComponent — per-controller device-health history for the dashboard's
  * reporting zone, reusing the same telemetry tiers as the flow/tank charts (a
  * 5min-rollup bulk + a short raw tail, stitched by TelemetryStore) via synthetic
  * `line` widgets, so it ships no firmware, server, or storage change.
  *
- * Two visuals per controller:
- *  - a combined multi-axis line chart (free RAM / WiFi / temp, each in its own unit);
- *  - a connectivity ribbon — a continuous online/offline bar with reboot ticks,
- *    reconstructed from the uptime series (the offline-disconnect story, derived from
- *    sample gaps + uptime resets rather than a logged event).
+ * One ECharts chart per controller (see {@link vitalsConnectivityOption}): a multi-axis
+ * vitals plot (free RAM / WiFi / temp, each in its own unit) above a connectivity band
+ * (online green / offline red, reboot ticks) reconstructed from the uptime series. Both
+ * share the time axis, so a single zoom ranges both and hovering one cross-hairs the
+ * other — the band is part of the chart, not a separate element to keep in sync.
  *
- * Lazy: the page mounts it only when its section is first opened, so its series load
- * on demand. Injects the runtime stores directly (like ControllerHealthComponent)
- * rather than threading the series through the page template.
+ * Lazy: the page mounts it only when its section is first opened. Injects the runtime
+ * stores directly (like ControllerHealthComponent) rather than threading the series
+ * through the page template.
  */
 @Component({
   selector: 'app-health-history',
@@ -176,43 +157,23 @@ function buildRibbon(pts: { t: number; v: number | null }[], from: number, to: n
           }
         </div>
 
-        <!-- Combined vitals: three units, three axes, one time window. -->
         @if (!chartLoaded(c.controller)) {
-          <div class="h-56 flex items-center justify-center gap-2 text-base-content/30">
+          <div class="h-72 flex items-center justify-center gap-2 text-base-content/30">
             <span class="loading loading-spinner loading-sm"></span><span class="text-xs">Loading…</span>
           </div>
         } @else if (chartHasData(c.controller)) {
-          <div echarts [options]="chartOptions().get(c.controller)!" [autoResize]="true" class="h-56"></div>
-        } @else {
-          <div class="h-56 flex items-center justify-center"><span class="text-xs text-base-content/30">No vitals data in this window</span></div>
-        }
-
-        <!-- Connectivity ribbon: continuous online/offline with reboot ticks. -->
-        <div class="mt-4">
-          <div class="flex items-center justify-between gap-2 mb-1.5">
-            <span class="text-[11px] font-medium uppercase tracking-wide text-base-content/40">Connectivity</span>
-            <span class="text-[11px] text-base-content/45 truncate">{{ ribbonSummary(c.controller) }}</span>
+          <div echarts [options]="chartOptions().get(c.controller)!" [autoResize]="true" class="h-72"></div>
+          <!-- Band legend + summary (the band itself has no axis legend). -->
+          <div class="flex items-center gap-x-3 gap-y-1 flex-wrap mt-1.5 text-[11px] text-base-content/45">
+            <span class="inline-flex items-center gap-1.5"><span class="w-2.5 h-2 rounded-sm bg-success"></span>Online</span>
+            <span class="inline-flex items-center gap-1.5"><span class="w-2.5 h-2 rounded-sm bg-error"></span>Offline</span>
+            <span class="inline-flex items-center gap-1.5"><span class="inline-block w-0.5 h-3 bg-warning"></span>Reboot</span>
+            <span class="grow"></span>
+            @if (bandSummary(c.controller); as s) { <span class="truncate">{{ s }}</span> }
           </div>
-          @if (!uptimeLoaded(c.controller)) {
-            <div class="h-7 rounded-md bg-base-300/30 animate-pulse"></div>
-          } @else if (ribbon(c.controller); as rb) {
-            <div class="relative h-7 w-full rounded-md overflow-hidden bg-base-300/30 ring-1 ring-base-300/30">
-              @for (seg of rb.segments; track seg.start) {
-                <div class="absolute inset-y-0"
-                     [class]="seg.online ? 'bg-success/80' : (seg.unknown ? '' : 'bg-base-content/15')"
-                     [style.left.%]="pct(rb, seg.start)" [style.width.%]="widthPct(rb, seg.start, seg.end)"
-                     [title]="segTitle(seg)"></div>
-              }
-              @for (t of rb.reboots; track t) {
-                <div class="absolute inset-y-0 w-0.5 bg-warning" [style.left.%]="pct(rb, t)" [title]="'Reboot · ' + clock(t)"></div>
-              }
-            </div>
-            <div class="flex items-center justify-between mt-1 text-[10px] text-base-content/35 tabular-nums">
-              <span>{{ stamp(rb.from) }}</span>
-              <span>now</span>
-            </div>
-          }
-        </div>
+        } @else {
+          <div class="h-72 flex items-center justify-center"><span class="text-xs text-base-content/30">No vitals data in this window</span></div>
+        }
       </div>
     }
   `,
@@ -248,8 +209,23 @@ export class HealthHistoryComponent {
     return g ? [...g.chart.map((x) => x.widget), g.uptime] : [];
   }
 
-  /** Per-controller combined-chart options, rebuilt only when a series changes (not on
-   *  every live tick) so the canvas doesn't needlessly re-render. */
+  /** Per-controller connectivity band, from the uptime series only (no live clock), so
+   *  it — and the chart option built from it — stay stable across live ticks (the chart
+   *  doesn't reset its zoom every snapshot). */
+  private bands = computed<Map<string, ConnectivityBand>>(() => {
+    const out = new Map<string, ConnectivityBand>();
+    for (const [controller, group] of this.widgetsByController()) {
+      const pts = this.telemetry.seriesFor(group.uptime)
+        .map((p) => ({ t: Date.parse(p.ts), v: pointValue(p) }))
+        .filter((p) => Number.isFinite(p.t))
+        .sort((a, b) => a.t - b.t);
+      out.set(controller, buildBand(pts));
+    }
+    return out;
+  });
+
+  /** Per-controller chart options (vitals + connectivity band), rebuilt only when a
+   *  series changes — not on every live tick — so the canvas keeps its zoom. */
   protected chartOptions = computed<Map<string, EChartsOption>>(() => {
     const out = new Map<string, EChartsOption>();
     const axes: MultiAxisDef[] = CHART_METRICS.map((m) => ({ ...m.axis, color: m.color }));
@@ -261,70 +237,30 @@ export class HealthHistoryComponent {
           return [p.ts, raw == null ? null : raw * metric.scale];
         }),
       }));
-      out.set(controller, multiAxisHistoryOption(series, axes));
+      const band = this.bands().get(controller) ?? { segments: [], reboots: [] };
+      out.set(controller, vitalsConnectivityOption(series, axes, band, rangeOf(series, band)));
     }
     return out;
   });
 
-  /** Per-controller connectivity ribbon. Reactive to the uptime series, the span, and
-   *  the live clock (so the live edge advances) — but NOT the chart canvas. */
-  private ribbons = computed<Map<string, Ribbon>>(() => {
-    const out = new Map<string, Ribbon>();
-    const now = this.store.now();
-    for (const [controller, group] of this.widgetsByController()) {
-      const to = now;
-      const from = to - this.telemetry.spanFor(group.uptime) * 3_600_000;
-      const pts = this.telemetry.seriesFor(group.uptime)
-        .map((p) => ({ t: Date.parse(p.ts), v: pointValue(p) }))
-        .filter((p) => Number.isFinite(p.t) && p.t <= to + 1000)
-        .sort((a, b) => a.t - b.t);
-      out.set(controller, buildRibbon(pts, from, to, this.store.presence(controller).online));
-    }
-    return out;
-  });
-  protected ribbon(controller: string): Ribbon | undefined { return this.ribbons().get(controller); }
-
-  // --- Combined-chart load state ------------------------------------------
+  // --- Load state ----------------------------------------------------------
   protected chartLoaded(controller: string): boolean {
-    const g = this.widgetsByController().get(controller);
-    return !!g && g.chart.every((x) => this.telemetry.loadedFor(x.widget));
+    const w = this.allWidgets(controller);
+    return w.length > 0 && w.every((x) => this.telemetry.loadedFor(x));
   }
   protected chartHasData(controller: string): boolean {
-    const g = this.widgetsByController().get(controller);
-    return !!g && g.chart.some((x) => this.telemetry.seriesFor(x.widget).length > 0);
-  }
-  protected uptimeLoaded(controller: string): boolean {
-    const g = this.widgetsByController().get(controller);
-    return !!g && this.telemetry.loadedFor(g.uptime);
+    return this.allWidgets(controller).some((x) => this.telemetry.seriesFor(x).length > 0);
   }
 
-  // --- Ribbon geometry + labels -------------------------------------------
-  protected pct(rb: Ribbon, t: number): number {
-    const span = rb.to - rb.from;
-    return span <= 0 ? 0 : Math.max(0, Math.min(100, ((t - rb.from) / span) * 100));
-  }
-  protected widthPct(rb: Ribbon, a: number, b: number): number {
-    const span = rb.to - rb.from;
-    return span <= 0 ? 0 : Math.max(0, Math.min(100, ((b - a) / span) * 100));
-  }
-  protected segTitle(seg: RibbonSeg): string {
-    if (seg.unknown) return 'No connectivity data in this window';
-    return seg.online
-      ? `Online ${fmtClock(seg.start)}–${fmtClock(seg.end)}`
-      : `Offline ${fmtClock(seg.start)}–${fmtClock(seg.end)} (${fmtDur(seg.end - seg.start)})`;
-  }
-  protected clock(t: number): string { return fmtClock(t); }
-  protected stamp(t: number): string { return fmtStamp(t); }
-
-  /** "2 reboots · offline 23m" / "Online the whole window" / "No connectivity data". */
-  protected ribbonSummary(controller: string): string {
-    const rb = this.ribbons().get(controller);
-    if (!rb || rb.segments.every((s) => s.unknown)) return 'No connectivity data in this window';
-    const offline = rb.segments.filter((s) => !s.online && !s.unknown).reduce((n, s) => n + (s.end - s.start), 0);
+  /** "2 reboots · offline 23m" / "Online throughout" — caption under the chart. */
+  protected bandSummary(controller: string): string {
+    const b = this.bands().get(controller);
+    if (!b || !b.segments.length) return '';
+    const offline = b.segments.filter((s) => !s.online && !s.unknown).reduce((n, s) => n + (s.end - s.start), 0);
     const parts: string[] = [];
-    if (rb.reboots.length) parts.push(`${rb.reboots.length} reboot${rb.reboots.length === 1 ? '' : 's'}`);
+    if (b.reboots.length) parts.push(`${b.reboots.length} reboot${b.reboots.length === 1 ? '' : 's'}`);
     if (offline > 0) parts.push(`offline ${fmtDur(offline)}`);
-    return parts.length ? parts.join(' · ') : 'Online the whole window';
+    return parts.length ? parts.join(' · ') : 'Online throughout';
   }
 
   /** Current value chip from the live shadow; '—' when never reported, "offline" when
@@ -336,7 +272,7 @@ export class HealthHistoryComponent {
   }
 
   /** The controller's remembered span (read off its uptime widget — `onSpan` keeps all
-   *  four in lock-step). */
+   *  series in lock-step). */
   protected span(controller: string): number {
     const g = this.widgetsByController().get(controller);
     return g ? this.telemetry.spanFor(g.uptime) : 6;
@@ -364,4 +300,17 @@ export class HealthHistoryComponent {
           }
     });
   }
+}
+
+/** The time window spanning all vitals data + the band — pins both chart x-axes to one
+ *  range so the grids align. Falls back to a zero window when there's nothing yet. */
+function rangeOf(series: MultiAxisSeries[], band: ConnectivityBand): { from: number; to: number } {
+  let from = Infinity, to = -Infinity;
+  for (const s of series)
+    for (const pt of s.data) {
+      const t = typeof pt[0] === 'number' ? pt[0] : Date.parse(String(pt[0]));
+      if (Number.isFinite(t)) { from = Math.min(from, t); to = Math.max(to, t); }
+    }
+  for (const seg of band.segments) { from = Math.min(from, seg.start); to = Math.max(to, seg.end); }
+  return Number.isFinite(from) ? { from, to } : { from: 0, to: 0 };
 }

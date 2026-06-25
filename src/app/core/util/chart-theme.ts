@@ -1,5 +1,5 @@
 import type { EChartsOption } from 'echarts';
-import { BRAND, NEUTRAL } from '@core';
+import { BRAND, NEUTRAL, STATE_COLORS } from '@core';
 
 /**
  * ECharts colours for the dark majiflow dashboard widgets.
@@ -86,7 +86,7 @@ export function historyLineOption(
   };
 }
 
-/** One line on a {@link multiAxisHistoryOption} chart, bound to one of its y-axes. */
+/** One line on a {@link vitalsConnectivityOption} chart, bound to one of its y-axes. */
 export interface MultiAxisSeries {
   /** Legend + tooltip name (carry the unit here, e.g. "RAM (KB)"). */
   name: string;
@@ -100,7 +100,7 @@ export interface MultiAxisSeries {
   fmt: (value: number) => string;
 }
 
-/** One y-axis on a {@link multiAxisHistoryOption} chart. */
+/** One y-axis on the vitals grid of a {@link vitalsConnectivityOption} chart. */
 export interface MultiAxisDef {
   color: string;
   position: 'left' | 'right';
@@ -112,63 +112,132 @@ export interface MultiAxisDef {
   formatter?: string;
 }
 
+/** One stretch of the connectivity band (millisecond-epoch bounds). */
+export interface ConnectivitySeg { start: number; end: number; online: boolean; unknown?: boolean }
+/** The connectivity band drawn under the vitals: online/offline stretches + reboots. */
+export interface ConnectivityBand { segments: ConnectivitySeg[]; reboots: number[] }
+
+/** Band fills — online green, offline red, no-data muted (canonical state palette). */
+const BAND_ONLINE = STATE_COLORS.active;
+const BAND_OFFLINE = STATE_COLORS.fault;
+const BAND_UNKNOWN = NEUTRAL.slate700;
+const BAND_REBOOT = STATE_COLORS.warn;
+
+const fmtStamp = (ms: number) =>
+  new Date(ms).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+
 /**
- * A time-series line chart with several independently-scaled y-axes — for plotting
- * metrics in different units (e.g. free RAM in KB, WiFi in dBm, temperature in °C) on
- * ONE chart with their real values intact. Shares the grid, time axis, zoom slider and
- * tooltip styling of {@link historyLineOption}; each series keeps its own axis + colour,
- * and the tooltip lists every series at the hovered time with its own unit. Only the
- * first axis draws horizontal gridlines (more would muddy the plot).
+ * The device-health chart: a multi-axis vitals plot (free RAM in KB, WiFi in dBm,
+ * temperature in °C — each on its own y-axis, real values intact) stacked above a thin
+ * CONNECTIVITY band (online green / offline red, with reboot ticks), both on the SAME
+ * time x-axis. One shared `dataZoom` ranges both grids together and a linked
+ * `axisPointer` cross-hairs them, so hovering either highlights the matching instant on
+ * the other; the tooltip lists every vital at that time plus the connectivity status.
+ * The band is a `custom` series of rectangles, one per stretch. `range` pins both
+ * x-axes to the same window so the two grids align pixel-for-pixel.
  */
-export function multiAxisHistoryOption(series: MultiAxisSeries[], axes: MultiAxisDef[]): EChartsOption {
+export function vitalsConnectivityOption(
+  series: MultiAxisSeries[],
+  axes: MultiAxisDef[],
+  band: ConnectivityBand,
+  range: { from: number; to: number },
+): EChartsOption {
+  const segFill = (s: ConnectivitySeg) => (s.unknown ? BAND_UNKNOWN : s.online ? BAND_ONLINE : BAND_OFFLINE);
+  // The band rects (custom renderItem) are typed loosely by ECharts; assemble the
+  // series array as `any` so the line + custom mix doesn't fight the union typing.
+  const bandSeries: any = {
+    type: 'custom', xAxisIndex: 1, yAxisIndex: axes.length,
+    renderItem: (params: any, api: any) => {
+      const seg = band.segments[api.value(2)];
+      if (!seg) return;
+      const p0 = api.coord([seg.start, 0]);
+      const p1 = api.coord([seg.end, 0]);
+      const yTop = api.coord([seg.start, 1])[1];
+      const cs = params.coordSys;
+      const left = Math.max(p0[0], cs.x);
+      const right = Math.min(p1[0], cs.x + cs.width);
+      if (right <= left) return;
+      return { type: 'rect', shape: { x: left, y: yTop, width: right - left, height: p0[1] - yTop }, style: { fill: segFill(seg) } };
+    },
+    data: band.segments.map((s, i) => [s.start, s.end, i]),
+    markLine: band.reboots.length ? {
+      silent: true, symbol: 'none', label: { show: false },
+      lineStyle: { color: BAND_REBOOT, width: 1 },
+      data: band.reboots.map((t) => ({ xAxis: t })),
+    } : undefined,
+  };
   return {
     textStyle: { color: CHART.label },
-    grid: { left: 48, right: 78, top: 30, bottom: 44 },
+    grid: [
+      { left: 48, right: 78, top: 30, height: 158 }, // vitals
+      { left: 48, right: 78, top: 200, height: 20 }, // connectivity band
+    ],
     legend: {
       top: 2, right: 8,
       data: series.map((s) => s.name),
       textStyle: { color: CHART.label },
       inactiveColor: CHART.axis,
     },
-    xAxis: {
-      type: 'time',
-      axisLine: { lineStyle: { color: CHART.axis } },
-      axisLabel: { color: CHART.label },
-      splitLine: { show: false },
-    },
-    yAxis: axes.map((a, i) => ({
-      type: 'value' as const,
-      position: a.position,
-      offset: a.offset ?? 0,
-      min: a.min,
-      max: a.max,
-      axisLine: { show: true, lineStyle: { color: a.color } },
-      axisLabel: { color: a.color, formatter: a.formatter ?? '{value}' },
-      // Only the first axis draws horizontal gridlines; the rest would overlap it.
-      splitLine: { show: i === 0, lineStyle: { color: CHART.axis } },
-    })),
+    xAxis: [
+      {
+        type: 'time', gridIndex: 0, min: range.from, max: range.to,
+        axisLine: { lineStyle: { color: CHART.axis } },
+        axisLabel: { show: false },
+        splitLine: { show: false },
+      },
+      {
+        type: 'time', gridIndex: 1, min: range.from, max: range.to,
+        axisLine: { lineStyle: { color: CHART.axis } },
+        axisLabel: { color: CHART.label },
+        splitLine: { show: false },
+      },
+    ],
+    yAxis: [
+      ...axes.map((a, i) => ({
+        type: 'value' as const, gridIndex: 0,
+        position: a.position,
+        offset: a.offset ?? 0,
+        min: a.min,
+        max: a.max,
+        axisLine: { show: true, lineStyle: { color: a.color } },
+        axisLabel: { color: a.color, formatter: a.formatter ?? '{value}' },
+        // Only the first axis draws horizontal gridlines; the rest would overlap it.
+        splitLine: { show: i === 0, lineStyle: { color: CHART.axis } },
+      })),
+      { type: 'value' as const, gridIndex: 1, min: 0, max: 1, show: false },
+    ],
+    // Cross-hair both grids off the same time pointer — hover one, see the other.
+    axisPointer: { link: [{ xAxisIndex: 'all' }] },
     tooltip: {
       trigger: 'axis',
-      // Each series reads in its own unit, so the shared axis formatter can't serve —
-      // map every hovered series back to its own `fmt` by series index.
+      axisPointer: { type: 'line', lineStyle: { color: CHART.label, width: 1, type: 'dashed' } },
+      // Lines read in their own unit (per-series `fmt`); append the connectivity status
+      // at the hovered time, looked up from the band segments.
       formatter: (params: any) => {
         const arr = Array.isArray(params) ? params : [params];
         if (!arr.length) return '';
-        const raw0 = Array.isArray(arr[0].value) ? arr[0].value[0] : arr[0].axisValue;
-        const d = new Date(typeof raw0 === 'number' ? raw0 : Date.parse(String(raw0)));
-        const head = d.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-        const rows = arr.map((p: any) => {
+        const a0 = arr[0];
+        const ts = Number(a0.axisValue ?? (Array.isArray(a0.value) ? a0.value[0] : 0));
+        const rows: string[] = [];
+        for (const p of arr) {
+          if (p.seriesType !== 'line') continue;
           const v = Array.isArray(p.value) ? p.value[1] : p.value;
           const f = series[p.seriesIndex]?.fmt;
-          return `${p.marker} ${p.seriesName}: ${v == null ? '—' : f ? f(Number(v)) : String(v)}`;
-        });
-        return [head, ...rows].join('<br/>');
+          rows.push(`${p.marker} ${p.seriesName}: ${v == null ? '—' : f ? f(Number(v)) : String(v)}`);
+        }
+        const seg = band.segments.find((s) => ts >= s.start && ts <= s.end);
+        if (seg) {
+          const label = seg.unknown ? 'No data' : seg.online ? 'Online' : 'Offline';
+          const dot = `<span style="display:inline-block;margin-right:5px;width:9px;height:9px;border-radius:2px;background:${segFill(seg)}"></span>`;
+          rows.push(`${dot}Connectivity: ${label}`);
+        }
+        return [fmtStamp(ts), ...rows].join('<br/>');
       },
     },
     dataZoom: [
-      { type: 'inside', throttle: 50 },
+      { type: 'inside', xAxisIndex: [0, 1], throttle: 50 },
       {
-        type: 'slider', height: 18, bottom: 8,
+        type: 'slider', xAxisIndex: [0, 1], height: 16, bottom: 8,
         borderColor: 'transparent',
         fillerColor: ZOOM_FILL,
         handleStyle: { color: CHART.accent },
@@ -176,10 +245,14 @@ export function multiAxisHistoryOption(series: MultiAxisSeries[], axes: MultiAxi
         dataBackground: { lineStyle: { color: CHART.axis }, areaStyle: { color: ZOOM_BG_FILL } },
       },
     ],
-    series: series.map((s) => ({
-      name: s.name, type: 'line', showSymbol: false, smooth: true,
-      data: s.data, yAxisIndex: s.axisIndex,
-      lineStyle: { color: s.color, width: 2 }, itemStyle: { color: s.color },
-    })),
+    series: [
+      ...series.map((s) => ({
+        name: s.name, type: 'line' as const, showSymbol: false, smooth: true,
+        xAxisIndex: 0, yAxisIndex: s.axisIndex,
+        data: s.data,
+        lineStyle: { color: s.color, width: 2 }, itemStyle: { color: s.color },
+      })),
+      bandSeries,
+    ],
   };
 }
