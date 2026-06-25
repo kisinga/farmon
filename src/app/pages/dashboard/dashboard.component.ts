@@ -375,7 +375,7 @@ interface DashSection { id: string; label: string; widgets: DashboardWidget[] }
             <svg class="h-4 w-4 shrink-0 text-base-content/40 transition-transform group-hover:text-base-content/70" [class.rotate-180]="healthExpanded()" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
           </button>
           @if (healthExpanded()) {
-            <app-health-history class="dash-reveal" [siteId]="siteId" [active]="healthExpanded()" />
+            <app-health-history class="dash-reveal" [siteId]="siteId" />
           }
         </section>
       }

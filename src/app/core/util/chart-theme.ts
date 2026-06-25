@@ -85,3 +85,101 @@ export function historyLineOption(
     }],
   };
 }
+
+/** One line on a {@link multiAxisHistoryOption} chart, bound to one of its y-axes. */
+export interface MultiAxisSeries {
+  /** Legend + tooltip name (carry the unit here, e.g. "RAM (KB)"). */
+  name: string;
+  /** `[ts, value]` pairs, already scaled to the bound axis's unit. */
+  data: (number | string | null)[][];
+  /** Line + axis-label colour (a canonical palette hex). */
+  color: string;
+  /** Index into the `axes` array this series is plotted against. */
+  axisIndex: number;
+  /** Tooltip value formatter (value is in the axis unit). */
+  fmt: (value: number) => string;
+}
+
+/** One y-axis on a {@link multiAxisHistoryOption} chart. */
+export interface MultiAxisDef {
+  color: string;
+  position: 'left' | 'right';
+  /** Pixels to push a right axis further right (so two right axes don't overlap). */
+  offset?: number;
+  min?: number;
+  max?: number;
+  /** Tick-label template (ECharts string formatter, e.g. '{value}°'). */
+  formatter?: string;
+}
+
+/**
+ * A time-series line chart with several independently-scaled y-axes — for plotting
+ * metrics in different units (e.g. free RAM in KB, WiFi in dBm, temperature in °C) on
+ * ONE chart with their real values intact. Shares the grid, time axis, zoom slider and
+ * tooltip styling of {@link historyLineOption}; each series keeps its own axis + colour,
+ * and the tooltip lists every series at the hovered time with its own unit. Only the
+ * first axis draws horizontal gridlines (more would muddy the plot).
+ */
+export function multiAxisHistoryOption(series: MultiAxisSeries[], axes: MultiAxisDef[]): EChartsOption {
+  return {
+    textStyle: { color: CHART.label },
+    grid: { left: 48, right: 78, top: 30, bottom: 44 },
+    legend: {
+      top: 2, right: 8,
+      data: series.map((s) => s.name),
+      textStyle: { color: CHART.label },
+      inactiveColor: CHART.axis,
+    },
+    xAxis: {
+      type: 'time',
+      axisLine: { lineStyle: { color: CHART.axis } },
+      axisLabel: { color: CHART.label },
+      splitLine: { show: false },
+    },
+    yAxis: axes.map((a, i) => ({
+      type: 'value' as const,
+      position: a.position,
+      offset: a.offset ?? 0,
+      min: a.min,
+      max: a.max,
+      axisLine: { show: true, lineStyle: { color: a.color } },
+      axisLabel: { color: a.color, formatter: a.formatter ?? '{value}' },
+      // Only the first axis draws horizontal gridlines; the rest would overlap it.
+      splitLine: { show: i === 0, lineStyle: { color: CHART.axis } },
+    })),
+    tooltip: {
+      trigger: 'axis',
+      // Each series reads in its own unit, so the shared axis formatter can't serve —
+      // map every hovered series back to its own `fmt` by series index.
+      formatter: (params: any) => {
+        const arr = Array.isArray(params) ? params : [params];
+        if (!arr.length) return '';
+        const raw0 = Array.isArray(arr[0].value) ? arr[0].value[0] : arr[0].axisValue;
+        const d = new Date(typeof raw0 === 'number' ? raw0 : Date.parse(String(raw0)));
+        const head = d.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+        const rows = arr.map((p: any) => {
+          const v = Array.isArray(p.value) ? p.value[1] : p.value;
+          const f = series[p.seriesIndex]?.fmt;
+          return `${p.marker} ${p.seriesName}: ${v == null ? '—' : f ? f(Number(v)) : String(v)}`;
+        });
+        return [head, ...rows].join('<br/>');
+      },
+    },
+    dataZoom: [
+      { type: 'inside', throttle: 50 },
+      {
+        type: 'slider', height: 18, bottom: 8,
+        borderColor: 'transparent',
+        fillerColor: ZOOM_FILL,
+        handleStyle: { color: CHART.accent },
+        textStyle: { color: CHART.label },
+        dataBackground: { lineStyle: { color: CHART.axis }, areaStyle: { color: ZOOM_BG_FILL } },
+      },
+    ],
+    series: series.map((s) => ({
+      name: s.name, type: 'line', showSymbol: false, smooth: true,
+      data: s.data, yAxisIndex: s.axisIndex,
+      lineStyle: { color: s.color, width: 2 }, itemStyle: { color: s.color },
+    })),
+  };
+}
