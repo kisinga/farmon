@@ -66,8 +66,10 @@ function blankDraft(): NewAutomationRow & { id?: string } {
       }
 
       <!-- Route defaults: the per-route values an automation inherits unless it
-           overrides them. Collapsed by default, edit-gated - same as the dashboard. -->
-      @if (hasRouteTuning()) {
+           overrides them. Collapsed by default, edit-gated. Hidden on the dashboard
+           (its Setup modal owns these, grouped with safety timings); shown on the
+           standalone page, which has no Setup surface beside it. -->
+      @if (showRouteDefaults() && hasRouteTuning()) {
         <details class="group rounded-2xl ring-1 ring-base-300/40 bg-base-100 overflow-hidden">
           <summary class="cursor-pointer list-none flex items-center justify-between gap-3 px-4 h-12 hover:bg-base-200/30 transition-colors">
             <span class="flex items-baseline gap-2 min-w-0">
@@ -142,6 +144,7 @@ function blankDraft(): NewAutomationRow & { id?: string } {
             <!-- Right: run settings -->
             <div class="flex flex-col gap-2">
               <span class="text-[11px] font-semibold uppercase tracking-wider text-base-content/40">Run settings</span>
+              <p class="text-[11px] text-base-content/40 -mt-1">A field left off uses this route's default (set under Route defaults, in Setup).</p>
               <div class="rounded-xl ring-1 ring-base-300/40 px-3 divide-y divide-base-300/40">
                 @for (f of overrideFields(); track f.key) {
                   <div class="flex items-center gap-3 py-2">
@@ -207,10 +210,10 @@ function blankDraft(): NewAutomationRow & { id?: string } {
                   @if (staleness(a); as s) {
                     @if (s === 'stale') {
                       <span class="badge badge-warning badge-sm shrink-0"
-                            title="Set up against an older route layout — the controller won't run it. Open it and Save to re-apply. If the device is on older firmware than the current design, re-flash it.">Needs re-save</span>
+                            title="The site design changed since this device was flashed. Regenerate this controller's firmware and reflash it — that re-applies the automation to the new route layout.">Needs reflash</span>
                     } @else if (s === 'missing') {
                       <span class="badge badge-error badge-sm shrink-0"
-                            title="This automation's route no longer exists in the site design. Edit it to pick a current route, or delete it.">Route removed</span>
+                            title="This automation's route no longer exists in the site design, so it's been paused. Edit it to pick a current route, or delete it.">Route removed</span>
                     }
                   }
                 </div>
@@ -238,6 +241,10 @@ function blankDraft(): NewAutomationRow & { id?: string } {
 export class AutomationsManagerComponent {
   /** Site whose automations this manages. Drives the one-time load. */
   readonly siteId = input.required<string>();
+  /** Show the per-route "Route defaults" tuning inline. The dashboard hides it
+   *  (its Setup modal next door owns route defaults + safety timings); the
+   *  standalone /automations page keeps it (it has no Setup surface beside it). */
+  readonly showRouteDefaults = input(true);
 
   private backend = inject(BackendService);
   private auth = inject(AuthStore);

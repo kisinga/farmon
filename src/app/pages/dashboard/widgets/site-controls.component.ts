@@ -67,7 +67,7 @@ import { TankCalibrationComponent } from './tank-calibration.component';
               <button class="btn btn-ghost btn-xs btn-circle shrink-0" (click)="open.set(null)" aria-label="Close">✕</button>
             </div>
             <div class="px-6 py-4 overflow-y-auto">
-              <app-automations-manager [siteId]="siteId()" />
+              <app-automations-manager [siteId]="siteId()" [showRouteDefaults]="false" />
             </div>
           </div>
           <div class="modal-backdrop" (click)="open.set(null)"></div>
@@ -80,7 +80,7 @@ import { TankCalibrationComponent } from './tank-calibration.component';
             <div class="flex items-start justify-between gap-3 px-6 pt-5 pb-3 border-b border-base-300/30 shrink-0">
               <div class="min-w-0">
                 <h3 class="font-bold text-base">Setup</h3>
-                <p class="text-xs text-base-content/50 mt-0.5">Calibration, safety timings, and manual override for this site.</p>
+                <p class="text-xs text-base-content/50 mt-0.5">Route defaults, calibration, safety timings, and manual override for this site.</p>
               </div>
               <button class="btn btn-ghost btn-xs btn-circle shrink-0" (click)="open.set(null)" aria-label="Close">✕</button>
             </div>
@@ -96,6 +96,16 @@ import { TankCalibrationComponent } from './tank-calibration.component';
               <div class="mt-4">
                 <div class="text-[11px] font-semibold uppercase tracking-wide text-base-content/40 mb-2">Safety timings</div>
                 <app-tunable-numbers [controllers]="store.spec().controllers" scope="controller" [canEdit]="canControl()" />
+              </div>
+            }
+
+            <!-- Route defaults: the per-route values automations inherit unless they
+                 override them. Sits with safety timings — both are the install-time
+                 tuning automations consume. -->
+            @if (hasRouteDefaults()) {
+              <div class="mt-4">
+                <div class="text-[11px] font-semibold uppercase tracking-wide text-base-content/40 mb-2">Route defaults</div>
+                <app-tunable-numbers [controllers]="store.spec().controllers" scope="route" [canEdit]="canControl()" />
               </div>
             }
 
@@ -166,8 +176,9 @@ export class SiteControlsComponent {
   // --- Setup ---------------------------------------------------------------
   protected multiController = computed(() => this.store.spec().controllers.length > 1);
   protected hasSafetyTimings = computed(() => this.store.spec().controllers.some((c) => c.tunables.some((t) => t.scope === 'controller')));
+  protected hasRouteDefaults = computed(() => this.store.spec().controllers.some((c) => c.tunables.some((t) => t.scope === 'route')));
   protected showSetup = computed(() => this.canControl() && this.store.spec().controllers.some((c) =>
-    c.tunables.some((t) => t.scope === 'controller') || c.calibrations.length > 0 || c.actuators.length > 0));
+    c.tunables.some((t) => t.scope === 'controller' || t.scope === 'route') || c.calibrations.length > 0 || c.actuators.length > 0));
   protected anyOverride = computed(() => this.store.spec().controllers.some((c) => this.store.overrideOn(c.controller)));
 
   private unsub?: UnsubscribeFunc;

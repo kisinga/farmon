@@ -7,6 +7,7 @@ import {
   parseTopology,
   topologyToManifestForController,
   listAutomatableRoutes,
+  routeSetVersion,
   CURRENT_SCHEMA_VERSION,
 } from '@core';
 import type { ExpansionBoardCatalog, DeploymentMode } from '@core';
@@ -203,43 +204,49 @@ export class BuildService {
 
     const rec = await this.pb.collection('topology_versions').create(fd);
 
-    // Re-align the site's automations to the just-built route tables. A route
-    // reorder shifts route_index and changes route_set_version, so existing rows
-    // must be re-stamped or the device refuses the whole set (version guard). The
-    // device keeps its last-good set until it's reflashed to this version, so the
-    // re-stamp is safe to publish ahead of the flash.
-    await this.restampAutomations(siteId, topo).catch((e) => console.warn('automation re-stamp failed', e));
-
+    // Automations were already re-aligned per controller inside buildController (the
+    // shared build funnel), so the whole-site commit needs no extra re-stamp here.
     return { id: rec['id'], version: nextVersion, deduped: false };
   }
 
   /**
-   * Re-resolve every automation row's owning route against the current topology.
-   * route_key is the stable identity; route_index + route_set_version are derived,
-   * so they're refreshed when routes change. A route_key no longer present on its
-   * controller (deleted, or moved to another controller) can't run — the row is
-   * paused rather than silently pointing at the wrong route.
+   * Re-align ONE controller's automation rows to the route table just baked for it.
+   * route_key is the stable identity; route_index + route_set_version are derived from
+   * the manifest, so they're refreshed whenever routes change.
+   *
+   * Every row is stamped with the controller's current route_set_version, including
+   * rows whose route_key has vanished: the device gates the WHOLE retained set on a
+   * single version (the server copies the first row's value into the wire header), so
+   * one lone stale row would otherwise make it refuse every automation on the
+   * controller. A vanished route can't run, so its row is paused; its now-meaningless
+   * index is left as-is (a disabled row's index is never used on-device).
+   *
+   * Called from buildController so EVERY firmware build (the per-controller Generate
+   * and the whole-site Commit alike) re-aligns automations to the exact route table it
+   * bakes. The device keeps its last-good set until reflashed to this build, so
+   * publishing the re-stamp ahead of the flash is safe.
    */
-  private async restampAutomations(siteId: string, topo: SiteTopology): Promise<void> {
+  private async restampAutomations(siteId: string, topo: SiteTopology, controllerId: string): Promise<void> {
+    const ver = routeSetVersion(topologyToManifestForController(topo, controllerId));
     const byKey = new Map(
-      listAutomatableRoutes(topo).map((r) => [`${r.controllerId} ${r.routeKey}`, r]),
+      listAutomatableRoutes(topo)
+        .filter((r) => r.controllerId === controllerId)
+        .map((r) => [r.routeKey, r] as const),
     );
     const rows = await this.pb.collection('automations').getFullList({
-      filter: this.pb.filter('site = {:s}', { s: siteId }),
-      requestKey: `automations:restamp:${siteId}`,
+      filter: this.pb.filter('site = {:s} && controller = {:c}', { s: siteId, c: controllerId }),
+      requestKey: `automations:restamp:${siteId}:${controllerId}`,
     });
     for (const row of rows) {
-      const match = byKey.get(`${row['controller']} ${row['route_key']}`);
-      if (!match) {
-        if (row['enabled']) await this.pb.collection('automations').update(row['id'], { enabled: false });
-        continue;
+      const patch: Record<string, unknown> = {};
+      if (row['route_set_version'] !== ver) patch['route_set_version'] = ver;
+      const match = byKey.get(row['route_key']);
+      if (match) {
+        if (row['route_index'] !== match.routeIndex) patch['route_index'] = match.routeIndex;
+      } else if (row['enabled']) {
+        patch['enabled'] = false; // route gone from this controller — pause it
       }
-      if (row['route_index'] !== match.routeIndex || row['route_set_version'] !== match.routeSetVersion) {
-        await this.pb.collection('automations').update(row['id'], {
-          route_index: match.routeIndex,
-          route_set_version: match.routeSetVersion,
-        });
-      }
+      if (Object.keys(patch).length) await this.pb.collection('automations').update(row['id'], patch);
     }
   }
 
@@ -470,6 +477,13 @@ export class BuildService {
       metadata,
       expansionBoards,
     );
+    // Re-align this controller's automations to the route table just baked
+    // (route_index + route_set_version) so the device accepts the retained set once
+    // this build is flashed. Here in the shared build funnel so BOTH the per-controller
+    // Generate and the whole-site Commit re-stamp — they previously diverged (only
+    // Commit did), so a Generate-and-flash stranded the rows on a stale version and the
+    // device refused them. Best effort: a re-stamp failure must not fail the build.
+    await this.restampAutomations(siteId, topo, ctrl.id).catch((e) => console.warn('automation re-stamp failed', e));
     return { files, hashPart, version: metadata.version };
   }
 
