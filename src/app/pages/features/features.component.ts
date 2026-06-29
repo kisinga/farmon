@@ -11,7 +11,10 @@ import {
   MktHeroComponent,
   MktSectionComponent,
   MktFeatureGridComponent,
+  MktFeatureListComponent,
+  MktAddonGridComponent,
 } from '../../shared/marketing/ui';
+import { CLOUD_FEATURES, ADDON_SERVICES } from '../../shared/marketing/feature-catalog';
 
 /** A capability group: one keyword-bearing heading and the things under it. */
 interface FeatureGroup {
@@ -50,6 +53,8 @@ interface UseCase {
     MktHeroComponent,
     MktSectionComponent,
     MktFeatureGridComponent,
+    MktFeatureListComponent,
+    MktAddonGridComponent,
   ],
   host: { class: 'flex-1 overflow-y-auto bg-white text-slate-900' },
   template: `
@@ -74,6 +79,20 @@ interface UseCase {
         <mkt-feature-grid [items]="g.items" [cols]="2" />
       </mkt-section>
     }
+
+    <!-- WHAT THE SUBSCRIPTION INCLUDES -->
+    <mkt-section align="left" heading="Everything MajiFlow Cloud includes"
+      subhead="Every kit comes with the cloud free to start (3 months on Lite, 6 on Pro), then it is optional. Your site keeps running on-site without it.">
+      <div class="rounded-2xl bg-slate-50 ring-1 ring-slate-200 p-6 sm:p-8 max-w-3xl">
+        <mkt-feature-list [items]="cloudFeatures" />
+      </div>
+    </mkt-section>
+
+    <!-- ADD-ON SERVICES -->
+    <mkt-section align="left" heading="Go further with add-on services"
+      subhead="Optional services for sites that need more. Add any of them to any kit, priced separately.">
+      <mkt-addon-grid [items]="addons" />
+    </mkt-section>
 
     <!-- HARDWARE (animated showcase) -->
     <app-hardware-showcase [devices]="devices" variant="full" />
@@ -104,6 +123,8 @@ interface UseCase {
 })
 export class FeaturesComponent {
   protected readonly devices = HARDWARE_DEVICES;
+  protected readonly cloudFeatures = CLOUD_FEATURES;
+  protected readonly addons = ADDON_SERVICES;
   protected readonly ctaButtons: CtaButton[] = [
     { label: 'See what your site costs', route: '/pricing' },
     { label: 'Get started', route: '/login' },
@@ -113,7 +134,7 @@ export class FeaturesComponent {
     applyPageSeo({
       title: 'Features | water metering, monitoring and irrigation automation | MajiFlow',
       description:
-        'Meter every litre and see where your water goes by field, tank and customer. Automate pumps and valves by volume or schedule, catch leaks and losses, and run it all from anywhere.',
+        'Meter every litre and see where your water goes by field, tank and customer. Automate pumps and valves by volume or schedule, catch leaks and losses, and run it all from anywhere. Add water quality monitoring and customer billing when you need them.',
       path: 'features',
     });
   }

@@ -5,7 +5,7 @@ import { PRICING, KIT_TIERS, ADDON_SERVICES, CLOUD_FEATURES, estimate, kes, type
 import { applyPageSeo } from '../../shared/seo';
 import { MarketingNavComponent } from '../../shared/marketing/marketing-nav.component';
 import { MarketingFooterComponent } from '../../shared/marketing/marketing-footer.component';
-import { MktHeroComponent, MktPlanLevelsComponent } from '../../shared/marketing/ui';
+import { MktHeroComponent, MktPlanLevelsComponent, MktFeatureListComponent, MktAddonGridComponent } from '../../shared/marketing/ui';
 import { SystemEstimatorComponent, type SizedEstimate } from './system-estimator.component';
 
 type SubmitState = 'idle' | 'sending' | 'done' | 'error';
@@ -28,7 +28,7 @@ type Kit = 'lite' | 'pro' | 'enterprise';
 @Component({
   selector: 'app-pricing',
   standalone: true,
-  imports: [MarketingNavComponent, MarketingFooterComponent, MktHeroComponent, MktPlanLevelsComponent, SystemEstimatorComponent],
+  imports: [MarketingNavComponent, MarketingFooterComponent, MktHeroComponent, MktPlanLevelsComponent, MktFeatureListComponent, MktAddonGridComponent, SystemEstimatorComponent],
   host: { class: 'flex-1 overflow-y-auto bg-white text-slate-900' },
   template: `
     <!-- NAV -->
@@ -65,19 +65,9 @@ type Kit = 'lite' | 'pro' | 'enterprise';
             <p class="mt-2 text-3xl font-bold tabular-nums text-slate-900">{{ monthly }}<span class="text-base font-medium text-slate-500"> / site / month</span></p>
             <p class="mt-1.5 text-sm text-slate-600 leading-relaxed">Free to start with every kit (3 months on Lite, 6 on Pro), then optional. Density is free. Works on-site without it.</p>
           </div>
-          <ul class="mt-6 grid gap-x-6 gap-y-2.5 sm:grid-cols-2 max-w-3xl mx-auto text-sm">
-            @for (f of cloudFeatures; track f.label) {
-              <li class="flex gap-2.5" [class.opacity-60]="f.status === 'soon'">
-                @if (f.status === 'live') {
-                  <svg class="shrink-0 mt-0.5 text-cyan-500" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-                  <span class="text-slate-700">{{ f.label }}</span>
-                } @else {
-                  <span class="shrink-0 mt-0.5 inline-flex items-center rounded-full bg-slate-100 px-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500">Soon</span>
-                  <span class="text-slate-500">{{ f.label }}</span>
-                }
-              </li>
-            }
-          </ul>
+          <div class="mt-6 max-w-3xl mx-auto">
+            <mkt-feature-list [items]="cloudFeatures" />
+          </div>
         </div>
 
         <!-- Add-on services: available on any kit -->
@@ -86,14 +76,8 @@ type Kit = 'lite' | 'pro' | 'enterprise';
             <h3 class="text-lg font-bold tracking-tight">Add-on services, on any kit</h3>
             <p class="mt-1.5 text-sm text-slate-600 leading-relaxed">Add to any kit. Priced separately.</p>
           </div>
-          <div class="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            @for (a of addons; track a.key) {
-              <div class="rounded-2xl bg-slate-50 ring-1 ring-slate-200 p-5">
-                <h4 class="font-semibold text-slate-900">{{ a.name }}</h4>
-                <p class="mt-1 text-sm text-slate-600 leading-relaxed">{{ a.blurb }}</p>
-                <p class="mt-2 text-xs font-semibold text-cyan-700">{{ a.availability }}</p>
-              </div>
-            }
+          <div class="mt-5">
+            <mkt-addon-grid [items]="addons" />
           </div>
         </div>
       </div>
