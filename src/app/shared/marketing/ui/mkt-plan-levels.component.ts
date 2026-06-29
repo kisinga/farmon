@@ -1,5 +1,5 @@
 import { ChangeDetectionStrategy, Component, input } from '@angular/core';
-import { KIT_TIERS, kes, type KitTier } from '../../../pages/pricing/pricing.model';
+import { KIT_TIERS, PRICING, kes, type KitTier } from '../../../pages/pricing/pricing.model';
 
 /**
  * The three kit tiers (Lite / Pro / Enterprise) shown identically on the landing card
@@ -48,8 +48,7 @@ import { KIT_TIERS, kes, type KitTier } from '../../../pages/pricing/pricing.mod
       }
     </div>
     <p class="mt-5 text-center text-xs text-slate-500 leading-relaxed">
-      Every kit runs on MajiFlow Cloud: one flat monthly per site, finalized with your quote.
-      It keeps working on-site without a subscription too.
+      Each kit includes MajiFlow Cloud free to start, then an optional {{ monthly }} per site. Works on-site without it.
     </p>
   `,
 })
@@ -58,6 +57,8 @@ export class MktPlanLevelsComponent {
   readonly compact = input(false);
 
   protected readonly kits = KIT_TIERS;
+  /** The flat monthly per site, e.g. "KES 2,500". */
+  protected readonly monthly = kes(PRICING.monthlyPerSite);
 
   /** One-time price label, or "Custom" for the talk-to-us tier. */
   protected priceLabel(k: KitTier): string {

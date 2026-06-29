@@ -44,6 +44,9 @@ export const PRICING = {
   /** Extra pump relay, 30A max: switches a single-phase pump up to ~2 hp (1.5 kW)
    *  at 240V directly. Bigger motors need a contactor (custom-quoted). PLACEHOLDER. */
   extraPumpRelay: 3_000,
+  /** Flat monthly subscription per site (the constant "MajiFlow Cloud" fee), KES/site/month.
+   *  PLACEHOLDER (the current single-controller rate) until WTP-confirmed. */
+  monthlyPerSite: 2_500,
   /** Subscription: the revenue stream, and what the page leads with. Graduated
    *  per-controller monthly brackets, marginal like tax brackets, floored at the last
    *  rate. More controllers raise it; adding tanks to one controller does not (density
@@ -289,6 +292,9 @@ export interface KitTier {
   tagline: string;
   /** What the kit contains / includes. */
   contents: string[];
+  /** Months of MajiFlow Cloud included free with the kit; after this the subscription
+   *  is optional. null = negotiated (Enterprise). */
+  freeCloudMonths?: number | null;
   /** Highlight this card (the recommended tier). */
   featured?: boolean;
   /** CTA label (optional; defaults handled by the component). */
@@ -299,6 +305,7 @@ export const KIT_TIERS: KitTier[] = [
   {
     name: 'Lite',
     price: PRICING.bundle,
+    freeCloudMonths: 3,
     tagline: 'Self-install (DIY). For a simple, single-controller site.',
     contents: [
       '1 smart controller (16 relays)',
@@ -307,7 +314,7 @@ export const KIT_TIERS: KitTier[] = [
       'Includes an easy, step-by-step installation manual',
       'Cloud onboarding',
       'Limited warranty',
-      '3 months of MajiFlow Cloud included',
+      '3 months of MajiFlow Cloud free, then optional',
       'Add more valves, flow and tanks at a lower price each',
     ],
   },
@@ -315,19 +322,21 @@ export const KIT_TIERS: KitTier[] = [
     name: 'Pro',
     // Founder target price. Stated WTP is ~230k: confirm before launch.
     price: 245_000,
+    freeCloudMonths: 6,
     tagline: 'Done for you. For complex or multi-zone sites.',
     contents: [
       'Everything in Lite, professionally installed in Kenya',
       'We design your system, with 3 assisted revisions in your first month',
       'Engineer advisory for your layout',
       'Full warranty',
-      '6 months of MajiFlow Cloud included',
+      '6 months of MajiFlow Cloud free, then optional',
     ],
     featured: true,
   },
   {
     name: 'Enterprise',
     price: null,
+    freeCloudMonths: null,
     tagline: 'For operators who sell water or run many sites.',
     contents: [
       'Everything in Pro',
@@ -357,6 +366,20 @@ export const ADDON_SERVICES: AddonService[] = [
   { key: 'billing', name: 'Tenant and customer billing', blurb: 'Bill tenants or customers for the water they use.', availability: 'Coming soon' },
   { key: 'metering', name: 'Metering and protection', blurb: 'Sell water by volume, with shrinkage and tamper protection.', availability: 'Coming soon' },
   { key: 'reports', name: 'Advanced reports and export', blurb: 'Deeper analytics and data export.', availability: 'Coming soon' },
+];
+
+/** What the flat monthly (MajiFlow Cloud) includes, the same on every kit. Shown on the
+ *  pricing/landing pages. `status: 'soon'` renders muted, never as a working feature.
+ *  Mirrors the live platform (and the backend CoreCapabilities contract). */
+export const CLOUD_FEATURES: PlanFeature[] = [
+  { label: 'Live dashboard: tanks, flow, pumps and valves', status: 'live' },
+  { label: 'Remote pump and valve control', status: 'live' },
+  { label: 'Schedules and level-based automations', status: 'live' },
+  { label: 'In-app and email alerts, with tank thresholds', status: 'live' },
+  { label: 'WhatsApp and SMS alerts', status: 'soon' },
+  { label: 'One dashboard across all your sites, shared access', status: 'live' },
+  { label: 'Usage history', status: 'live' },
+  { label: 'Pump safety and offline local control', status: 'live' },
 ];
 
 /** The biggest per-controller saving versus the first-controller (Lite) rate, as a

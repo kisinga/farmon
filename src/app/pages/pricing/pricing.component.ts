@@ -1,7 +1,7 @@
 import { Component, computed, inject, signal, type WritableSignal } from '@angular/core';
 import type { SiteTopology, EasyModeProfile } from '@core';
 import { BackendService } from '../../core/services/backend.service';
-import { PRICING, KIT_TIERS, ADDON_SERVICES, estimate, kes, type EstimateInput, type Segment } from './pricing.model';
+import { PRICING, KIT_TIERS, ADDON_SERVICES, CLOUD_FEATURES, estimate, kes, type EstimateInput, type Segment } from './pricing.model';
 import { applyPageSeo } from '../../shared/seo';
 import { MarketingNavComponent } from '../../shared/marketing/marketing-nav.component';
 import { MarketingFooterComponent } from '../../shared/marketing/marketing-footer.component';
@@ -38,10 +38,9 @@ type Kit = 'lite' | 'pro' | 'enterprise';
     <mkt-hero size="md">
       <h1 class="mkt-h1 text-3xl sm:text-5xl">What will it cost?</h1>
       <p class="mt-4 text-white/70 max-w-2xl mx-auto text-sm sm:text-lg leading-relaxed">
-        No mystery pricing. Pick a kit you buy once: Lite, Pro or Enterprise. Each runs on the
-        same flat monthly per site, finalized with your quote.
+        Buy a kit once: Lite, Pro or Enterprise. Cloud is free to start, then an optional {{ monthly }} per site.
       </p>
-      <p class="mt-3 text-xs text-cyan-200/80">Not sure which kit? Describe your site below and we'll point you to the right one.</p>
+      <p class="mt-3 text-xs text-cyan-200/80">Not sure which? Describe your site below.</p>
     </mkt-hero>
 
     <!-- KIT TIERS + ADD-ON SERVICES -->
@@ -58,13 +57,34 @@ type Kit = 'lite' | 'pro' | 'enterprise';
           <mkt-plan-levels />
         </div>
 
+        <!-- The monthly: MajiFlow Cloud, the same on every kit. Present and explained,
+             but calm: the kit prices above carry the headline, not this. -->
+        <div class="mt-12 rounded-2xl bg-slate-50 ring-1 ring-slate-200 p-6 sm:p-8">
+          <div class="max-w-2xl mx-auto text-center">
+            <h3 class="text-lg font-bold tracking-tight">MajiFlow Cloud <span class="font-normal text-slate-400">(optional)</span></h3>
+            <p class="mt-2 text-3xl font-bold tabular-nums text-slate-900">{{ monthly }}<span class="text-base font-medium text-slate-500"> / site / month</span></p>
+            <p class="mt-1.5 text-sm text-slate-600 leading-relaxed">Free to start with every kit (3 months on Lite, 6 on Pro), then optional. Density is free. Works on-site without it.</p>
+          </div>
+          <ul class="mt-6 grid gap-x-6 gap-y-2.5 sm:grid-cols-2 max-w-3xl mx-auto text-sm">
+            @for (f of cloudFeatures; track f.label) {
+              <li class="flex gap-2.5" [class.opacity-60]="f.status === 'soon'">
+                @if (f.status === 'live') {
+                  <svg class="shrink-0 mt-0.5 text-cyan-500" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                  <span class="text-slate-700">{{ f.label }}</span>
+                } @else {
+                  <span class="shrink-0 mt-0.5 inline-flex items-center rounded-full bg-slate-100 px-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500">Soon</span>
+                  <span class="text-slate-500">{{ f.label }}</span>
+                }
+              </li>
+            }
+          </ul>
+        </div>
+
         <!-- Add-on services: available on any kit -->
         <div class="mt-12">
           <div class="text-center max-w-2xl mx-auto">
             <h3 class="text-lg font-bold tracking-tight">Add-on services, on any kit</h3>
-            <p class="mt-1.5 text-sm text-slate-600 leading-relaxed">
-              Add these to Lite, Pro or Enterprise. Priced separately from the kit and the monthly.
-            </p>
+            <p class="mt-1.5 text-sm text-slate-600 leading-relaxed">Add to any kit. Priced separately.</p>
           </div>
           <div class="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             @for (a of addons; track a.key) {
@@ -84,7 +104,7 @@ type Kit = 'lite' | 'pro' | 'enterprise';
       <div class="max-w-5xl mx-auto">
         <div class="text-center max-w-2xl mx-auto">
           <h2 class="text-2xl font-bold tracking-tight">Get started</h2>
-          <p class="mt-3 text-sm text-slate-600 leading-relaxed">Pick how you'd like to go, and we'll take it from there.</p>
+          <p class="mt-3 text-sm text-slate-600 leading-relaxed">Pick how you want to go.</p>
         </div>
 
         <!-- Kit selector -->
@@ -105,8 +125,7 @@ type Kit = 'lite' | 'pro' | 'enterprise';
               <div class="rounded-2xl bg-slate-50 ring-1 ring-slate-200 p-6">
                 <h3 class="font-semibold text-slate-900">Tell us about your operation</h3>
                 <p class="mt-1 text-sm text-slate-600 leading-relaxed">
-                  Enterprise is tailored to you: multiple sites, water-quality monitoring, an uptime
-                  SLA and priority support. Share a few details below and we'll scope and price it with you.
+                  Tailored to you: many sites, water quality, SLA, priority support. Tell us below and we'll scope it.
                 </p>
               </div>
             } @else {
@@ -159,10 +178,9 @@ type Kit = 'lite' | 'pro' | 'enterprise';
                   <label class="flex items-start gap-3 rounded-2xl bg-slate-50 ring-1 ring-slate-200 p-5 cursor-pointer">
                     <input type="checkbox" [checked]="spread()" (change)="spread.set(isChecked($event))" class="mt-1 w-4 h-4 accent-cyan-500" />
                     <span>
-                      <span class="font-semibold text-slate-900">Is your gear spread out, more than ~100m apart?</span>
+                      <span class="font-semibold text-slate-900">Gear spread more than ~100m apart?</span>
                       <span class="block mt-1 text-sm text-slate-600 leading-relaxed">
-                        Close together, one controller runs the lot and extra tanks ride a metering hub. Spread
-                        out, we drop in another controller near the far cluster instead of running a long wire.
+                        Far-apart gear gets its own controller instead of one long wire.
                       </span>
                     </span>
                   </label>
@@ -172,8 +190,7 @@ type Kit = 'lite' | 'pro' | 'enterprise';
                     <span>
                       <span class="font-semibold text-slate-900">Any pipe bigger than 3/4 inch (20 mm)?</span>
                       <span class="block mt-1 text-sm text-slate-600 leading-relaxed">
-                        Larger valves and meters are priced per quote. We confirm those and credit the
-                        standard part, so the figure here covers standard sizes only.
+                        Big valves and meters are quoted separately.
                       </span>
                     </span>
                   </label>
@@ -183,8 +200,7 @@ type Kit = 'lite' | 'pro' | 'enterprise';
                     <span>
                       <span class="font-semibold text-slate-900">Are your pumps 3-phase?</span>
                       <span class="block mt-1 text-sm text-slate-600 leading-relaxed">
-                        3-phase pumps run through their own inverter over a data link, so they add no relay
-                        cost and handle any size. We don't yet support every inverter brand, so we confirm yours.
+                        They run via their own inverter, no relay needed. We confirm your brand.
                       </span>
                     </span>
                   </label>
@@ -195,8 +211,7 @@ type Kit = 'lite' | 'pro' | 'enterprise';
                       <span>
                         <span class="font-semibold text-slate-900">Any pump bigger than 2 hp?</span>
                         <span class="block mt-1 text-sm text-slate-600 leading-relaxed">
-                          The standard 30A relay switches a single-phase pump up to about 2 hp (1.5 kW). A
-                          bigger motor needs a contactor, which we add and price per quote.
+                          Over about 2 hp needs a contactor, quoted separately.
                         </span>
                       </span>
                     </label>
@@ -208,7 +223,7 @@ type Kit = 'lite' | 'pro' | 'enterprise';
             <!-- Add-on services: selectable on ANY kit -->
             <div class="rounded-2xl bg-slate-50 ring-1 ring-slate-200 p-5">
               <h3 class="font-semibold text-slate-900">Add-on services <span class="font-normal text-slate-400">(optional)</span></h3>
-              <p class="mt-1 text-sm text-slate-600 leading-relaxed">Available on any kit. Tick any you're interested in and we'll include them in your quote.</p>
+              <p class="mt-1 text-sm text-slate-600 leading-relaxed">On any kit. Tick what interests you.</p>
               <div class="mt-3 grid gap-2 sm:grid-cols-2">
                 @for (a of addons; track a.key) {
                   <label class="flex items-start gap-2.5 rounded-xl bg-white ring-1 ring-slate-200 p-3 cursor-pointer hover:ring-cyan-400 transition-colors">
@@ -246,9 +261,7 @@ type Kit = 'lite' | 'pro' | 'enterprise';
                         </ul>
                       </div>
                     }
-                    <p class="mt-4 text-xs text-white/45 leading-relaxed">
-                      Plus a flat monthly per site, finalized with your quote. On-site it keeps working without a subscription.
-                    </p>
+                    <p class="mt-4 text-xs text-white/45 leading-relaxed">Includes {{ freeMonths('lite') }} months of Cloud, then an optional {{ monthly }} per site. Works on-site without it.</p>
                     <button type="button" (click)="scrollToContact()" class="mt-5 w-full rounded-full px-4 py-3 text-sm font-semibold bg-cyan-400 text-slate-950 hover:bg-cyan-300 transition-colors">
                       Get the Lite kit
                     </button>
@@ -280,9 +293,7 @@ type Kit = 'lite' | 'pro' | 'enterprise';
                       </ul>
                     </div>
                   }
-                  <p class="mt-4 text-xs text-white/45 leading-relaxed">
-                    Plus a flat monthly per site, finalized with your quote. We confirm the design, hardware and price with you before anything is built.
-                  </p>
+                  <p class="mt-4 text-xs text-white/45 leading-relaxed">Includes {{ freeMonths('pro') }} months of Cloud, then an optional {{ monthly }} per site. We confirm everything before building.</p>
                   <button type="button" (click)="scrollToContact()" class="mt-5 w-full rounded-full px-4 py-3 text-sm font-semibold bg-cyan-400 text-slate-950 hover:bg-cyan-300 transition-colors">
                     Request a call
                   </button>
@@ -304,9 +315,7 @@ type Kit = 'lite' | 'pro' | 'enterprise';
                 }
               }
 
-              <p class="mt-4 text-[11px] text-white/40 leading-relaxed">
-                An estimate, not a final quote. The real figures depend on a site survey, pipe sizes and install. Prices in KES.
-              </p>
+              <p class="mt-4 text-[11px] text-white/40 leading-relaxed">An estimate. Final figures come with your site survey. Prices in KES.</p>
             </div>
           </div>
         </div>
@@ -326,9 +335,7 @@ type Kit = 'lite' | 'pro' | 'enterprise';
           </div>
         } @else {
           <h2 class="text-xl font-bold tracking-tight">{{ leadHeading() }}</h2>
-          <p class="mt-1.5 text-sm text-slate-600 leading-relaxed">
-            Leave your details and we'll follow up. We only use them to contact you about this, and we won't share them.
-          </p>
+          <p class="mt-1.5 text-sm text-slate-600 leading-relaxed">Leave your details and we'll follow up. We won't share them.</p>
 
           <div class="mt-5 grid gap-4 sm:grid-cols-2">
             <label class="block sm:col-span-2">
@@ -385,6 +392,9 @@ export class PricingComponent {
   private readonly backend = inject(BackendService);
   protected readonly caps = PRICING.caps;
   protected readonly addons = ADDON_SERVICES;
+  protected readonly cloudFeatures = CLOUD_FEATURES;
+  /** The flat monthly per site, e.g. "KES 2,500". */
+  protected readonly monthly = kes(PRICING.monthlyPerSite);
 
   constructor() {
     applyPageSeo({
@@ -412,6 +422,12 @@ export class PricingComponent {
   protected kitPriceLabel(key: Kit): string {
     const t = KIT_TIERS.find((k) => k.name.toLowerCase() === key);
     return t && t.price !== null ? kes(t.price) : 'Custom';
+  }
+
+  /** Months of free MajiFlow Cloud included with a kit (from KIT_TIERS). */
+  protected freeMonths(key: Kit): number | null {
+    const t = KIT_TIERS.find((k) => k.name.toLowerCase() === key);
+    return t?.freeCloudMonths ?? null;
   }
 
   /** The lead intent implied by the selected kit. */
@@ -452,10 +468,10 @@ export class PricingComponent {
   ] as const;
 
   protected readonly questions = [
-    { key: 'pumps', title: 'Pumps to switch', help: 'Pumps the system turns on and off. Most sites have one.', sig: this.pumps },
-    { key: 'valves', title: 'Water lines to control', help: 'Valves that open and close on their own, like zones, outlets and fill lines.', sig: this.valves },
-    { key: 'flow', title: 'Points to measure flow', help: 'Where you want to see how much water is moving.', sig: this.flow },
-    { key: 'tanks', title: 'Tanks to monitor', help: 'Tanks whose level you want to watch. No hard limit; extra tanks ride a metering hub.', sig: this.tanks },
+    { key: 'pumps', title: 'Pumps to switch', help: 'Pumps turned on and off.', sig: this.pumps },
+    { key: 'valves', title: 'Water lines to control', help: 'Auto valves: zones, outlets, fill lines.', sig: this.valves },
+    { key: 'flow', title: 'Points to measure flow', help: 'Where to measure water flow.', sig: this.flow },
+    { key: 'tanks', title: 'Tanks to monitor', help: 'Tanks to watch the level of.', sig: this.tanks },
   ] as const;
 
   protected readonly est = computed(() =>
