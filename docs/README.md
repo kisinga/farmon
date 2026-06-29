@@ -20,8 +20,3 @@ You're changing the codegen, adding a board, writing a driver.
 ## Installer / operator docs
 
 Wiring, operation, calibration, troubleshooting and per-node notes are in [`docs-content/`](../docs-content/) (see its [README](../docs-content/README.md) for the import flow). The canonical glossary is [docs-content/glossary.md](../docs-content/glossary.md) — used by the UI, the codebase, and every other doc.
-
-## Business — strategy, IP
-
-- [MARKET_ANALYSIS.md](MARKET_ANALYSIS.md)
-- [PATENT_RESEARCH.md](PATENT_RESEARCH.md)

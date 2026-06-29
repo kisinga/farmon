@@ -35,13 +35,15 @@ export const PRICING = {
   meteringHub: 10_000,
   /** Monitored paths added per metering hub. */
   hubPaths: 8,
-  /** Each extra standard (≤3/4") peripheral on the same controller. */
-  extraValve: 4_000,
-  extraFlow: 4_000,
-  extraTank: 5_000,
+  /** Each extra standard (≤3/4") peripheral on the same controller. Kept low so
+   *  growing a site is friendly: the monthly never rises for density, and adding gear
+   *  should not feel punished either. */
+  extraValve: 3_000,
+  extraFlow: 3_000,
+  extraTank: 3_500,
   /** Extra pump relay, 30A max: switches a single-phase pump up to ~2 hp (1.5 kW)
    *  at 240V directly. Bigger motors need a contactor (custom-quoted). PLACEHOLDER. */
-  extraPumpRelay: 4_000,
+  extraPumpRelay: 3_000,
   /** Subscription: the revenue stream, and what the page leads with. Graduated
    *  per-controller monthly brackets, marginal like tax brackets, floored at the last
    *  rate. More controllers raise it; adding tanks to one controller does not (density
@@ -59,6 +61,12 @@ export const PRICING = {
    *  Pumps and valves compete for the same 16 relays — more pumps, fewer valves. */
   relays: { total: 16, perPump: 1, perValve: 2 },
 } as const;
+
+/** PRICING keys whose value is still a PLACEHOLDER (unconfirmed — see the field docs).
+ *  Lines built from these render as "priced in your quote", never as a firm figure, and
+ *  are excluded from the confirmed one-time subtotal, so the estimate never presents an
+ *  unconfirmed number as final. Delete a key here the moment its price is confirmed. */
+export const PROVISIONAL_PRICES: ReadonlySet<keyof typeof PRICING> = new Set(['node', 'meteringHub', 'extraPumpRelay']);
 
 /** A site's type. Drives the dashboard skin and which pack is pitched — never a
  *  feature gate. Kept identical to the backend `sites.segment` enum and
@@ -99,6 +107,9 @@ export interface EstimateLine {
   qty: number;
   unit: number;
   total: number;
+  /** Built from a still-unconfirmed PLACEHOLDER price (see PROVISIONAL_PRICES): shown
+   *  as "priced in your quote", never as a firm figure. */
+  provisional?: boolean;
 }
 
 /** Plan name, derived from controller count. */
@@ -109,8 +120,14 @@ export interface Estimate {
   nodes: number;
   hubs: number;
   lines: EstimateLine[];
-  /** One-time hardware (the subsidised wedge, near cost). */
+  /** One-time hardware (the subsidised wedge, near cost). Best-estimate sum incl.
+   *  provisional lines; for internal/lead use. Display uses oneTimeConfirmed when
+   *  oneTimeProvisional is true. */
   oneTime: number;
+  /** One-time total from CONFIRMED lines only (excludes provisional PLACEHOLDER lines). */
+  oneTimeConfirmed: number;
+  /** True when any line is built from an unconfirmed PLACEHOLDER price. */
+  oneTimeProvisional: boolean;
   /** The subscription, per month (the revenue stream — the headline). */
   monthly: number;
   /** Plan name for this controller count. */
@@ -205,14 +222,19 @@ export function estimate(raw: EstimateInput): Estimate {
   const lines: EstimateLine[] = [
     { label: 'Controller bundle', qty: 1, unit: bundle, total: bundle },
   ];
-  if (nodes > 0) lines.push({ label: 'Extra controllers', qty: nodes, unit: node, total: nodes * node });
-  if (extraPumps && pumpUnit > 0) lines.push({ label: 'Extra pump relays (30A max)', qty: extraPumps, unit: pumpUnit, total: extraPumps * pumpUnit });
+  if (nodes > 0) lines.push({ label: 'Extra controllers', qty: nodes, unit: node, total: nodes * node, provisional: PROVISIONAL_PRICES.has('node') });
+  if (extraPumps && pumpUnit > 0) lines.push({ label: 'Extra pump relays (30A max)', qty: extraPumps, unit: pumpUnit, total: extraPumps * pumpUnit, provisional: PROVISIONAL_PRICES.has('extraPumpRelay') });
   if (extraValves) lines.push({ label: 'Extra valves', qty: extraValves, unit: extraValve, total: extraValves * extraValve });
   if (extraFlows) lines.push({ label: 'Extra flow sensors', qty: extraFlows, unit: extraFlow, total: extraFlows * extraFlow });
   if (extraTanks) lines.push({ label: 'Extra tank monitors', qty: extraTanks, unit: extraTank, total: extraTanks * extraTank });
-  if (hubs) lines.push({ label: `Metering hubs (+${hubPaths} paths each)`, qty: hubs, unit: meteringHub, total: hubs * meteringHub });
+  if (hubs) lines.push({ label: `Metering hubs (+${hubPaths} paths each)`, qty: hubs, unit: meteringHub, total: hubs * meteringHub, provisional: PROVISIONAL_PRICES.has('meteringHub') });
 
+  // The one-time figure is an estimate; lines built from still-unconfirmed PLACEHOLDER
+  // prices are kept out of the confirmed subtotal and shown as "priced in your quote",
+  // so the page never prints an unconfirmed number as final.
   const oneTime = lines.reduce((sum, l) => sum + l.total, 0);
+  const oneTimeConfirmed = lines.reduce((sum, l) => sum + (l.provisional ? 0 : l.total), 0);
+  const oneTimeProvisional = lines.some((l) => l.provisional);
 
   const brainWord = controllers === 1 ? '1 controller' : `${controllers} controllers`;
   const hubWord = hubs > 0 ? ` + ${hubs} metering hub${hubs > 1 ? 's' : ''}` : '';
@@ -223,6 +245,8 @@ export function estimate(raw: EstimateInput): Estimate {
     hubs,
     lines,
     oneTime,
+    oneTimeConfirmed,
+    oneTimeProvisional,
     monthly: subscriptionMonthly(controllers),
     tier: tierName(controllers),
     pack: SEGMENT_PACKS[raw.segment],
@@ -238,19 +262,16 @@ export function kes(n: number): string {
 }
 
 // ----------------------------------------------------------------------------
-// Plan levels (display only — NOT enforced)
+// Kit tiers (display only)
 //
-// A separate axis from the Lite/Plus/Pro/Scale brackets above. Those brackets are
-// the *volume discount* on one subscription (more controllers, less each). These
-// three LEVELS describe what the platform does at different stages of a site:
-//   - Base    — every site gets this (mirrors the backend CoreCapabilities). All live.
-//   - Scale   — only meaningful once a site spans several controllers.
-//   - Enterprise — add-on packs and commercial promises; sold "talk to us".
-//
-// `status: 'soon'` marks a feature that is NOT built yet. The UI must render it as
-// "coming soon" and never as a working, checked feature. This is the one rule that
-// keeps the page honest — see entitlements.go for where enforcement will eventually
-// live (Can() is not wired today, so nothing here gates anything).
+// The three one-time kits shown on the landing and pricing pages: Lite / Pro /
+// Enterprise. Each carries a clear one-time price and what it contains. The monthly
+// is a single flat fee per site (constant, finalized per quote) and is deliberately
+// de-emphasized: it is not tier-specific, so the kits carry the headline, not the
+// subscription.
+//   Lite       : self-install, simple single-controller site, limited warranty.
+//   Pro        : done-for-you install + design + advisory, full warranty.
+//   Enterprise : many sites / sells water / water-quality / SLA, custom-priced.
 // ----------------------------------------------------------------------------
 
 /** A single feature row under a plan level. `soon` = announced but not built. */
@@ -259,56 +280,83 @@ export interface PlanFeature {
   status: 'live' | 'soon';
 }
 
-/** One of the three feature levels shown on the landing and pricing pages. */
-export interface PlanLevel {
+/** One of the three kit tiers shown on the landing and pricing pages. */
+export interface KitTier {
   name: string;
-  /** One line on who it's for / when it starts to matter. */
+  /** One-time kit price in KES, or null for "custom / talk to us". */
+  price: number | null;
+  /** One line on who it is for. */
   tagline: string;
-  /** How this level is priced, in plain words (no hard number where there isn't one). */
-  price: string;
-  features: PlanFeature[];
+  /** What the kit contains / includes. */
+  contents: string[];
+  /** Highlight this card (the recommended tier). */
+  featured?: boolean;
+  /** CTA label (optional; defaults handled by the component). */
+  cta?: string;
 }
 
-export const PLAN_LEVELS: PlanLevel[] = [
+export const KIT_TIERS: KitTier[] = [
   {
-    name: 'Base',
-    tagline: 'Every site, any size. Everything you need to run one place well.',
-    price: 'Per controller, monthly',
-    features: [
-      { label: 'Live dashboard: tanks, flow, pumps and valves', status: 'live' },
-      { label: 'Remote pump and valve control', status: 'live' },
-      { label: 'Schedules and level-based automations', status: 'live' },
-      { label: 'In-app and email alerts, with tank thresholds', status: 'live' },
-      { label: 'Usage history (about 30 days)', status: 'live' },
-      { label: 'Pump safety and offline local control', status: 'live' },
-      { label: 'Phone and laptop access', status: 'live' },
+    name: 'Lite',
+    price: PRICING.bundle,
+    tagline: 'Self-install (DIY). For a simple, single-controller site.',
+    contents: [
+      '1 smart controller (16 relays)',
+      'Pump relay, motorised valve, flow meter and tank-level sensor',
+      'DIY: you install it yourself, no technician needed',
+      'Includes an easy, step-by-step installation manual',
+      'Cloud onboarding',
+      'Limited warranty',
+      '3 months of MajiFlow Cloud included',
+      'Add more valves, flow and tanks at a lower price each',
     ],
   },
   {
-    name: 'Scale',
-    tagline: 'For sites that grow onto several controllers.',
-    price: 'Lower rate per controller as you add more',
-    features: [
-      { label: 'All of Base', status: 'live' },
-      { label: 'One dashboard across all your sites', status: 'live' },
-      { label: 'More team members and shared site access', status: 'live' },
-      { label: 'Cross-site analytics and trends', status: 'soon' },
-      { label: 'Longer usage history', status: 'soon' },
+    name: 'Pro',
+    // Founder target price. Stated WTP is ~230k: confirm before launch.
+    price: 245_000,
+    tagline: 'Done for you. For complex or multi-zone sites.',
+    contents: [
+      'Everything in Lite, professionally installed in Kenya',
+      'We design your system, with 3 assisted revisions in your first month',
+      'Engineer advisory for your layout',
+      'Full warranty',
+      '6 months of MajiFlow Cloud included',
     ],
+    featured: true,
   },
   {
     name: 'Enterprise',
-    tagline: 'For operators who sell water or run many sites. Talk to us.',
-    price: 'Custom, contact us',
-    features: [
-      { label: 'All of Scale', status: 'live' },
-      { label: 'Uptime SLA', status: 'live' },
-      { label: 'Priority support', status: 'live' },
-      { label: 'WhatsApp alerts', status: 'soon' },
-      { label: 'Bill your own customers, mass email', status: 'soon' },
-      { label: 'Advanced reports and export', status: 'soon' },
+    price: null,
+    tagline: 'For operators who sell water or run many sites.',
+    contents: [
+      'Everything in Pro',
+      'Multiple sites on one dashboard',
+      'Uptime SLA and priority support',
+      'Dedicated onboarding and account management',
+      'Any add-on service, set up for you',
+      'Custom pricing',
     ],
+    cta: 'Talk to us',
   },
+];
+
+/** An add-on service available on ANY kit (Lite, Pro or Enterprise), billed separately
+ *  from the kit and the flat monthly. These are orthogonal to the tier, not gated to it. */
+export interface AddonService {
+  /** Stable key carried in the lead payload. */
+  key: string;
+  name: string;
+  blurb: string;
+  /** Availability / price label, plain words. */
+  availability: string;
+}
+
+export const ADDON_SERVICES: AddonService[] = [
+  { key: 'water_quality', name: 'Water quality monitoring', blurb: 'pH, EC, turbidity and more, with managed probe maintenance.', availability: 'On request' },
+  { key: 'billing', name: 'Tenant and customer billing', blurb: 'Bill tenants or customers for the water they use.', availability: 'Coming soon' },
+  { key: 'metering', name: 'Metering and protection', blurb: 'Sell water by volume, with shrinkage and tamper protection.', availability: 'Coming soon' },
+  { key: 'reports', name: 'Advanced reports and export', blurb: 'Deeper analytics and data export.', availability: 'Coming soon' },
 ];
 
 /** The biggest per-controller saving versus the first-controller (Lite) rate, as a

@@ -26,18 +26,18 @@ export interface QuoteInput {
 function priceSection(e: Estimate): string {
   const rows = e.lines.map(l =>
     `<tr><td>${escXml(l.label)}${l.qty > 1 ? ` <span style="color:var(--text-muted)">× ${l.qty}</span>` : ''}</td>`
-    + `<td style="text-align:right">${escXml(kes(l.total))}</td></tr>`,
+    + `<td style="text-align:right">${l.provisional ? '<span style="color:var(--text-muted)">priced in your quote</span>' : escXml(kes(l.total))}</td></tr>`,
   ).join('');
-  const pack = e.pack.fromMonthly != null ? `from ${kes(e.pack.fromMonthly)} / mo` : 'on request';
+  const pack = e.pack.fromMonthly != null ? `from ${kes(e.pack.fromMonthly)} / mo` : 'available later';
   return `<h2>Quote</h2>
 <div class="pills">
-  <span class="pill">${escXml(kes(e.monthly))} / month · ${escXml(e.tier)} plan</span>
   <span class="pill">${e.controllers} controller${e.controllers > 1 ? 's' : ''}</span>
-  <span class="pill">${escXml(e.pack.label)} pack · ${escXml(pack)}</span>
+  <span class="pill">${escXml(e.pack.label)} add-on · ${escXml(pack)}</span>
+  <span class="pill">Plus a flat monthly per site, finalized in your quote</span>
 </div>
-<h3>One-time kit</h3>
+<h3>Your kit (one-time)</h3>
 <table><thead><tr><th>Item</th><th style="text-align:right">Price</th></tr></thead>
-<tbody>${rows}<tr><td><strong>Total one-time</strong></td><td style="text-align:right"><strong>${escXml(kes(e.oneTime))}</strong></td></tr></tbody></table>
+<tbody>${rows}<tr><td><strong>Total one-time</strong></td><td style="text-align:right"><strong>${escXml(e.oneTimeProvisional ? 'from ' + kes(e.oneTimeConfirmed) : kes(e.oneTime))}</strong></td></tr></tbody></table>
 <p style="color:var(--text-muted)">An estimate, not a final quote. The real price depends on a site survey, pipe sizes, and install. Prices in KES.</p>`;
 }
 
