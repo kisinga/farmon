@@ -258,12 +258,12 @@ export class LandingComponent {
     { title: 'Know your usage', body: '"Field A used 10,300 litres this week" turns guesswork into numbers you can plan around and cut.' },
     { title: 'Take action from your phone', body: 'Reservoir down to 8%? Switch on the borehole pump from your phone. No need to drive out to the farm.' },
     { title: 'Let the routine run itself', body: 'Water the field at 6 AM on Mondays, or whenever the tank drops below 30%. Set it once and forget it.' },
-    { title: 'Pump on sun, not diesel', body: 'Solar-run sites water the land on clean power and cut fuel, cost and carbon.' },
+    { title: 'Know before the tank runs dry', body: 'A low tank warns you in advance, so apartments, hotels and any site that runs on water are never caught off guard. You hear about it first, not your tenants or guests.' },
   ];
 
   protected readonly verticals: Vertical[] = [
     { title: 'Farms', body: 'Automatic irrigation and remote pump control, so every drop reaches the crop, on small plots and large commercial farms alike.' },
-    { title: 'Hotels and lodges', body: 'Balanced tanks, steady water pressure, and early leak warnings for guest sites.' },
+    { title: 'Hotels, lodges and apartments', body: 'Steady pressure and balanced tanks for guests and tenants, with a warning before a tank runs low, so no block or room is left without water.' },
     { title: 'Greenhouses', body: 'Automatic feeding and dosing, with watering that follows the weather so plants get just what they need.' },
     { title: 'Remote sites', body: 'Solar-powered monitoring for boreholes, dams, and places with no grid power, and it keeps boreholes from being over-pumped.' },
   ];
