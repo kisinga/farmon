@@ -224,7 +224,7 @@ export class SitePanelComponent {
     event.stopPropagation();
     const confirmed = await this.confirmService.confirm({
       title: 'Delete Controller',
-      message: `Delete "${friendlyName}"? All pipes to/from this controller will also be removed.`,
+      message: `Delete "${friendlyName}"? All pipes to/from this controller will also be removed. If it was deployed as a device, it will be deregistered (reversible from the Devices page).`,
       confirmLabel: 'Delete',
       variant: 'error',
     });

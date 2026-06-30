@@ -369,8 +369,9 @@ export class BackendService {
   //
   // Controllers live inside `sites.draft_topology`. `systemCreateBlank` mints a
   // Controller that the workspace appends to the topology and persists via
-  // `siteSave`; `systemDelete` is a no-op server-side because the subsequent
-  // topology save records the removal.
+  // `siteSave`. The topology removal itself is recorded by the subsequent
+  // `siteSave`; `systemDelete` additionally deregisters the controller's
+  // provisioned device row (minted at /provision) so it doesn't outlive the design.
 
   async systemCreateBlank(
     _siteId: string,
@@ -384,8 +385,21 @@ export class BackendService {
     };
   }
 
-  async systemDelete(_siteId: string, _systemId: string): Promise<void> {
-    // Removal is persisted by the workspace's subsequent siteSave().
+  async systemDelete(_siteId: string, systemId: string): Promise<void> {
+    // The topology removal is persisted by the workspace's subsequent siteSave().
+    // Here we also deregister the controller's provisioned device (the `controllers`
+    // registry row) so it doesn't outlive the design — otherwise it lingers as a
+    // ghost on the Devices fleet, keeps consuming a hosting-cap slot, and the broker
+    // keeps accepting it. Deregister (not delete): the row, history and secrets are
+    // kept and reactivatable from the Devices page. The editor is admin-only, so the
+    // admin-only `controllers` update rule is satisfied by the SDK call directly.
+    try {
+      await this.deviceDeregister(systemId);
+    } catch (err) {
+      // A never-provisioned (design-only) controller has no registry row (404) —
+      // nothing to deregister. Re-throw anything else so a real failure surfaces.
+      if ((err as { status?: number })?.status !== 404) throw err;
+    }
   }
 
   // --- Boards (DB catalog) ------------------------------------------------
