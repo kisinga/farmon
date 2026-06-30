@@ -35,6 +35,17 @@ function cppFloatLiteral(v: number): string {
 }
 
 /**
+ * The sensor full-scale output voltage assumed when `v_max` is left unset: the
+ * sensor swings the board's whole analog input range. This is the SINGLE source
+ * for that assumption — both the codegen voltage→pressure map and the editor's
+ * blank-field placeholder resolve through it, so the default the UI advertises can
+ * never disagree with the slope codegen actually bakes.
+ */
+export function defaultSensorVMaxV(boardAdcRangeV: number): number {
+  return boardAdcRangeV > 0 ? boardAdcRangeV : ADC_PIN_REF_V;
+}
+
+/**
  * The pin voltages at the sensor's output extremes — the two anchors the codegen
  * bakes into the linear voltage→pressure map. The board maps its input range onto
  * ADC_PIN_REF_V, so a sensor output of `v` lands at `v * ADC_PIN_REF_V / range` at
@@ -42,7 +53,7 @@ function cppFloatLiteral(v: number): string {
  * non-zero `vMin` handles offset sensors (e.g. 0.5-4.5V ratiometric).
  */
 function adcPinAnchors(boardAdcRangeV: number, vMin: number, vMax?: number | null): { lo: number; hi: number } {
-  const range = boardAdcRangeV > 0 ? boardAdcRangeV : ADC_PIN_REF_V;
+  const range = defaultSensorVMaxV(boardAdcRangeV);
   const k = ADC_PIN_REF_V / range;
   return { lo: vMin * k, hi: (vMax ?? range) * k };
 }

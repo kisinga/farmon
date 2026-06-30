@@ -207,6 +207,7 @@ export {
   evaluatePressureSensorLowResolution,
   evaluatePressureSensorOverRange,
   ADC_PIN_REF_V,
+  defaultSensorVMaxV,
 } from './pressure-sensor-shared';
 export type { PressureSensorConfig, PressureSensorCodegenIds, PressureSensorHaNames, PressureValidationIssue } from './pressure-sensor-shared';
 

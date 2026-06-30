@@ -2,7 +2,7 @@ import { Component, inject, input, output, signal, computed } from '@angular/cor
 import { FormsModule } from '@angular/forms';
 import { SystemEditorService } from '../../../core/services/system-editor.service';
 import { WorkspaceService } from '../../../core/services/workspace.service';
-import type { PinCap, FieldDef } from '@core';
+import { defaultSensorVMaxV, type PinCap, type FieldDef } from '@core';
 import type { TopologyNode } from '../../../core/models/topology.model';
 import type { NodeDescriptor } from '../../../core/models/entities.model';
 import { ZodFieldDirective } from '../../../core/utils/field-validation';
@@ -114,9 +114,9 @@ import { TankCalibrationVisualComponent } from '../../../shared/tank-calibration
                 [fieldKey]="field.key"
                 type="number"
                 inputClass="w-full font-mono"
-                [placeholder]="field.placeholder"
+                [placeholder]="numberPlaceholder($any(node()), field)"
                 [min]="0"
-                [value]="prefillValue($any(node()), field.key)"
+                [value]="$any(node())[field.key]"
                 (valueChange)="updateField.emit({ nodeId: node().id, field: field.key, value: $event })" />
             } @else if (field.type === 'select') {
               <select class="select select-xs select-bordered w-full font-mono"
@@ -338,16 +338,17 @@ export class NodePropertiesComponent {
       && NodePropertiesComponent.TANK_VISUAL_FIELDS.has(key);
   }
 
-  /** The value shown in a number field — the node's own value, or a sensible
-   *  prefill so the field is never blank. Sensor voltage defaults: 0 at empty,
-   *  the board's analog input range at full (the "sensor swings the whole input"
-   *  assumption). The prefill is display-only; codegen uses the same defaults. */
-  protected prefillValue(node: Record<string, unknown>, key: string): unknown {
-    const v = node[key];
-    if (v !== undefined && v !== null && v !== '') return v;
-    if (key === 'pressure_v_min') return 0;
-    if (key === 'pressure_v_max') return this.boardAdcRangeForNode(node);
-    return v;
+  /** Placeholder for a number field: states the value codegen will ASSUME when the
+   *  field is left blank, so an empty input reads as "defaulting to X" rather than
+   *  as a silently-set value. The field's `[value]` binds to the node's own value
+   *  (empty when unset), so what's shown always equals what's saved and baked — no
+   *  display-only prefill that can drift from the persisted node. The two sensor
+   *  voltage fields are the only ones whose blank-default isn't obvious; the v_max
+   *  assumption is resolved through the same helper codegen uses. */
+  protected numberPlaceholder(node: Record<string, unknown>, field: FieldDef): string {
+    if (field.key === 'pressure_v_min') return '0 (V at 0 psi)';
+    if (field.key === 'pressure_v_max') return `${defaultSensorVMaxV(this.boardAdcRangeForNode(node))} (board range)`;
+    return field.placeholder ?? '';
   }
 
   /** ADC input range of this node's pressure pin (`PinDef.adc_full_scale_v`,

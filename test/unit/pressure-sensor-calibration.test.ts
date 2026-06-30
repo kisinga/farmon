@@ -16,6 +16,8 @@ import {
   emitPressureSensorYaml,
   evaluatePressureSensorLowResolution,
   evaluatePressureSensorOverRange,
+  defaultSensorVMaxV,
+  ADC_PIN_REF_V,
 } from '../../src/lib/index';
 import type { TankNode } from '../../src/lib/entities/tank';
 
@@ -184,6 +186,11 @@ console.log('\nADC scaling:');
   // Blank v_max = swings the full board range → 0→3.3V at the pin.
   assert(tankDescriptor.codegen!.sensors!(tankWithPressure, 0, ctx5).includes('((x - 0.0f) / 3.3f)'),
     'blank v_max on a 5V board → span 3.3f');
+  // SINGLE SOURCE: the editor's blank-field placeholder and codegen's blank-default
+  // both resolve through defaultSensorVMaxV, so a sensor left unset can't read one
+  // default in the UI and bake a different one in firmware (the rain-tank bug).
+  assert(defaultSensorVMaxV(5) === 5, 'blank v_max default on a 5V board is 5V');
+  assert(defaultSensorVMaxV(0) === ADC_PIN_REF_V, 'unresolved board range falls back to the 3.3V pin ref');
 }
 
 // Over-range: sensor full output beyond the board ADC input range is an error.
