@@ -391,11 +391,16 @@ export class PricingComponent {
 
   // --- Kit selector ---
   protected readonly kit = signal<Kit>('pro');
-  protected readonly kits = [
-    { key: 'lite' as Kit, name: 'Lite', sub: 'DIY, self-install' },
-    { key: 'pro' as Kit, name: 'Pro', sub: 'Done for you' },
-    { key: 'enterprise' as Kit, name: 'Enterprise', sub: 'Custom' },
-  ] as const;
+  // Selector buttons, minus any kit hidden in KIT_TIERS (the single toggle). With Lite
+  // hidden the default 'pro' selection stays valid and the '@case (lite)' panel is just
+  // unreachable; clearing the flag restores the button and the flow.
+  protected readonly kits = (
+    [
+      { key: 'lite' as Kit, name: 'Lite', sub: 'DIY, self-install' },
+      { key: 'pro' as Kit, name: 'Pro', sub: 'Done for you' },
+      { key: 'enterprise' as Kit, name: 'Enterprise', sub: 'Custom' },
+    ] as const
+  ).filter((k) => !KIT_TIERS.find((t) => t.name.toLowerCase() === k.key)?.hidden);
 
   protected kitBtnCls(key: Kit): string {
     const on = this.kit() === key;

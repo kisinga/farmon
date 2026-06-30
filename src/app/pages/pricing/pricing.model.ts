@@ -296,6 +296,12 @@ export interface KitTier {
   freeCloudMonths?: number | null;
   /** Highlight this card (the recommended tier). */
   featured?: boolean;
+  /** Hide this tier from the public landing/pricing surfaces while keeping it fully
+   *  defined here. Set during the "prove willingness-to-pay at the premium end first"
+   *  phase: a visible cheap kit anchors perceived value low and lets prospects
+   *  self-select down before we know what the product commands. Delete the flag on the
+   *  tier to bring it back. */
+  hidden?: boolean;
   /** CTA label (optional; defaults handled by the component). */
   cta?: string;
 }
@@ -303,6 +309,9 @@ export interface KitTier {
 export const KIT_TIERS: KitTier[] = [
   {
     name: 'Lite',
+    // Hidden from public pages for now: we validate willingness-to-pay at Pro /
+    // Enterprise before advertising the cheap DIY entry. Remove this line to restore.
+    hidden: true,
     price: PRICING.bundle,
     freeCloudMonths: 3,
     tagline: 'Self-install (DIY). For a simple, single-controller site.',

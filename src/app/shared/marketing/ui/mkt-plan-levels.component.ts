@@ -17,7 +17,7 @@ import { KIT_TIERS, PRICING, kes, type KitTier } from '../../../pages/pricing/pr
   changeDetection: ChangeDetectionStrategy.OnPush,
   host: { class: 'block' },
   template: `
-    <div class="grid gap-5 md:grid-cols-3 items-start">
+    <div [class]="gridCls">
       @for (k of kits; track k.name) {
         <div [class]="cardCls(k)">
           @if (k.featured) {
@@ -56,9 +56,23 @@ export class MktPlanLevelsComponent {
   /** Tighter cards for the landing summary; default is the roomier /pricing layout. */
   readonly compact = input(false);
 
-  protected readonly kits = KIT_TIERS;
+  /** Tiers shown publicly: `hidden` ones (e.g. Lite while we validate the premium end)
+   *  stay in KIT_TIERS but are dropped here. Restore by clearing the flag on the tier. */
+  protected readonly kits = KIT_TIERS.filter((k) => !k.hidden);
   /** The flat monthly per site, e.g. "KES 2,500". */
   protected readonly monthly = kes(PRICING.monthlyPerSite);
+
+  /** Column count tracks the number of visible kits so two cards do not leave an empty
+   *  third column (Tailwind needs whole static class strings, so we switch, not interpolate). */
+  protected get gridCls(): string {
+    const cols =
+      this.kits.length >= 3
+        ? 'md:grid-cols-3'
+        : this.kits.length === 2
+          ? 'md:grid-cols-2 md:max-w-3xl md:mx-auto'
+          : 'md:grid-cols-1 md:max-w-md md:mx-auto';
+    return `grid gap-5 ${cols} items-start`;
+  }
 
   /** One-time price label, or "Custom" for the talk-to-us tier. */
   protected priceLabel(k: KitTier): string {
