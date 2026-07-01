@@ -447,6 +447,8 @@ const SCHEMA_MIGRATIONS: Record<number, SchemaMigration> = {
       if (psNode['pin'] != null) node['pressure_pin'] = psNode['pin'];
       if (psNode['elevation_m'] != null) node['pressure_elevation_m'] = psNode['elevation_m'];
       if (psNode['sensor_max_psi'] != null) node['pressure_sensor_max_psi'] = psNode['sensor_max_psi'];
+      if (psNode['v_min'] != null) node['pressure_v_min'] = psNode['v_min'];
+      if (psNode['v_max'] != null) node['pressure_v_max'] = psNode['v_max'];
       if (psNode['pump_rated'] != null) node['pressure_pump_rated'] = psNode['pump_rated'];
 
       nodesToDelete.add(pressureEntry.toNodeId);
@@ -511,6 +513,8 @@ const SCHEMA_MIGRATIONS: Record<number, SchemaMigration> = {
           if (psNode['pin'] != null) upstreamNode['pressure_pin'] = psNode['pin'];
           if (psNode['elevation_m'] != null) upstreamNode['pressure_elevation_m'] = psNode['elevation_m'];
           if (psNode['sensor_max_psi'] != null) upstreamNode['pressure_sensor_max_psi'] = psNode['sensor_max_psi'];
+          if (psNode['v_min'] != null) upstreamNode['pressure_v_min'] = psNode['v_min'];
+          if (psNode['v_max'] != null) upstreamNode['pressure_v_max'] = psNode['v_max'];
           if (psNode['pump_rated'] != null) upstreamNode['pressure_pump_rated'] = psNode['pump_rated'];
         }
       }

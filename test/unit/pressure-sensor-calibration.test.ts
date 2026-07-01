@@ -228,6 +228,102 @@ console.log('\nLegacy topology migration:');
   assert(!('min_bar' in tank), 'legacy min_bar is stripped after migration');
 }
 
+{
+  const migrated = parseTopology({
+    schema: 16,
+    controllers: [{ id: 'ctrl', board: 'kc868-a16' }],
+    nodes: [
+      {
+        kind: 'tank',
+        id: 'tank_a',
+        name: 'Tank A',
+        ports: [{ id: 'inlet', label: 'Inlet', direction: 'inlet' }, { id: 'outlet', label: 'Outlet', direction: 'outlet' }],
+        position: { x: 0, y: 0 },
+        anchorId: 'ctrl',
+      },
+      {
+        kind: 'pressure_sensor',
+        id: 'ps_a',
+        name: 'Tank A Pressure',
+        pin: 'GPIO1',
+        sensor_max_psi: 15,
+        v_max: 3.3,
+        ports: [{ id: 'inlet', label: 'Inlet', direction: 'inlet' }, { id: 'outlet', label: 'Outlet', direction: 'outlet' }],
+        position: { x: 120, y: 0 },
+        anchorId: 'ctrl',
+      },
+      {
+        kind: 'tank',
+        id: 'tank_b',
+        name: 'Tank B',
+        ports: [{ id: 'inlet', label: 'Inlet', direction: 'inlet' }, { id: 'outlet', label: 'Outlet', direction: 'outlet' }],
+        position: { x: 0, y: 120 },
+        anchorId: 'ctrl',
+      },
+      {
+        kind: 'pressure_sensor',
+        id: 'ps_b',
+        name: 'Tank B Pressure',
+        pin: 'GPIO2',
+        sensor_max_psi: 15,
+        v_min: 0.5,
+        v_max: 4.5,
+        ports: [{ id: 'inlet', label: 'Inlet', direction: 'inlet' }, { id: 'outlet', label: 'Outlet', direction: 'outlet' }],
+        position: { x: 120, y: 120 },
+        anchorId: 'ctrl',
+      },
+    ],
+    pipes: [
+      { id: 'pipe1', from: 'tank_a:outlet', to: 'ps_a:inlet' },
+      { id: 'pipe2', from: 'tank_b:outlet', to: 'ps_b:inlet' },
+    ],
+  });
+  const tankA = migrated.nodes.find(n => n.id === 'tank_a') as TankNode | undefined;
+  const tankB = migrated.nodes.find(n => n.id === 'tank_b') as TankNode | undefined;
+  assert(tankA?.pressure_v_max === 3.3, 'schema 16 migration preserves Tank A v_max=3.3');
+  assert(tankB?.pressure_v_min === 0.5 && tankB?.pressure_v_max === 4.5,
+    'schema 16 migration preserves Tank B distinct v_min/v_max');
+
+  const ctx5: import('@core').CodegenContext = {
+    resolveChannel: () => ({ platform: 'adc', config: 'pin:\n    number: GPIO1', adcFullScaleV: 5 }),
+  };
+  const yamlA = tankDescriptor.codegen!.sensors!(tankA!, 0, ctx5);
+  const yamlB = tankDescriptor.codegen!.sensors!(tankB!, 1, ctx5);
+  assert(yamlA.includes('/ 2.178f) * 15.0f'), 'migrated Tank A bakes its own 3.3V full-scale span');
+  assert(yamlB.includes('(x - 0.33f) / 2.64f'), 'migrated Tank B bakes its own 0.5-4.5V span');
+}
+
+{
+  const migrated = parseTopology({
+    schema: 17,
+    controllers: [{ id: 'ctrl', board: 'kc868-a16' }],
+    nodes: [
+      {
+        kind: 'tank',
+        id: 'tank_c',
+        name: 'Tank C',
+        ports: [{ id: 'inlet', label: 'Inlet', direction: 'inlet' }, { id: 'outlet', label: 'Outlet', direction: 'outlet' }],
+        position: { x: 0, y: 0 },
+        anchorId: 'ctrl',
+      },
+      {
+        kind: 'pressure_sensor',
+        id: 'ps_c',
+        name: 'Tank C Pressure',
+        pin: 'GPIO3',
+        sensor_max_psi: 15,
+        v_max: 3.3,
+        ports: [{ id: 'inlet', label: 'Inlet', direction: 'inlet' }, { id: 'outlet', label: 'Outlet', direction: 'outlet' }],
+        position: { x: 120, y: 0 },
+        anchorId: 'ctrl',
+      },
+    ],
+    pipes: [{ id: 'pipe1', from: 'tank_c:outlet', to: 'ps_c:inlet' }],
+  });
+  const tank = migrated.nodes.find(n => n.id === 'tank_c') as TankNode | undefined;
+  assert(tank?.pressure_v_max === 3.3, 'schema 17 migration preserves pressure sensor v_max on the tank');
+}
+
 // ---------------------------------------------------------------------------
 // Tank descriptor validation rules
 // ---------------------------------------------------------------------------
