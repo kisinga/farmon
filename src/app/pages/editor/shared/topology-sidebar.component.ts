@@ -18,13 +18,18 @@ export type { Selection };
   standalone: true,
   imports: [FormsModule, ValidationPanelComponent, ZodInputComponent, NodePropertiesComponent],
   template: `
-    <!-- Node properties (data-driven) -->
+    <!-- Node properties (data-driven). Gated by the editor's readonly state (a
+         commissioned lock or route preview): without this, inputs stay editable on
+         a locked site and every edit is silently dropped by updateTopology's
+         readonly early-return — no dirty, no autosave, no feedback. -->
     @if (selectedNodeData(); as sn) {
-      <app-node-properties
-        [node]="sn.node"
-        [desc]="sn.desc"
-        (updateField)="updateField.emit($event)"
-        (deleteNode)="deleteNode.emit($event)" />
+      <fieldset [disabled]="editor.readonly()" class="contents">
+        <app-node-properties
+          [node]="sn.node"
+          [desc]="sn.desc"
+          (updateField)="updateField.emit($event)"
+          (deleteNode)="deleteNode.emit($event)" />
+      </fieldset>
     }
 
     <!-- Pipe properties -->
@@ -36,7 +41,9 @@ export type { Selection };
         </button>
         @if (isExpanded('pipe')) {
         <div class="text-xs font-mono text-base-content/60 mb-2">{{ pipeData.pipe.from }} &rarr; {{ pipeData.pipe.to }}</div>
-        <button class="btn btn-error btn-xs w-full" (click)="deletePipe.emit(pipeData.pipe.id)">Delete Pipe</button>
+        <fieldset [disabled]="editor.readonly()" class="contents">
+          <button class="btn btn-error btn-xs w-full" (click)="deletePipe.emit(pipeData.pipe.id)">Delete Pipe</button>
+        </fieldset>
         }
       </div>
     }
