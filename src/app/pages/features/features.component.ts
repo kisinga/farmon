@@ -80,9 +80,9 @@ interface UseCase {
       </mkt-section>
     }
 
-    <!-- WHAT THE SUBSCRIPTION INCLUDES -->
-    <mkt-section align="left" heading="Everything MajiFlow Cloud includes"
-      subhead="Every kit comes with the cloud free to start (3 months on Lite, 6 on Pro), then it is optional. Your site keeps running on-site without it.">
+    <!-- WHAT THE MANAGED PLATFORM INCLUDES -->
+    <mkt-section align="left" heading="Everything the managed platform includes"
+      subhead="For qualified sites, MajiFlow Cloud keeps the operation visible: live dashboard, remote control, usage history, alerts, shared access and support visibility. The controller still keeps local safety routines running in the field.">
       <div class="rounded-2xl bg-slate-50 ring-1 ring-slate-200 p-6 sm:p-8 max-w-3xl">
         <mkt-feature-list [items]="cloudFeatures" />
       </div>
@@ -90,7 +90,7 @@ interface UseCase {
 
     <!-- ADD-ON SERVICES -->
     <mkt-section align="left" heading="Go further with add-on services"
-      subhead="Optional services for sites that need more. Add any of them to any kit, priced separately.">
+      subhead="For operators with stronger accountability needs: water quality, billing, metering protection and reporting are scoped after we understand the site.">
       <mkt-addon-grid [items]="addons" />
     </mkt-section>
 
@@ -114,7 +114,7 @@ interface UseCase {
     <!-- CTA BAND -->
     <app-marketing-cta
       heading="See it on your own site"
-      blurb="Answer three questions for a live estimate, or draw your site and we will get it ready to build."
+      blurb="Tell us what water failure costs you. If MajiFlow fits, we will scope the right deployment and build path."
       [buttons]="ctaButtons" />
 
     <!-- FOOTER -->
@@ -126,7 +126,7 @@ export class FeaturesComponent {
   protected readonly cloudFeatures = CLOUD_FEATURES;
   protected readonly addons = ADDON_SERVICES;
   protected readonly ctaButtons: CtaButton[] = [
-    { label: 'See what your site costs', route: '/pricing' },
+    { label: 'Request assessment', route: '/pricing' },
     { label: 'Get started', route: '/login' },
   ];
 

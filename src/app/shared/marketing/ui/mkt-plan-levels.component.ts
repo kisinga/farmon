@@ -1,13 +1,10 @@
 import { ChangeDetectionStrategy, Component, input } from '@angular/core';
-import { KIT_TIERS, PRICING, kes, type KitTier } from '../../../pages/pricing/pricing.model';
+import { KIT_TIERS, type KitTier } from '../../../pages/pricing/pricing.model';
 
 /**
- * The three kit tiers (Lite / Pro / Enterprise) shown identically on the landing card
- * and the /pricing page so the two never drift. Reads KIT_TIERS from the pricing model
- * (the single edit point). Each card carries a one-time price and what it contains.
- *
- * The monthly subscription is a single flat fee per site (constant), so it is a quiet
- * footnote here, not a per-card price: the kits carry the headline.
+ * Deployment levels shown identically on the landing card and assessment page so the
+ * two never drift. Reads KIT_TIERS from the pricing model (the single edit point), but
+ * deliberately does not publish prices: serious sites are qualified and scoped first.
  *
  * `compact` tightens the cards for the landing summary.
  */
@@ -26,14 +23,9 @@ import { KIT_TIERS, PRICING, kes, type KitTier } from '../../../pages/pricing/pr
           <h3 class="text-lg font-bold text-slate-900">{{ k.name }}</h3>
           <p class="mt-1 text-sm text-slate-600 leading-relaxed">{{ k.tagline }}</p>
 
-          <!-- One-time kit price -->
           <div class="mt-4 pt-4 border-t border-slate-100">
-            <p class="flex items-baseline gap-1.5">
-              <span class="text-2xl font-bold tabular-nums text-slate-900">{{ priceLabel(k) }}</span>
-              @if (k.price !== null) {
-                <span class="text-xs text-slate-500">one-time</span>
-              }
-            </p>
+            <p class="text-sm font-semibold text-slate-900">{{ accessLabel(k) }}</p>
+            <p class="mt-1 text-xs leading-relaxed text-slate-500">{{ accessNote(k) }}</p>
           </div>
 
           <ul class="mt-4 space-y-2 text-sm">
@@ -48,7 +40,7 @@ import { KIT_TIERS, PRICING, kes, type KitTier } from '../../../pages/pricing/pr
       }
     </div>
     <p class="mt-5 text-center text-xs text-slate-500 leading-relaxed">
-      Each kit includes MajiFlow Cloud free to start, then an optional {{ monthly }} per site. Works on-site without it.
+      Built for operators with real water risk: dry tanks, burnt pumps, unbilled usage, lost irrigation windows, or many people depending on supply.
     </p>
   `,
 })
@@ -59,8 +51,6 @@ export class MktPlanLevelsComponent {
   /** Tiers shown publicly: `hidden` ones (e.g. Lite while we validate the premium end)
    *  stay in KIT_TIERS but are dropped here. Restore by clearing the flag on the tier. */
   protected readonly kits = KIT_TIERS.filter((k) => !k.hidden);
-  /** The flat monthly per site, e.g. "KES 2,500". */
-  protected readonly monthly = kes(PRICING.monthlyPerSite);
 
   /** Column count tracks the number of visible kits so two cards do not leave an empty
    *  third column (Tailwind needs whole static class strings, so we switch, not interpolate). */
@@ -74,9 +64,15 @@ export class MktPlanLevelsComponent {
     return `grid gap-5 ${cols} items-start`;
   }
 
-  /** One-time price label, or "Custom" for the talk-to-us tier. */
-  protected priceLabel(k: KitTier): string {
-    return k.price !== null ? kes(k.price) : 'Custom';
+  /** Public posture for the level. The actual price is scoped after fit + survey. */
+  protected accessLabel(k: KitTier): string {
+    return k.price === null ? 'Custom commercial scope' : 'Scoped after site assessment';
+  }
+
+  protected accessNote(k: KitTier): string {
+    return k.price === null
+      ? 'For multi-site, water-selling, SLA, or managed-service deployments.'
+      : 'We confirm fit, field conditions, install path, and support level before quoting.';
   }
 
   /** The featured kit is highlighted; the rest are plain. `compact` trims padding. */

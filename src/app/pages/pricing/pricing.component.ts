@@ -1,7 +1,7 @@
 import { Component, computed, inject, signal, type WritableSignal } from '@angular/core';
 import type { SiteTopology, EasyModeProfile } from '@core';
 import { BackendService } from '../../core/services/backend.service';
-import { PRICING, KIT_TIERS, ADDON_SERVICES, CLOUD_FEATURES, estimate, kes, type EstimateInput, type Segment } from './pricing.model';
+import { KIT_TIERS, ADDON_SERVICES, CLOUD_FEATURES, estimate, kes, type EstimateInput, type Segment } from './pricing.model';
 import { applyPageSeo } from '../../shared/seo';
 import { MarketingNavComponent } from '../../shared/marketing/marketing-nav.component';
 import { MarketingFooterComponent } from '../../shared/marketing/marketing-footer.component';
@@ -12,15 +12,15 @@ type SubmitState = 'idle' | 'sending' | 'done' | 'error';
 type Kit = 'lite' | 'pro' | 'enterprise';
 
 /**
- * Public pricing page (route `/pricing`). Renders full-bleed with its own nav/footer.
+ * Public assessment page (route `/pricing` for existing links/SEO). Renders full-bleed
+ * with its own nav/footer.
  *
- * Flow: three one-time kit tiers (Lite / Pro / Enterprise) carry the headline pricing;
- * the flat monthly per site is a quiet constant. Add-on services (water quality, billing,
- * ...) are available on ANY kit. Below the cards, a kit SELECTOR drives three different
+ * Flow: deployment levels carry the posture; no public sticker price is shown before
+ * qualification. Add-on services (water quality, billing, ...) are available on ANY
+ * qualified deployment. Below the cards, a kit SELECTOR drives three different
  * funnels in a "describe your site" tool:
- *   - Lite (DIY): size a simple site; a fit-guard nudges to Pro if it needs more than one
- *     controller. CTA captures a self-install lead.
- *   - Pro (done-for-you): CONTACT ONLY. We design and install; the CTA requests a call.
+ *   - Lite (hidden publicly for now): retained for controlled pilot leads.
+ *   - Pro (managed deployment): CONTACT ONLY. We design and install; the CTA requests a call.
  *   - Enterprise (custom): contact sales; the per-component sizer is hidden.
  * Everything lands as a consent-gated lead carrying { kit, intent, addons } plus the
  * composed topology/profile for conversion. A honeypot + server hook drop bot spam.
@@ -36,34 +36,43 @@ type Kit = 'lite' | 'pro' | 'enterprise';
 
     <!-- HERO -->
     <mkt-hero size="md">
-      <h1 class="mkt-h1 text-3xl sm:text-5xl">What will it cost?</h1>
+      <h1 class="mkt-h1 text-3xl sm:text-5xl">Is MajiFlow right for your site?</h1>
       <p class="mt-4 text-white/70 max-w-2xl mx-auto text-sm sm:text-lg leading-relaxed">
-        Buy a kit once: Lite, Pro or Enterprise. Cloud is free to start, then an optional {{ monthly }} per site.
+        This is for operators with real water risk: dry tanks, burnt pumps, unbilled
+        usage, lost irrigation windows, or many people depending on one supply.
       </p>
-      <p class="mt-3 text-xs text-cyan-200/80">Not sure which? Describe your site below.</p>
+      <p class="mt-3 text-xs text-cyan-200/80">If you are looking for the cheapest controller box, this probably is not it.</p>
     </mkt-hero>
 
     <!-- KIT TIERS + ADD-ON SERVICES -->
     <section class="mkt-section-tight">
       <div class="max-w-5xl mx-auto">
         <div class="text-center max-w-2xl mx-auto">
-          <h2 class="text-2xl font-bold tracking-tight">Choose your kit</h2>
+          <h2 class="text-2xl font-bold tracking-tight">Choose the level of involvement</h2>
           <p class="mt-3 text-sm text-slate-600 leading-relaxed">
-            One-time kits for every stage: self-install Lite, done-for-you Pro, or custom
-            Enterprise. Each runs on the same flat monthly per site.
+            We start with fit, site value and install reality. Price comes after the
+            system is scoped, because a hotel, farm and water-selling site do not carry
+            the same operational risk.
           </p>
         </div>
         <div class="mt-8">
           <mkt-plan-levels />
         </div>
 
-        <!-- The monthly: MajiFlow Cloud, the same on every kit. Present and explained,
-             but calm: the kit prices above carry the headline, not this. -->
+        <div class="mt-8 max-w-2xl mx-auto rounded-2xl bg-slate-950 px-5 py-4 text-center text-white shadow-lg shadow-slate-900/10">
+          <p class="text-xs font-semibold uppercase tracking-[0.18em] text-cyan-200">Budget anchor</p>
+          <p class="mt-2 text-lg font-bold tracking-tight">Managed deployments typically start from {{ proStartLabel }}</p>
+          <p class="mt-1 text-xs leading-relaxed text-white/55">Final scope follows site fit, field conditions and install requirements.</p>
+        </div>
+
+        <!-- Managed platform: show value, not a public monthly anchor. -->
         <div class="mt-12 rounded-2xl bg-slate-50 ring-1 ring-slate-200 p-6 sm:p-8">
           <div class="max-w-2xl mx-auto text-center">
-            <h3 class="text-lg font-bold tracking-tight">MajiFlow Cloud <span class="font-normal text-slate-400">(optional)</span></h3>
-            <p class="mt-2 text-3xl font-bold tabular-nums text-slate-900">{{ monthly }}<span class="text-base font-medium text-slate-500"> / site / month</span></p>
-            <p class="mt-1.5 text-sm text-slate-600 leading-relaxed">Free to start with every kit (3 months on Lite, 6 on Pro), then optional. Density is free. Works on-site without it.</p>
+            <h3 class="text-lg font-bold tracking-tight">Managed visibility for high-value water operations</h3>
+            <p class="mt-1.5 text-sm text-slate-600 leading-relaxed">
+              The field controller keeps local safety routines running. The managed platform
+              adds the view from anywhere, usage history, alerts, shared access and support visibility.
+            </p>
           </div>
           <div class="mt-6 max-w-3xl mx-auto">
             <mkt-feature-list [items]="cloudFeatures" />
@@ -73,8 +82,11 @@ type Kit = 'lite' | 'pro' | 'enterprise';
         <!-- Add-on services: available on any kit -->
         <div class="mt-12">
           <div class="text-center max-w-2xl mx-auto">
-            <h3 class="text-lg font-bold tracking-tight">Add-on services, on any kit</h3>
-            <p class="mt-1.5 text-sm text-slate-600 leading-relaxed">Add to any kit. Priced separately.</p>
+            <h3 class="text-lg font-bold tracking-tight">Specialist services for qualified sites</h3>
+            <p class="mt-1.5 text-sm text-slate-600 leading-relaxed">
+              Billing, metering protection, water quality and reports are scoped where the
+              operational value is clear.
+            </p>
           </div>
           <div class="mt-5">
             <mkt-addon-grid [items]="addons" />
@@ -87,8 +99,11 @@ type Kit = 'lite' | 'pro' | 'enterprise';
     <section class="mkt-section-tight">
       <div class="max-w-5xl mx-auto">
         <div class="text-center max-w-2xl mx-auto">
-          <h2 class="text-2xl font-bold tracking-tight">Get started</h2>
-          <p class="mt-3 text-sm text-slate-600 leading-relaxed">Pick how you want to go.</p>
+          <h2 class="text-2xl font-bold tracking-tight">Request assessment</h2>
+          <p class="mt-3 text-sm text-slate-600 leading-relaxed">
+            Describe the operation. We use this to judge fit, likely complexity and the
+            right deployment path before we quote.
+          </p>
         </div>
 
         <!-- Kit selector -->
@@ -109,7 +124,8 @@ type Kit = 'lite' | 'pro' | 'enterprise';
               <div class="rounded-2xl bg-slate-50 ring-1 ring-slate-200 p-6">
                 <h3 class="font-semibold text-slate-900">Tell us about your operation</h3>
                 <p class="mt-1 text-sm text-slate-600 leading-relaxed">
-                  Tailored to you: many sites, water quality, SLA, priority support. Tell us below and we'll scope it.
+                  Many sites, water quality, SLA, priority support, billing or metering:
+                  tell us what is at stake and we will scope it with you.
                 </p>
               </div>
             } @else {
@@ -206,8 +222,8 @@ type Kit = 'lite' | 'pro' | 'enterprise';
 
             <!-- Add-on services: selectable on ANY kit -->
             <div class="rounded-2xl bg-slate-50 ring-1 ring-slate-200 p-5">
-              <h3 class="font-semibold text-slate-900">Add-on services <span class="font-normal text-slate-400">(optional)</span></h3>
-              <p class="mt-1 text-sm text-slate-600 leading-relaxed">On any kit. Tick what interests you.</p>
+              <h3 class="font-semibold text-slate-900">Specialist services</h3>
+              <p class="mt-1 text-sm text-slate-600 leading-relaxed">Tick what would materially change the value of the deployment.</p>
               <div class="mt-3 grid gap-2 sm:grid-cols-2">
                 @for (a of addons; track a.key) {
                   <label class="flex items-start gap-2.5 rounded-xl bg-white ring-1 ring-slate-200 p-3 cursor-pointer hover:ring-cyan-400 transition-colors">
@@ -228,10 +244,10 @@ type Kit = 'lite' | 'pro' | 'enterprise';
               @switch (kit()) {
 
                 @case ('lite') {
-                  <p class="text-xs font-semibold uppercase tracking-wider text-cyan-300">Lite · DIY</p>
+                  <p class="text-xs font-semibold uppercase tracking-wider text-cyan-300">Lite · limited pilot</p>
                   @if (liteFits()) {
-                    <p class="mt-2 text-3xl font-bold tracking-tight">{{ kitPriceLabel('lite') }}<span class="text-lg font-medium text-white/50"> one-time</span></p>
-                    <p class="mt-1 text-sm text-white/65 leading-relaxed">You install it yourself, with an easy step-by-step manual included.</p>
+                    <p class="mt-2 text-2xl font-bold tracking-tight">Small-site pilot candidate</p>
+                    <p class="mt-1 text-sm text-white/65 leading-relaxed">For rare, simple installs where the operational value is clear and support expectations are modest.</p>
                     @if (quoteTopology()) {
                       <div class="mt-4 border-t border-white/10 pt-4">
                         <p class="text-sm text-white/70">The system you described: {{ est().summary }}</p>
@@ -245,14 +261,14 @@ type Kit = 'lite' | 'pro' | 'enterprise';
                         </ul>
                       </div>
                     }
-                    <p class="mt-4 text-xs text-white/45 leading-relaxed">Includes {{ freeMonths('lite') }} months of Cloud, then an optional {{ monthly }} per site. Works on-site without it.</p>
+                    <p class="mt-4 text-xs text-white/45 leading-relaxed">We only offer this where it will not undercut reliability or support quality.</p>
                     <button type="button" (click)="scrollToContact()" class="mt-5 w-full rounded-full px-4 py-3 text-sm font-semibold bg-cyan-400 text-slate-950 hover:bg-cyan-300 transition-colors">
-                      Get the Lite kit
+                      Request pilot review
                     </button>
                   } @else {
                     <p class="mt-2 text-2xl font-bold tracking-tight">This is bigger than Lite</p>
                     <p class="mt-2 text-sm text-white/70 leading-relaxed">
-                      Your site needs more than one controller, so it isn't a simple self-install kit. Pro designs and installs it for you, end to end.
+                      Your site needs more than one controller, so it is not a limited pilot. Pro designs and installs it for you, end to end.
                     </p>
                     <button type="button" (click)="kit.set('pro')" class="mt-5 w-full rounded-full px-4 py-3 text-sm font-semibold bg-cyan-400 text-slate-950 hover:bg-cyan-300 transition-colors">
                       Switch to Pro
@@ -261,9 +277,9 @@ type Kit = 'lite' | 'pro' | 'enterprise';
                 }
 
                 @case ('pro') {
-                  <p class="text-xs font-semibold uppercase tracking-wider text-cyan-300">Pro · done for you</p>
-                  <p class="mt-2 text-3xl font-bold tracking-tight">{{ kitPriceLabel('pro') }}<span class="text-lg font-medium text-white/50"> one-time</span></p>
-                  <p class="mt-1 text-sm text-white/65 leading-relaxed">We design and install it for you, with 3 assisted revisions in your first month and full warranty.</p>
+                  <p class="text-xs font-semibold uppercase tracking-wider text-cyan-300">Pro · managed deployment</p>
+                  <p class="mt-2 text-2xl font-bold tracking-tight">For sites where water failure has a real cost</p>
+                  <p class="mt-1 text-sm text-white/65 leading-relaxed">We design, install and commission the system, then support the dashboard and field controller.</p>
                   @if (quoteTopology()) {
                     <div class="mt-4 border-t border-white/10 pt-4">
                       <p class="text-sm text-white/70">The system we'd build: {{ est().summary }}</p>
@@ -277,9 +293,9 @@ type Kit = 'lite' | 'pro' | 'enterprise';
                       </ul>
                     </div>
                   }
-                  <p class="mt-4 text-xs text-white/45 leading-relaxed">Includes {{ freeMonths('pro') }} months of Cloud, then an optional {{ monthly }} per site. We confirm everything before building.</p>
+                  <p class="mt-4 text-xs text-white/45 leading-relaxed">We confirm value, site conditions and deployment scope before quoting. Not every site is a fit.</p>
                   <button type="button" (click)="scrollToContact()" class="mt-5 w-full rounded-full px-4 py-3 text-sm font-semibold bg-cyan-400 text-slate-950 hover:bg-cyan-300 transition-colors">
-                    Request a call
+                    Request assessment
                   </button>
                 }
 
@@ -288,18 +304,18 @@ type Kit = 'lite' | 'pro' | 'enterprise';
                   <p class="mt-2 text-2xl font-bold tracking-tight">Tailored to your operation</p>
                   <p class="mt-2 text-sm text-white/70 leading-relaxed">
                     Multiple sites on one dashboard, water-quality monitoring, an uptime SLA and priority
-                    support. We scope and price it with you.
+                    support. We scope the commercial model with you.
                   </p>
                   @if (selectedAddons().length) {
                     <p class="mt-4 text-xs text-white/55">Add-ons you flagged: {{ selectedAddonNames() }}.</p>
                   }
                   <button type="button" (click)="scrollToContact()" class="mt-5 w-full rounded-full px-4 py-3 text-sm font-semibold bg-cyan-400 text-slate-950 hover:bg-cyan-300 transition-colors">
-                    Talk to us
+                    Contact sales
                   </button>
                 }
               }
 
-              <p class="mt-4 text-[11px] text-white/40 leading-relaxed">An estimate. Final figures come with your site survey. Prices in KES.</p>
+              <p class="mt-4 text-[11px] text-white/40 leading-relaxed">Assessment only. Final scope follows a site conversation or survey.</p>
             </div>
           </div>
         </div>
@@ -319,7 +335,7 @@ type Kit = 'lite' | 'pro' | 'enterprise';
           </div>
         } @else {
           <h2 class="text-xl font-bold tracking-tight">{{ leadHeading() }}</h2>
-          <p class="mt-1.5 text-sm text-slate-600 leading-relaxed">Leave your details and we'll follow up. We won't share them.</p>
+          <p class="mt-1.5 text-sm text-slate-600 leading-relaxed">Leave your details and a serious operator context. We will follow up if there is a fit.</p>
 
           <div class="mt-5 grid gap-4 sm:grid-cols-2">
             <label class="block sm:col-span-2">
@@ -351,7 +367,7 @@ type Kit = 'lite' | 'pro' | 'enterprise';
           <label class="mt-4 flex items-start gap-3 cursor-pointer">
             <input type="checkbox" [checked]="consent()" (change)="consent.set(isChecked($event))"
                    class="mt-0.5 w-4 h-4 accent-cyan-500" />
-            <span class="text-sm text-slate-700">I agree to be contacted about this.</span>
+            <span class="text-sm text-slate-700">I agree to be contacted about this deployment assessment.</span>
           </label>
 
           <p class="mt-2 text-xs text-slate-500">Give us a phone or email so we can reach you.</p>
@@ -369,22 +385,20 @@ type Kit = 'lite' | 'pro' | 'enterprise';
     </section>
 
     <!-- FOOTER -->
-    <app-marketing-footer tagline="Honest pricing. No surprises." />
+    <app-marketing-footer tagline="For serious water operations." />
   `,
 })
 export class PricingComponent {
   private readonly backend = inject(BackendService);
-  protected readonly caps = PRICING.caps;
   protected readonly addons = ADDON_SERVICES;
   protected readonly cloudFeatures = CLOUD_FEATURES;
-  /** The flat monthly per site, e.g. "KES 2,500". */
-  protected readonly monthly = kes(PRICING.monthlyPerSite);
+  protected readonly proStartLabel = kes(KIT_TIERS.find((t) => t.name === 'Pro')?.price ?? 245_000);
 
   constructor() {
     applyPageSeo({
-      title: 'Pricing | MajiFlow water monitoring and control',
+      title: 'Site assessment | MajiFlow water monitoring and control',
       description:
-        'Three one-time kits (Lite self-install, Pro done-for-you, Enterprise custom), each on a flat monthly per site, plus add-on services on any kit. Describe your site for the right fit.',
+        'Request a MajiFlow site assessment for farms, properties and water operators where dry tanks, burnt pumps, unbilled usage or downtime carry real cost.',
       path: 'pricing',
     });
   }
@@ -396,9 +410,9 @@ export class PricingComponent {
   // unreachable; clearing the flag restores the button and the flow.
   protected readonly kits = (
     [
-      { key: 'lite' as Kit, name: 'Lite', sub: 'DIY, self-install' },
-      { key: 'pro' as Kit, name: 'Pro', sub: 'Done for you' },
-      { key: 'enterprise' as Kit, name: 'Enterprise', sub: 'Custom' },
+      { key: 'lite' as Kit, name: 'Lite', sub: 'Limited pilot' },
+      { key: 'pro' as Kit, name: 'Pro', sub: 'Managed deployment' },
+      { key: 'enterprise' as Kit, name: 'Enterprise', sub: 'Commercial scope' },
     ] as const
   ).filter((k) => !KIT_TIERS.find((t) => t.name.toLowerCase() === k.key)?.hidden);
 
@@ -407,21 +421,9 @@ export class PricingComponent {
     return `text-center rounded-xl px-4 py-3 ring-1 transition-colors ${on ? 'bg-cyan-500 text-white ring-cyan-500' : 'bg-white text-slate-700 ring-slate-300 hover:ring-cyan-400'}`;
   }
 
-  /** One-time kit price label from KIT_TIERS (single source of truth), or "Custom". */
-  protected kitPriceLabel(key: Kit): string {
-    const t = KIT_TIERS.find((k) => k.name.toLowerCase() === key);
-    return t && t.price !== null ? kes(t.price) : 'Custom';
-  }
-
-  /** Months of free MajiFlow Cloud included with a kit (from KIT_TIERS). */
-  protected freeMonths(key: Kit): number | null {
-    const t = KIT_TIERS.find((k) => k.name.toLowerCase() === key);
-    return t?.freeCloudMonths ?? null;
-  }
-
   /** The lead intent implied by the selected kit. */
   protected kitIntent(): string {
-    return this.kit() === 'lite' ? 'self-install' : this.kit() === 'pro' ? 'done-for-you' : 'sales';
+    return this.kit() === 'lite' ? 'pilot-review' : this.kit() === 'pro' ? 'managed-deployment' : 'sales';
   }
 
   // --- Add-on services (any kit) ---
@@ -487,15 +489,15 @@ export class PricingComponent {
 
   protected leadHeading(): string {
     switch (this.kit()) {
-      case 'lite': return 'Get your Lite kit';
-      case 'pro': return 'Request a call about Pro';
+      case 'lite': return 'Request pilot review';
+      case 'pro': return 'Request a Pro assessment';
       default: return 'Talk to us about Enterprise';
     }
   }
   protected leadCta(): string {
     switch (this.kit()) {
-      case 'lite': return 'Send my request';
-      case 'pro': return 'Request a call';
+      case 'lite': return 'Send for review';
+      case 'pro': return 'Request assessment';
       default: return 'Contact sales';
     }
   }

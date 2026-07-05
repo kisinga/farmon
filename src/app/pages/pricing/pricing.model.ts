@@ -5,16 +5,16 @@
  *
  * A site grows two ways, and physical distance decides which:
  *   - Deeper: saturate one controller. Sensing overflow (extra tanks/flow) goes on
- *     a metering hub over one Modbus wire — cheaper than another brain.
+ *     a metering hub over one Modbus wire, preserving a clean field architecture.
  *   - Wider: when gear is too far to wire, add another controller (a bare node, not
  *     a full bundle) and they run as one over WiFi.
  *
  * The rule the estimate follows: control (pumps/valves) stays on its own brain;
  * sensing (tanks/flow) is what stretches onto a hub. See estimate().
  *
- * Money is three layers: one-time hardware (the subsidised wedge), a per-controller
- * monthly subscription (the revenue stream — what we actually sell), and optional
- * segment packs. The estimator leads with the monthly.
+ * Money is three layers: deployment hardware + commissioning, managed platform,
+ * and optional segment services. Public pages qualify first and quote after scope;
+ * this model keeps internal estimates consistent for lead follow-up.
  *
  * PLACEHOLDER prices below (`node`, `meteringHub`, segment pack `fromMonthly`) are
  * marked and must be confirmed before launch.
@@ -23,35 +23,30 @@ export const PRICING = {
   /** One controller bundle (KC868-A16 + pump + 1 valve + 1 flow + 1 tank monitor + cloud). */
   bundle: 55_000,
   /** A bare extra controller for *wider* growth: brain + enclosure + cloud onboarding,
-   *  no peripherals (those are added as extras). Cheaper than a bundle so meshing a far
-   *  cluster is not punished. PLACEHOLDER, confirm. */
+   *  no peripherals (those are added as extras). Used when a far cluster needs its own
+   *  field controller. PLACEHOLDER, confirm. */
   node: 30_000,
   /** Metering hub: the waveshare-modbus-ai-8ch board, adds `hubPaths` analog tank-level
-   *  paths over one RS485 wire (flow is pulse-counted and stays onboard). Sold near cost:
-   *  it does the monitoring work of several controllers, so its margin is recovered in the
-   *  billing/metering pack, not here and not on the sensors (customers bring their own
-   *  meters). Keep per-path (meteringHub/hubPaths) below `extraTank` so filling the hub
-   *  beats onboard tanks. PLACEHOLDER, confirm. */
+   *  paths over one RS485 wire (flow is pulse-counted and stays onboard). It enables
+   *  higher-accountability metering/billing deployments without overcomplicating the
+   *  controller layout. PLACEHOLDER, confirm. */
   meteringHub: 10_000,
   /** Monitored paths added per metering hub. */
   hubPaths: 8,
-  /** Each extra standard (≤3/4") peripheral on the same controller. Kept low so
-   *  growing a site is friendly: the monthly never rises for density, and adding gear
-   *  should not feel punished either. */
+  /** Each extra standard (≤3/4") peripheral on the same controller. */
   extraValve: 3_000,
   extraFlow: 3_000,
   extraTank: 3_500,
   /** Extra pump relay, 30A max: switches a single-phase pump up to ~2 hp (1.5 kW)
    *  at 240V directly. Bigger motors need a contactor (custom-quoted). PLACEHOLDER. */
   extraPumpRelay: 3_000,
-  /** Flat monthly subscription per site (the constant "MajiFlow Cloud" fee), KES/site/month.
-   *  PLACEHOLDER (the current single-controller rate) until WTP-confirmed. */
+  /** Internal managed-platform estimate per site, KES/site/month. Public pages do not
+   *  publish this number before qualification. PLACEHOLDER until WTP-confirmed. */
   monthlyPerSite: 2_500,
-  /** Subscription: the revenue stream, and what the page leads with. Graduated
-   *  per-controller monthly brackets, marginal like tax brackets, floored at the last
-   *  rate. More controllers raise it; adding tanks to one controller does not (density
-   *  is free, so "deeper before wider" still pays). `upTo` is the inclusive controller
-   *  index the rate covers. KES per controller / month. */
+  /** Internal managed-platform estimate. Graduated per-controller monthly brackets,
+   *  marginal like tax brackets, floored at the last rate. More controllers raise it;
+   *  adding tanks to one controller does not. `upTo` is the inclusive controller index
+   *  the rate covers. KES per controller / month. */
   subscription: [
     { upTo: 1, rate: 2_500 }, // Lite: the 1st controller
     { upTo: 4, rate: 2_000 }, // Plus: controllers 2-4
@@ -66,7 +61,7 @@ export const PRICING = {
 } as const;
 
 /** PRICING keys whose value is still a PLACEHOLDER (unconfirmed — see the field docs).
- *  Lines built from these render as "priced in your quote", never as a firm figure, and
+ *  Lines built from these stay out of public figures until follow-up, and
  *  are excluded from the confirmed one-time subtotal, so the estimate never presents an
  *  unconfirmed number as final. Delete a key here the moment its price is confirmed. */
 export const PROVISIONAL_PRICES: ReadonlySet<keyof typeof PRICING> = new Set(['node', 'meteringHub', 'extraPumpRelay']);
@@ -76,9 +71,8 @@ export const PROVISIONAL_PRICES: ReadonlySet<keyof typeof PRICING> = new Set(['n
  *  CoreCapabilities contract (Go and TS cannot share code). */
 export type Segment = 'farm' | 'property' | 'water_supply';
 
-/** The headline pack pitched per segment. `fromMonthly` null = price not set yet
- *  (the UI shows "pricing on request"). The pack is where premium margin lives; the
- *  near-cost metering hub is the enabler that unlocks it. PLACEHOLDER prices. */
+/** The headline pack pitched per segment. `fromMonthly` null = price not set yet.
+ *  Public pages scope these after fit and operational value are clear. PLACEHOLDER prices. */
 export const SEGMENT_PACKS: Record<Segment, { label: string; fromMonthly: number | null }> = {
   farm: { label: 'Smart irrigation', fromMonthly: null },
   property: { label: 'Tenant billing', fromMonthly: null },
@@ -110,8 +104,8 @@ export interface EstimateLine {
   qty: number;
   unit: number;
   total: number;
-  /** Built from a still-unconfirmed PLACEHOLDER price (see PROVISIONAL_PRICES): shown
-   *  as "priced in your quote", never as a firm figure. */
+  /** Built from a still-unconfirmed PLACEHOLDER price (see PROVISIONAL_PRICES): kept
+   *  out of public figures until follow-up. */
   provisional?: boolean;
 }
 
@@ -123,9 +117,8 @@ export interface Estimate {
   nodes: number;
   hubs: number;
   lines: EstimateLine[];
-  /** One-time hardware (the subsidised wedge, near cost). Best-estimate sum incl.
-   *  provisional lines; for internal/lead use. Display uses oneTimeConfirmed when
-   *  oneTimeProvisional is true. */
+  /** Deployment hardware + commissioning estimate. Best-estimate sum incl.
+   *  provisional lines; for internal/lead use. */
   oneTime: number;
   /** One-time total from CONFIRMED lines only (excludes provisional PLACEHOLDER lines). */
   oneTimeConfirmed: number;
@@ -232,9 +225,9 @@ export function estimate(raw: EstimateInput): Estimate {
   if (extraTanks) lines.push({ label: 'Extra tank monitors', qty: extraTanks, unit: extraTank, total: extraTanks * extraTank });
   if (hubs) lines.push({ label: `Metering hubs (+${hubPaths} paths each)`, qty: hubs, unit: meteringHub, total: hubs * meteringHub, provisional: PROVISIONAL_PRICES.has('meteringHub') });
 
-  // The one-time figure is an estimate; lines built from still-unconfirmed PLACEHOLDER
-  // prices are kept out of the confirmed subtotal and shown as "priced in your quote",
-  // so the page never prints an unconfirmed number as final.
+  // The one-time figure is internal; lines built from still-unconfirmed PLACEHOLDER
+  // prices are kept out of public subtotals, so the page never prints an unconfirmed
+  // number as final.
   const oneTime = lines.reduce((sum, l) => sum + l.total, 0);
   const oneTimeConfirmed = lines.reduce((sum, l) => sum + (l.provisional ? 0 : l.total), 0);
   const oneTimeProvisional = lines.some((l) => l.provisional);
@@ -265,16 +258,14 @@ export function kes(n: number): string {
 }
 
 // ----------------------------------------------------------------------------
-// Kit tiers (display only)
+// Deployment levels (display only)
 //
-// The three one-time kits shown on the landing and pricing pages: Lite / Pro /
-// Enterprise. Each carries a clear one-time price and what it contains. The monthly
-// is a single flat fee per site (constant, finalized per quote) and is deliberately
-// de-emphasized: it is not tier-specific, so the kits carry the headline, not the
-// subscription.
-//   Lite       : self-install, simple single-controller site, limited warranty.
-//   Pro        : done-for-you install + design + advisory, full warranty.
-//   Enterprise : many sites / sells water / water-quality / SLA, custom-priced.
+// The three deployment levels: Lite / Pro / Enterprise. Prices stay in this model
+// for internal estimate snapshots and lead follow-up, but public marketing surfaces
+// qualify first and quote after scope.
+//   Lite       : limited pilot, simple single-controller site, controlled availability.
+//   Pro        : managed install + design + advisory, full warranty.
+//   Enterprise : many sites / sells water / water-quality / SLA, custom commercial scope.
 // ----------------------------------------------------------------------------
 
 // What the cloud includes and the add-on services live in the shared marketing catalog,
@@ -282,25 +273,23 @@ export function kes(n: number): string {
 // pricing page's existing imports.
 export { CLOUD_FEATURES, ADDON_SERVICES, type PlanFeature, type AddonService } from '../../shared/marketing/feature-catalog';
 
-/** One of the three kit tiers shown on the landing and pricing pages. */
+/** One of the deployment levels shown on public marketing pages. */
 export interface KitTier {
   name: string;
-  /** One-time kit price in KES, or null for "custom / talk to us". */
+  /** Internal estimate anchor in KES, or null for custom commercial scope. */
   price: number | null;
   /** One line on who it is for. */
   tagline: string;
   /** What the kit contains / includes. */
   contents: string[];
-  /** Months of MajiFlow Cloud included free with the kit; after this the subscription
-   *  is optional. null = negotiated (Enterprise). */
+  /** Internal commercial term, not published as a public discount. null = negotiated. */
   freeCloudMonths?: number | null;
   /** Highlight this card (the recommended tier). */
   featured?: boolean;
-  /** Hide this tier from the public landing/pricing surfaces while keeping it fully
-   *  defined here. Set during the "prove willingness-to-pay at the premium end first"
-   *  phase: a visible cheap kit anchors perceived value low and lets prospects
-   *  self-select down before we know what the product commands. Delete the flag on the
-   *  tier to bring it back. */
+  /** Hide this tier from the public landing/assessment surfaces while keeping it fully
+   *  defined here. A visible entry-level offer anchors perceived value low and lets
+   *  prospects self-select down before we know what the product commands. Delete the
+   *  flag on the tier to bring it back. */
   hidden?: boolean;
   /** CTA label (optional; defaults handled by the component). */
   cta?: string;
@@ -310,20 +299,20 @@ export const KIT_TIERS: KitTier[] = [
   {
     name: 'Lite',
     // Hidden from public pages for now: we validate willingness-to-pay at Pro /
-    // Enterprise before advertising the cheap DIY entry. Remove this line to restore.
+    // Enterprise before advertising the entry-level pilot. Remove this line to restore.
     hidden: true,
     price: PRICING.bundle,
     freeCloudMonths: 3,
-    tagline: 'Self-install (DIY). For a simple, single-controller site.',
+    tagline: 'Limited pilot. For a simple, single-controller site with clear value.',
     contents: [
       '1 smart controller (16 relays)',
       'Pump relay, motorised valve, flow meter and tank-level sensor',
-      'DIY: you install it yourself, no technician needed',
-      'Includes an easy, step-by-step installation manual',
-      'Cloud onboarding',
-      'Limited warranty',
-      '3 months of MajiFlow Cloud free, then optional',
-      'Add more valves, flow and tanks at a lower price each',
+      'Installer-guided setup for controlled pilot sites',
+      'Step-by-step installation pack',
+      'Managed onboarding',
+      'Pilot warranty terms',
+      'Cloud visibility during pilot period',
+      'Expandable after review',
     ],
   },
   {
@@ -331,13 +320,13 @@ export const KIT_TIERS: KitTier[] = [
     // Founder target price. Stated WTP is ~230k: confirm before launch.
     price: 245_000,
     freeCloudMonths: 6,
-    tagline: 'Done for you. For complex or multi-zone sites.',
+    tagline: 'Managed deployment. For complex or multi-zone sites.',
     contents: [
-      'Everything in Lite, professionally installed in Kenya',
+      'Professionally designed and installed in Kenya',
       'We design your system, with 3 assisted revisions in your first month',
       'Engineer advisory for your layout',
       'Full warranty',
-      '6 months of MajiFlow Cloud free, then optional',
+      'Managed dashboard onboarding',
     ],
     featured: true,
   },
@@ -352,7 +341,7 @@ export const KIT_TIERS: KitTier[] = [
       'Uptime SLA and priority support',
       'Dedicated onboarding and account management',
       'Any add-on service, set up for you',
-      'Custom pricing',
+      'Custom commercial scope',
     ],
     cta: 'Talk to us',
   },

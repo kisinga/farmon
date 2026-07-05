@@ -71,7 +71,7 @@ Because the hardware is standard and the firmware is generated from your design,
 
 Same app, same dashboard. The choice is who runs the backend:
 
-- **Managed** — we host the server online and keep it up (the `cloud` build). Lowest upfront cost; you just sign in to watch and control. Each controller runs as an independent island.
+- **Managed** — we host the server online and keep it up (the `cloud` build). A deployment path for sites that want managed visibility and support; you just sign in to watch and control. Each controller runs as an independent island.
 - **On-prem, own it** — an on-site hub (the `edge` build) runs your whole site by itself, with battery and solar carrying it through power cuts and no dependence on us. Controllers can share sensors and coordinate across the site, and you reach it over your own private connection, so your data never passes through us.
 
 Either way, you only need the internet to check in while you are away — the controllers do not.

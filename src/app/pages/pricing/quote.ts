@@ -1,48 +1,46 @@
 /**
- * Client-side quote document for the public pricing page.
+ * Client-side assessment document for the public assessment page.
  *
  * Reuses the site-documentation flow (`assembleSiteDoc`) rather than inventing a
  * PDF pipeline: the composed Easy Mode topology becomes a self-contained,
  * printable HTML document with the system diagram embedded; the visitor uses the
  * doc's own "Save as PDF" (browser print). No server storage, no new dependency.
  *
- * The price is spliced in at this (app) layer so @core's assembler stays
- * price-agnostic; everything else (topology, equipment, routes, styling) is the
- * documentation flow, so nothing is duplicated.
+ * The scope summary is spliced in at this (app) layer so @core's assembler stays
+ * commercial-positioning agnostic; everything else (topology, equipment, routes,
+ * styling) is the documentation flow, so nothing is duplicated.
  */
 import { renderTopologySvg, escXml, type SiteTopology } from '@core';
-import { kes, type Estimate } from './pricing.model';
+import type { Estimate } from './pricing.model';
 
 export interface QuoteInput {
   /** Title for the document + the single controller's heading. */
   siteName: string;
   /** The composed design (no pins in estimation mode). */
   topology: SiteTopology;
-  /** The on-page estimate, rendered as the quote's price section. */
+  /** The on-page sizing result, rendered as an assessment scope section. */
   estimate: Estimate;
 }
 
-/** The app-owned price section, styled with the doc's own CSS classes. */
-function priceSection(e: Estimate): string {
+/** The app-owned assessment section, styled with the doc's own CSS classes. */
+function assessmentSection(e: Estimate): string {
   const rows = e.lines.map(l =>
-    `<tr><td>${escXml(l.label)}${l.qty > 1 ? ` <span style="color:var(--text-muted)">× ${l.qty}</span>` : ''}</td>`
-    + `<td style="text-align:right">${l.provisional ? '<span style="color:var(--text-muted)">priced in your quote</span>' : escXml(kes(l.total))}</td></tr>`,
+    `<tr><td>${escXml(l.label)}</td><td style="text-align:right">${l.qty}</td></tr>`,
   ).join('');
-  const pack = e.pack.fromMonthly != null ? `from ${kes(e.pack.fromMonthly)} / mo` : 'available later';
-  return `<h2>Quote</h2>
+  return `<h2>Assessment scope</h2>
 <div class="pills">
   <span class="pill">${e.controllers} controller${e.controllers > 1 ? 's' : ''}</span>
-  <span class="pill">${escXml(e.pack.label)} add-on · ${escXml(pack)}</span>
-  <span class="pill">Plus a flat monthly per site, finalized in your quote</span>
+  <span class="pill">${escXml(e.pack.label)} service review</span>
+  <span class="pill">Commercial scope after site review</span>
 </div>
-<h3>Your kit (one-time)</h3>
-<table><thead><tr><th>Item</th><th style="text-align:right">Price</th></tr></thead>
-<tbody>${rows}<tr><td><strong>Total one-time</strong></td><td style="text-align:right"><strong>${escXml(e.oneTimeProvisional ? 'from ' + kes(e.oneTimeConfirmed) : kes(e.oneTime))}</strong></td></tr></tbody></table>
-<p style="color:var(--text-muted)">An estimate, not a final quote. The real price depends on a site survey, pipe sizes, and install. Prices in KES.</p>`;
+<h3>Likely deployment components</h3>
+<table><thead><tr><th>Component</th><th style="text-align:right">Qty</th></tr></thead>
+<tbody>${rows}</tbody></table>
+<p style="color:var(--text-muted)">Assessment only. Final scope follows a site conversation or survey.</p>`;
 }
 
 /**
- * Build a printable quote HTML document for a composed topology. Lazy-imports the
+ * Build a printable assessment HTML document for a composed topology. Lazy-imports the
  * heavy `@core/docs` assembler so `marked` never weighs on the pricing bundle.
  */
 export async function buildQuoteHtml(input: QuoteInput): Promise<string> {
@@ -67,13 +65,13 @@ export async function buildQuoteHtml(input: QuoteInput): Promise<string> {
     docs: [],
   });
 
-  // Splice the price section after the assembler's Overview heading. If the
+  // Splice the assessment section after the assembler's Overview heading. If the
   // assembler ever changes that markup, fall back to appending before </body> and
-  // warn, never silently drop the price.
+  // warn, never silently drop the context.
   const anchor = '<h2>Overview</h2>';
-  const section = priceSection(estimate);
+  const section = assessmentSection(estimate);
   if (html.includes(anchor)) return html.replace(anchor, `${section}\n${anchor}`);
-  console.warn('Quote: site-doc Overview anchor not found; appending price section.');
+  console.warn('Assessment: site-doc Overview anchor not found; appending scope section.');
   return html.includes('</body>') ? html.replace('</body>', `${section}\n</body>`) : html + section;
 }
 

@@ -13,7 +13,7 @@ export interface NavLink {
 const DEFAULT_LINKS: NavLink[] = [
   { label: 'How it works', route: '/how-it-works' },
   { label: 'Features', route: '/features' },
-  { label: 'Pricing', route: '/pricing' },
+  { label: 'Assessment', route: '/pricing' },
 ];
 
 /**

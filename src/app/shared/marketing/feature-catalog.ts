@@ -11,8 +11,8 @@ export interface PlanFeature {
   status: 'live' | 'soon';
 }
 
-/** An add-on service available on ANY kit (Lite, Pro or Enterprise), billed separately
- *  from the kit and the flat monthly. Orthogonal to the tier, never gated to it. */
+/** An add-on service available on ANY qualified deployment. Orthogonal to the tier,
+ *  never gated to it. */
 export interface AddonService {
   /** Stable key carried in the lead payload. */
   key: string;
@@ -22,7 +22,7 @@ export interface AddonService {
   availability: string;
 }
 
-/** What the flat monthly (MajiFlow Cloud) includes, the same on every kit. `status:
+/** What MajiFlow Cloud includes. `status:
  *  'soon'` renders muted, never as a working feature. */
 export const CLOUD_FEATURES: PlanFeature[] = [
   { label: 'Live dashboard: tanks, flow, pumps and valves', status: 'live' },
@@ -36,8 +36,8 @@ export const CLOUD_FEATURES: PlanFeature[] = [
 ];
 
 export const ADDON_SERVICES: AddonService[] = [
-  { key: 'water_quality', name: 'Water quality monitoring', blurb: 'pH, EC, turbidity and more, with managed probe maintenance.', availability: 'On request' },
-  { key: 'billing', name: 'Tenant and customer billing', blurb: 'Bill tenants or customers for the water they use.', availability: 'Coming soon' },
-  { key: 'metering', name: 'Metering and protection', blurb: 'Sell water by volume, with shrinkage and tamper protection.', availability: 'Coming soon' },
-  { key: 'reports', name: 'Advanced reports and export', blurb: 'Deeper analytics and data export.', availability: 'Coming soon' },
+  { key: 'water_quality', name: 'Water quality monitoring', blurb: 'pH, EC, turbidity and more, with managed probe maintenance.', availability: 'Scoped for qualified sites' },
+  { key: 'billing', name: 'Tenant and customer billing', blurb: 'Bill tenants or customers for the water they use.', availability: 'Pilot candidates' },
+  { key: 'metering', name: 'Metering and protection', blurb: 'Sell water by volume, with shrinkage and tamper protection.', availability: 'Pilot candidates' },
+  { key: 'reports', name: 'Advanced reports and export', blurb: 'Deeper analytics and data export.', availability: 'Scoped for operators' },
 ];

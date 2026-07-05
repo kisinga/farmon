@@ -67,9 +67,8 @@ interface PurchasePartner {
  * Built on the marketing design system (src/app/shared/marketing/ui + the .mkt-*
  * recipes in styles.css) so it stays in lockstep with /features and /pricing.
  * Carries the brand-level story (design → set up → monitor, the verticals, the
- * use-cases): the hosted platform is the product, sold as a per-controller
- * monthly subscription plus a one-time near-cost hardware kit. The controller
- * stays autonomous on link loss — local control works without the subscription.
+ * use-cases): MajiFlow is positioned as a qualified deployment for operators with
+ * meaningful water risk. The controller stays autonomous on link loss.
  */
 @Component({
   selector: 'app-landing',
@@ -108,7 +107,7 @@ interface PurchasePartner {
         start a pump.
       </p>
       <div class="mt-9 flex flex-wrap gap-3 justify-center">
-        <mkt-button variant="primary" route="/pricing">Estimate your site</mkt-button>
+        <mkt-button variant="primary" route="/pricing">Request a site assessment</mkt-button>
         <mkt-button variant="ghost" route="/login">Sign in</mkt-button>
       </div>
       <p class="mt-6 text-xs text-white/45">
@@ -292,13 +291,13 @@ interface PurchasePartner {
       </div>
     </mkt-section>
 
-    <!-- ===================== PRICING ===================== -->
+    <!-- ===================== DEPLOYMENT FIT ===================== -->
     <mkt-section [tint]="true"
-      heading="Simple, honest pricing"
-      subhead="One monthly subscription per controller, plus a one-time kit sold near cost. Start with everything a single site needs and add more as you grow. No lock-in.">
+      heading="For serious water operations"
+      subhead="MajiFlow is not the cheapest controller box. It is for sites where water failure is expensive: guests without water, crops missing irrigation, pumps burning out, or litres sold without proof. We assess fit before we quote.">
       <mkt-plan-levels [compact]="true" />
       <div class="mt-8 text-center">
-        <mkt-button variant="primary" route="/pricing">Estimate your site</mkt-button>
+        <mkt-button variant="primary" route="/pricing">Check deployment fit</mkt-button>
       </div>
     </mkt-section>
 
@@ -312,7 +311,7 @@ interface PurchasePartner {
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
           </mkt-icon-chip>
           <h3 class="font-semibold">Battery and solar</h3>
-          <p class="mt-1.5 text-sm text-white/60 leading-relaxed">Add battery and solar and your site runs right through a power cut, cleaner and cheaper than a diesel pump.</p>
+          <p class="mt-1.5 text-sm text-white/60 leading-relaxed">Add battery and solar and your site runs right through a power cut, without tying every outage to diesel logistics.</p>
         </div>
         <div class="mkt-card-dark">
           <mkt-icon-chip tone="on-dark" size="sm" class="mb-3">
@@ -366,11 +365,11 @@ export class LandingComponent {
   protected readonly navLinks: NavLink[] = [
     { label: 'How it works', route: '/how-it-works' },
     { label: 'Features', route: '/features' },
-    { label: 'Pricing', route: '/pricing' },
+    { label: 'Assessment', route: '/pricing' },
   ];
 
   protected readonly ctaButtons: CtaButton[] = [
-    { label: 'Estimate your site', route: '/pricing' },
+    { label: 'Request assessment', route: '/pricing' },
     { label: 'Sign in', route: '/login' },
   ];
 

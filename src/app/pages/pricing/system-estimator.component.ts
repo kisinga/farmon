@@ -7,14 +7,14 @@ import { TopologyPreviewComponent } from '../../shared/topology-preview.componen
 import { SiteProfileModel } from '../../shared/site-profile.model';
 import type { Segment } from './pricing.model';
 
-/** The component counts a sized site maps to, plus the design itself for the quote. */
+/** The component counts a sized site maps to, plus the design itself for assessment. */
 export interface SizedEstimate {
   segment: Segment;
   pumps: number;
   valves: number;
   flow: number;
   tanks: number;
-  /** The composed design (no pins in estimation mode): drives the quote document. */
+  /** The composed design (no pins in estimation mode): drives the assessment document. */
   topology: SiteTopology | null;
   /** The raw answers behind the design: stored on the lead so conversion can
    *  re-run the composer with a real board. Null when the site is not buildable. */
@@ -39,8 +39,8 @@ function verticalToSegment(v: Vertical): Segment {
  * (the same questionnaire the admin stepper uses); the same Easy Mode composer
  * (`estimateSystem`) derives the bill of materials, a collapsed preview, and
  * whether it fits one controller. The derived counts + design are emitted so the
- * page prices it and the quote embeds it: one site description, no second sizing
- * model. No backend, no auth.
+ * page can qualify it and store useful lead context: one site description, no
+ * second sizing model. No backend, no auth.
  */
 @Component({
   selector: 'app-system-estimator',
@@ -154,7 +154,7 @@ function verticalToSegment(v: Vertical): Segment {
               </details>
             }
 
-            <p class="text-sm text-emerald-600 font-medium">Fits one controller. Your estimate updates as you answer.</p>
+            <p class="text-sm text-emerald-600 font-medium">Fits one controller. Your assessment updates as you answer.</p>
           } @else {
             <p class="text-sm text-slate-600 leading-relaxed">This is a custom system. Your design options are in the plan<span class="lg:hidden"> just below</span>.</p>
           }
@@ -166,7 +166,7 @@ function verticalToSegment(v: Vertical): Segment {
   `,
 })
 export class SystemEstimatorComponent {
-  /** Emitted live as the description changes; carries the priced inputs + design. */
+  /** Emitted live as the description changes; carries the assessment inputs + design. */
   readonly sized = output<SizedEstimate>();
 
   /** The shared questionnaire state (same model the admin stepper uses). */
@@ -195,16 +195,16 @@ export class SystemEstimatorComponent {
       this.destroyRef.onDestroy(() => mq.removeEventListener('change', onChange));
     });
 
-    // Feed the page's estimate live, no "apply" click. Re-runs whenever any
+    // Feed the page's assessment live, no "apply" click. Re-runs whenever any
     // sizing answer changes; reads only this component's signals, so the parent's
     // handler writing its own signals can't loop back here.
     effect(() => {
       const s = this.system();
       const p = this.form.profile();
-      if (!s || !p) return; // incomplete profile: keep the last estimate + quote
+      if (!s || !p) return; // incomplete profile: keep the last assessment
       if (!s.fits) {
         // Needs our team (custom layout, too big for one controller): drop the
-        // quote/design so it can't reuse a stale one, but keep the answers + a
+        // design so it can't reuse a stale one, but keep the answers + a
         // plain reason so the page can switch into the design-request flow and
         // the lead still tells us what they described. Price holds as-is.
         this.sized.emit({ segment: verticalToSegment(p.vertical), pumps: 0, valves: 0, flow: 0, tanks: 0, topology: null, profile: p, handoff: this.handoffInfo() });
