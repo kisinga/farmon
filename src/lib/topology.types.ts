@@ -163,6 +163,24 @@ export interface SiteTopology {
 // Helpers
 // ---------------------------------------------------------------------------
 
+export function createEmptySiteTopology(): SiteTopology {
+  return {
+    schema: 18,
+    controllers: [],
+    nodes: [],
+    pipes: [],
+    route_overrides: {},
+    timing: {
+      valve_travel_time: 15,
+      flow_watchdog: 30,
+      flow_confirm: 10,
+      flow_threshold: 0.5,
+      update_interval: 10,
+    },
+    remoteImports: [],
+  };
+}
+
 export function getNodesByKind<K extends TopologyNode['kind']>(
   t: { nodes: TopologyNode[] }, kind: K,
 ): Extract<TopologyNode, { kind: K }>[] {

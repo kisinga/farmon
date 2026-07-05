@@ -14,7 +14,7 @@ export type {
   FlowSensorNode, WaterSourceNode, FilterNode, DosingPumpNode, VfdNode,
   Port, Position, Controller, RemoteImport,
 } from './topology.types';
-export { effectiveTransport } from './topology.types';
+export { createEmptySiteTopology, effectiveTransport } from './topology.types';
 export type { Manifest, ManifestNode, LocalManifestNode, ImportedManifestNode, Device, Timing } from './manifest.types';
 export { type Route as ManifestRoute } from './manifest.types';
 export type { BoardDef, DocSection, PinDef, PinCap, ExpanderDef, EthernetDef, ExpansionBoardDef, ExpansionBoardChannelDef, ExpansionBoardCatalog } from './board.types';
@@ -238,4 +238,3 @@ export { planWateringAutomations } from './compose/automations';
 // Static topology renderer (feeds the in-page preview and the quote document).
 export { renderTopologySvg } from './topology-svg';
 export type { TopologySvgOptions } from './topology-svg';
-

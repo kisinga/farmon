@@ -1,6 +1,7 @@
 import { Injectable } from '@angular/core';
 import PocketBase, { type RecordModel } from 'pocketbase';
 import {
+  createEmptySiteTopology,
   parseTopology,
   parseBoardDef,
   parseExpansionBoardDef,
@@ -112,7 +113,7 @@ export class BackendService {
     const r = await this.pb.collection('sites').create({
       name: friendlyName,
       slug,
-      draft_topology: null,
+      draft_topology: createEmptySiteTopology(),
       owner: me ? [me] : [],
     });
     return { id: r['id'] };

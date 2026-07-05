@@ -6,6 +6,7 @@ import { ConfirmService } from '../../../core/services/confirm.service';
 import { CONTROLLER_COLORS } from '../../../shared/canvas/topology-overlays';
 import { DeploymentCardComponent } from './deployment-card.component';
 import { SectionHeaderComponent } from '../shared/section-header.component';
+import { AddControllerComponent } from '../topology-x6-tab/add-controller.component';
 
 /**
  * Site overview — the workspace home. A single scrolling column (like the other
@@ -16,7 +17,7 @@ import { SectionHeaderComponent } from '../shared/section-header.component';
 @Component({
   selector: 'app-site-panel',
   standalone: true,
-  imports: [DeploymentCardComponent, SectionHeaderComponent],
+  imports: [DeploymentCardComponent, SectionHeaderComponent, AddControllerComponent],
   template: `
     <div class="content-pane space-y-6">
       <app-section-header
@@ -55,7 +56,12 @@ import { SectionHeaderComponent } from '../shared/section-header.component';
         @if (systemEntries().length === 0) {
           <div class="surface px-6 py-10 text-center">
             <p class="text-sm text-base-content/50">No controllers yet.</p>
-            <p class="text-xs text-base-content/40 mt-1">Add one with “Add controller” in the Design canvas.</p>
+            <p class="text-xs text-base-content/40 mt-1 mb-4">Add a controller to start drawing this site's topology.</p>
+            @if (!editor.readonly()) {
+              <div class="inline-flex">
+                <app-add-controller />
+              </div>
+            }
           </div>
         } @else {
           <div class="grid sm:grid-cols-2 gap-3">
@@ -143,7 +149,7 @@ import { SectionHeaderComponent } from '../shared/section-header.component';
 })
 export class SitePanelComponent {
   protected workspace = inject(WorkspaceService);
-  private editor = inject(SystemEditorService);
+  protected editor = inject(SystemEditorService);
   private confirmService = inject(ConfirmService);
   private router = inject(Router);
 

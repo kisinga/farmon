@@ -116,9 +116,10 @@ export class AddControllerComponent {
   protected addingController = signal(false);
   protected templates = signal<TemplateListEntry[]>([]);
 
-  protected openBlankControllerModal() {
+  protected async openBlankControllerModal() {
     this.blankName.set('');
     this.blankBoard.set('');
+    await this.boards.ensureLoaded();
     this.showBlankModal.set(true);
   }
 

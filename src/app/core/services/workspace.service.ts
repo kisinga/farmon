@@ -10,7 +10,7 @@ import type {
 } from '@core';
 
 import {
-  buildGraph, deriveRoutes, activeGraph, parseTopology, slug,
+  buildGraph, deriveRoutes, activeGraph, createEmptySiteTopology, parseTopology, slug,
   controllerClaimsSegment, detectCrossControllerTalk, migrateToRemoteImports,
 } from '@core';
 
@@ -230,21 +230,7 @@ export class WorkspaceService {
         }
         this._boards.set(boards);
       } else {
-        this._siteTopology.set({
-          schema: 18,
-          controllers: [],
-          nodes: [],
-          pipes: [],
-          route_overrides: {},
-          timing: {
-            valve_travel_time: 15,
-            flow_watchdog: 30,
-            flow_confirm: 10,
-            flow_threshold: 0.5,
-            update_interval: 10,
-          },
-          remoteImports: [],
-        });
+        this._siteTopology.set(createEmptySiteTopology());
       }
 
       this._dirty.set(false);

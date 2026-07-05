@@ -1,7 +1,7 @@
 import { Component, computed, inject, signal } from '@angular/core';
 import { NgTemplateOutlet } from '@angular/common';
 import { ActivatedRoute } from '@angular/router';
-import { buildDashboardSpec, parseTopology, COMMAND_TTL_S, type CommandAction, type CommandPhase, type DashboardWidget, type ActuatorControl, type RuntimeState } from '@core';
+import { buildDashboardSpec, createEmptySiteTopology, parseTopology, COMMAND_TTL_S, type CommandAction, type CommandPhase, type DashboardWidget, type ActuatorControl, type RuntimeState } from '@core';
 import { BackendService } from '../../core/services/backend.service';
 import { AuthStore } from '../../core/services/auth.store';
 import { DashboardStore } from './dashboard.store';
@@ -714,12 +714,7 @@ export class DashboardComponent {
     // Admin looking at a site they're not a co-owner of → start read-only.
     const me = this.auth.user()?.id;
     this.adminViewing.set(this.auth.isAdmin() && !(!!me && (site.owners?.includes(me) ?? false)));
-    if (!topology) {
-      this.store.error.set('Site has no topology yet.');
-      this.store.loading.set(false);
-      return;
-    }
-    const topo = parseTopology(topology);
+    const topo = topology ? parseTopology(topology) : createEmptySiteTopology();
     this.topology.set(topo);
     const spec = buildDashboardSpec(topo);
     await this.store.init(this.siteId, spec, { update_interval: topo.timing.update_interval }, site.owners ?? [], site.people ?? []);
