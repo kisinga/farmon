@@ -2,11 +2,10 @@ import { ChangeDetectionStrategy, Component, inject, input } from '@angular/core
 import { RouterLink } from '@angular/router';
 import { DomSanitizer, type SafeHtml } from '@angular/platform-browser';
 import { BRAND_LOGO_SVG } from '../brand-logo';
-import { GITHUB_URL } from './marketing-nav.component';
 
 /**
  * Shared footer for every public marketing page. The brand mark links home and the
- * GitHub link sits on the right; only the tagline changes per page.
+ * tagline keeps the close simple across public pages.
  */
 @Component({
   selector: 'app-marketing-footer',
@@ -22,14 +21,12 @@ import { GITHUB_URL } from './marketing-nav.component';
           <span class="font-semibold text-white">MajiFlow</span>
         </a>
         <p class="text-sm text-center">{{ tagline() }}</p>
-        <a [href]="github" target="_blank" rel="noopener"
-           class="text-sm hover:text-white transition-colors">Open source on GitHub →</a>
+        <p class="text-sm text-center text-slate-500">Water monitoring and automation</p>
       </div>
     </footer>
   `,
 })
 export class MarketingFooterComponent {
   readonly tagline = input('Started on a dry-land farm, where every drop counts.');
-  protected readonly github = GITHUB_URL;
   protected readonly logo: SafeHtml = inject(DomSanitizer).bypassSecurityTrustHtml(BRAND_LOGO_SVG);
 }

@@ -37,7 +37,7 @@ export class App implements OnInit {
   // Public, full-bleed pages (landing + login + pricing) bring their own branded
   // layout, so the app shell hides its top bar there.
   protected isPublic = computed(() => {
-    const url = this.currentUrl();
+    const url = this.currentUrl().split(/[?#]/, 1)[0];
     return url === '/' || url === '' || url.startsWith('/login') || url.startsWith('/pricing') || url.startsWith('/features') || url.startsWith('/how-it-works');
   });
 

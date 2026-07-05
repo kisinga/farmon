@@ -6,6 +6,7 @@ import {
 } from '../../shared/hardware-showcase/hardware-showcase.component';
 import { MarketingNavComponent } from '../../shared/marketing/marketing-nav.component';
 import { MarketingFooterComponent } from '../../shared/marketing/marketing-footer.component';
+import type { NavLink } from '../../shared/marketing/marketing-nav.component';
 import { MarketingCtaComponent, type CtaButton } from '../../shared/marketing/marketing-cta.component';
 import {
   MktHeroComponent,
@@ -36,6 +37,25 @@ interface Deployment {
   designSlot: string;
   /** Filename hint shown in the empty photo slot. */
   photoSlot: string;
+}
+
+/** A physical place where a buyer can ask about or purchase MajiFlow. */
+interface PartnerLocation {
+  label: string;
+  address: string;
+  mapHref: string;
+}
+
+/** Sales and fulfilment partner shown on the public homepage. */
+interface PurchasePartner {
+  name: string;
+  category: string;
+  summary: string;
+  fit: string[];
+  website: string;
+  phone: string;
+  email: string;
+  locations: PartnerLocation[];
 }
 
 /**
@@ -70,7 +90,7 @@ interface Deployment {
   host: { class: 'flex-1 overflow-y-auto bg-white text-slate-900' },
   template: `
     <!-- ============================= NAV ============================= -->
-    <app-marketing-nav />
+    <app-marketing-nav [links]="navLinks" />
 
     <!-- ============================= HERO ============================= -->
     <mkt-hero size="lg" [blobs]="true" [logo]="true" [waveDivider]="true">
@@ -172,6 +192,106 @@ interface Deployment {
       <mkt-feature-grid [items]="verticals" [cols]="4" tone="muted" titleTone="brand" />
     </mkt-section>
 
+    <!-- ===================== PARTNERS / WHERE TO BUY ===================== -->
+    <mkt-section id="where-to-buy" [tint]="true" width="wide"
+      eyebrow="Where to buy"
+      heading="Purchase through our partner network"
+      subhead="Start with an estimate here, then talk to a local partner for supply, installation, and farm-fit guidance.">
+      <div class="grid gap-5 lg:grid-cols-[minmax(0,1fr)_340px] items-stretch">
+        @for (partner of purchasePartners; track partner.name) {
+          <article class="overflow-hidden rounded-2xl bg-white ring-1 ring-slate-200 shadow-xl shadow-slate-900/5">
+            <div class="grid lg:grid-cols-[minmax(0,1fr)_300px]">
+              <div class="p-6 sm:p-8">
+                <div class="flex flex-wrap items-center gap-2">
+                  <span class="rounded-full bg-cyan-50 px-3 py-1 text-xs font-semibold text-cyan-800 ring-1 ring-cyan-100">Featured partner</span>
+                  <span class="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600 ring-1 ring-slate-200">{{ partner.category }}</span>
+                </div>
+
+                <h3 class="mt-5 text-3xl font-bold tracking-tight text-slate-950">{{ partner.name }}</h3>
+                <p class="mt-3 max-w-2xl text-sm sm:text-base leading-relaxed text-slate-600">{{ partner.summary }}</p>
+
+                <div class="mt-6 flex flex-wrap gap-2">
+                  <a [href]="partner.website" target="_blank" rel="noopener"
+                     class="inline-flex items-center justify-center rounded-full bg-slate-950 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-slate-800">
+                    Visit site
+                  </a>
+                  <a [href]="'tel:' + partner.phone.replaceAll(' ', '')"
+                     class="inline-flex items-center justify-center rounded-full bg-cyan-400 px-5 py-2.5 text-sm font-semibold text-slate-950 shadow-lg shadow-cyan-500/20 transition-colors hover:bg-cyan-300">
+                    Call
+                  </a>
+                  <a [href]="'mailto:' + partner.email"
+                     class="inline-flex items-center justify-center rounded-full px-5 py-2.5 text-sm font-semibold text-slate-700 ring-1 ring-slate-300 transition-colors hover:bg-slate-50">
+                    Email
+                  </a>
+                </div>
+              </div>
+
+              <div class="border-t border-slate-200 bg-slate-950 p-6 text-white lg:border-l lg:border-t-0 sm:p-8">
+                <p class="text-xs font-semibold uppercase tracking-[0.18em] text-cyan-200">Best for</p>
+                <div class="mt-4 space-y-3">
+                  @for (item of partner.fit; track item) {
+                    <div class="flex gap-3 text-sm leading-relaxed text-white/75">
+                      <span class="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-cyan-300"></span>
+                      <span>{{ item }}</span>
+                    </div>
+                  }
+                </div>
+
+                <div class="mt-6 border-t border-white/10 pt-5 text-sm">
+                  <p class="font-semibold text-white">Order enquiries</p>
+                  <a [href]="'tel:' + partner.phone.replaceAll(' ', '')" class="mt-2 block text-white/70 hover:text-cyan-200">{{ partner.phone }}</a>
+                  <a [href]="'mailto:' + partner.email" class="mt-1 block text-white/70 hover:text-cyan-200">{{ partner.email }}</a>
+                </div>
+              </div>
+            </div>
+
+            <div class="border-t border-slate-200 bg-white px-6 py-5 sm:px-8">
+              <p class="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Purchase and pickup locations</p>
+              <div class="mt-4 grid gap-4 md:grid-cols-3">
+                @for (location of partner.locations; track location.label) {
+                  <a [href]="location.mapHref" target="_blank" rel="noopener"
+                     class="group block rounded-lg border border-slate-200 bg-slate-50 p-4 transition-colors hover:border-cyan-200 hover:bg-cyan-50">
+                    <span class="block text-sm font-semibold text-slate-950">{{ location.label }}</span>
+                    <span class="mt-1 block text-sm leading-relaxed text-slate-600 group-hover:text-slate-800">{{ location.address }}</span>
+                    <span class="mt-3 inline-flex text-xs font-semibold text-cyan-700">Open map</span>
+                  </a>
+                }
+              </div>
+            </div>
+          </article>
+        }
+
+        <aside class="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200 sm:p-7">
+          <div>
+            <p class="text-xs font-semibold uppercase tracking-[0.18em] text-cyan-700">Partner list</p>
+            <div class="mt-4 space-y-3">
+              @for (partner of purchasePartners; track partner.name) {
+                <a [href]="partner.website" target="_blank" rel="noopener"
+                   class="flex items-center justify-between rounded-lg border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-900 transition-colors hover:border-cyan-200 hover:bg-cyan-50">
+                  <span>{{ partner.name }}</span>
+                  <span class="text-cyan-700">Visit</span>
+                </a>
+              }
+            </div>
+
+            <div class="mt-7 border-t border-slate-200 pt-6">
+              <p class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Partner with us</p>
+              <h3 class="mt-3 text-xl font-bold tracking-tight text-slate-950">Want MajiFlow in your catalogue?</h3>
+              <p class="mt-3 text-sm leading-relaxed text-slate-600">
+                We are expanding slowly with irrigation, agrovet, plumbing, and solar partners who already support farms and water sites.
+              </p>
+            </div>
+          </div>
+          <div class="mt-6">
+            <a href="mailto:info@majiflow.com"
+               class="inline-flex w-full items-center justify-center rounded-full bg-slate-950 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-slate-800">
+              Become a partner
+            </a>
+          </div>
+        </aside>
+      </div>
+    </mkt-section>
+
     <!-- ===================== PRICING ===================== -->
     <mkt-section [tint]="true"
       heading="Simple, honest pricing"
@@ -243,6 +363,12 @@ export class LandingComponent {
   /** The controller, on the shared cinematic stage as a one-device hero. */
   protected readonly heroDevices = [HARDWARE_DEVICES[0]];
 
+  protected readonly navLinks: NavLink[] = [
+    { label: 'How it works', route: '/how-it-works' },
+    { label: 'Features', route: '/features' },
+    { label: 'Pricing', route: '/pricing' },
+  ];
+
   protected readonly ctaButtons: CtaButton[] = [
     { label: 'Estimate your site', route: '/pricing' },
     { label: 'Sign in', route: '/login' },
@@ -292,6 +418,40 @@ export class LandingComponent {
       photo: '',
       designSlot: 'marketing/deploy-3-design.png',
       photoSlot: 'marketing/deploy-3-install.png',
+    },
+  ];
+
+  protected readonly purchasePartners: PurchasePartner[] = [
+    {
+      name: 'Plum',
+      category: 'Irrigation, agrovet and pharmacy partner',
+      summary:
+        'Plum supports Kenyan farms with smart irrigation systems, drip kits, solar pumps, farm inputs, and professional design and installation guidance.',
+      fit: [
+        'Irrigation system supply',
+        'Farm design and installation support',
+        'Online or branch purchase enquiries',
+      ],
+      website: 'https://plum.co.ke/',
+      phone: '+254 721 424 444',
+      email: 'info@plum.co.ke',
+      locations: [
+        {
+          label: 'Nairobi branch',
+          address: 'Alpha Centre, Cabanas, Along Mombasa Road, Nairobi',
+          mapHref: 'https://www.google.com/maps/search/?api=1&query=Alpha%20Centre%20Cabanas%20Mombasa%20Road%20Nairobi',
+        },
+        {
+          label: 'Matuu head office',
+          address: 'A1 Plaza, Ground Floor, next to Faulu Bank, Matuu',
+          mapHref: 'https://www.google.com/maps/search/?api=1&query=A1%20Plaza%20Matuu%20Faulu%20Bank',
+        },
+        {
+          label: 'Matuu branch',
+          address: 'MB Centre, Ground Floor, next to Co-op Bank, Along Thika-Garissa Highway, Matuu',
+          mapHref: 'https://www.google.com/maps/search/?api=1&query=MB%20Centre%20Matuu%20Co-op%20Bank%20Thika%20Garissa%20Highway',
+        },
+      ],
     },
   ];
 }

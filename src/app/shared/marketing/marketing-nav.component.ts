@@ -3,8 +3,6 @@ import { RouterLink } from '@angular/router';
 import { DomSanitizer, type SafeHtml } from '@angular/platform-browser';
 import { BRAND_LOGO_SVG } from '../brand-logo';
 
-export const GITHUB_URL = 'https://github.com/kisinga/majiflow';
-
 /** A nav link: internal `route` or external `href` (rendered desktop-only). */
 export interface NavLink {
   label: string;
@@ -16,7 +14,6 @@ const DEFAULT_LINKS: NavLink[] = [
   { label: 'How it works', route: '/how-it-works' },
   { label: 'Features', route: '/features' },
   { label: 'Pricing', route: '/pricing' },
-  { label: 'GitHub', href: GITHUB_URL },
 ];
 
 /**
@@ -42,7 +39,7 @@ const DEFAULT_LINKS: NavLink[] = [
         <div class="hidden sm:flex items-center gap-3">
           @for (l of links(); track l.label) {
             @if (l.href) {
-              <a [href]="l.href" target="_blank" rel="noopener"
+              <a [href]="l.href" [target]="externalTarget(l.href)" [rel]="externalRel(l.href)"
                  class="text-sm font-medium text-white/70 hover:text-white transition-colors whitespace-nowrap px-3 py-2">{{ l.label }}</a>
             } @else {
               <a [routerLink]="l.route"
@@ -77,7 +74,7 @@ const DEFAULT_LINKS: NavLink[] = [
         <div class="sm:hidden border-t border-white/10 bg-slate-950/95 px-4 pb-3">
           @for (l of links(); track l.label) {
             @if (l.href) {
-              <a [href]="l.href" target="_blank" rel="noopener" (click)="close()"
+              <a [href]="l.href" [target]="externalTarget(l.href)" [rel]="externalRel(l.href)" (click)="close()"
                  class="block text-sm font-medium text-white/70 hover:text-white py-3">{{ l.label }}</a>
             } @else {
               <a [routerLink]="l.route" (click)="close()"
@@ -100,5 +97,13 @@ export class MarketingNavComponent {
 
   protected close(): void {
     this.open.set(false);
+  }
+
+  protected externalTarget(href: string): '_blank' | null {
+    return href.startsWith('#') || href.startsWith('/') ? null : '_blank';
+  }
+
+  protected externalRel(href: string): 'noopener' | null {
+    return this.externalTarget(href) ? 'noopener' : null;
   }
 }
