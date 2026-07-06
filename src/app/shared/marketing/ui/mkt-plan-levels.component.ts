@@ -39,9 +39,11 @@ import { KIT_TIERS, type KitTier } from '../../../pages/pricing/pricing.model';
         </div>
       }
     </div>
-    <p class="mt-5 text-center text-xs text-slate-500 leading-relaxed">
-      Built for operators with real water risk: dry tanks, burnt pumps, unbilled usage, lost irrigation windows, or many people depending on supply.
-    </p>
+    @if (!compact()) {
+      <p class="mt-5 text-center text-xs text-slate-500 leading-relaxed">
+        Built for operators with real water risk: dry tanks, burnt pumps, unbilled usage, lost irrigation windows, or many people depending on supply.
+      </p>
+    }
   `,
 })
 export class MktPlanLevelsComponent {

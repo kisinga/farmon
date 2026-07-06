@@ -18,8 +18,8 @@ import { ChangeDetectionStrategy, Component, computed, input } from '@angular/co
         @if (eyebrow() || heading() || subhead()) {
           <div [class]="headerCls()">
             @if (eyebrow()) {
-              <span class="mkt-eyebrow mb-5">
-                <span class="w-1.5 h-1.5 rounded-full bg-cyan-300"></span>{{ eyebrow() }}
+              <span [class]="eyebrowCls()">
+                <span class="w-1.5 h-1.5 rounded-full" [class.bg-cyan-300]="dark()" [class.bg-cyan-700]="!dark()"></span>{{ eyebrow() }}
               </span>
             }
             @if (heading()) { <h2 class="mkt-h2">{{ heading() }}</h2> }
@@ -56,4 +56,10 @@ export class MktSectionComponent {
   );
 
   protected readonly subheadColor = computed(() => (this.dark() ? 'text-white/60' : 'text-slate-600'));
+
+  protected readonly eyebrowCls = computed(() =>
+    this.dark()
+      ? 'mkt-eyebrow mb-5'
+      : 'inline-flex items-center gap-2 rounded-full bg-cyan-100 ring-1 ring-cyan-200 px-3 py-1 text-xs font-semibold text-cyan-800 mb-5',
+  );
 }
