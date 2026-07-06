@@ -1,18 +1,25 @@
-// Package alerts sends alert email for away coverage. Everything the user sees
+// Package alerts sends away-coverage notifications. Everything the user sees
 // in-app is derived in the browser from realtime data; this is the one piece
 // that cannot move there, because a browser does not run while its tab is shut.
 //
-// The sweep re-derives the same conditions the frontend does — purely from data
-// the server already stores (controller presence, tank-level shadows, fault
-// transitions) — and emails the site owner when they opt in. It owns no state
-// beyond an in-memory per-incident cooldown, so it needs no alerts table.
+// The sweep re-derives the same conditions the frontend does from data the
+// server already stores (controller presence, tank-level shadows, fault
+// transitions), then sends WhatsApp via OpenWA or email when owners opt in. It
+// owns no state beyond an in-memory per-incident cooldown, so it needs no alerts
+// table.
 package alerts
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
+	"net/http"
 	"net/mail"
+	"os"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -26,22 +33,24 @@ const (
 	sweepInterval     = 60 * time.Second
 	defaultLowPct     = 20.0
 	defaultOfflineSec = 180.0
+	// Kenya is the default country context for local WhatsApp numbers.
+	defaultWhatsAppCountryCode = "254"
 	// Floor for a positive offline_timeout_s: it must stay well above the telemetry
 	// cadence (update_interval, capped at 60s) so a healthy device's normal gap
 	// between samples can never read as offline. 0 still means "use the default".
 	offlineFloorSec = 120.0
-	// Re-notify window: one email per incident at most this often, so a stuck
-	// condition doesn't spam the owner every tick.
+	// Re-notify window: one external notification per incident at most this often,
+	// so a stuck condition doesn't spam the owner every tick.
 	cooldown = 30 * time.Minute
 	// A fault transition older than this is treated as history, not a live alert.
 	faultRecent = 30 * time.Minute
 )
 
-// RunSweeper runs the alert-email loop until the process exits. Safe to start
-// even when SMTP is unconfigured — it simply finds nothing to send (the per-user
-// channel_email pref defaults off, and send() no-ops without SMTP).
+// RunSweeper runs the external-alert loop until the process exits. Safe to start
+// even when SMTP/OpenWA are unconfigured: channel prefs default silent, and each
+// sender reports a retryable error when its infrastructure is missing.
 func RunSweeper(app core.App) {
-	s := &sweeper{lastSent: map[string]time.Time{}}
+	s := &sweeper{lastSent: map[string]time.Time{}, openwa: openWAFromEnv(http.DefaultClient)}
 	t := time.NewTicker(sweepInterval)
 	defer t.Stop()
 	for now := range t.C {
@@ -54,11 +63,12 @@ func RunSweeper(app core.App) {
 type sweeper struct {
 	mu       sync.Mutex
 	lastSent map[string]time.Time
+	openwa   openWAClient
 }
 
-// shouldSend reports whether a key is outside its cooldown. It does NOT stamp —
-// the send time is recorded only after a successful send (see notify), so a
-// failed email retries on the next tick instead of going dark for a cooldown.
+// shouldSend reports whether a key is outside its cooldown. It does NOT stamp:
+// the send time is recorded only after a successful channel send, so a failed
+// delivery retries on the next tick instead of going dark for a cooldown.
 func (s *sweeper) shouldSend(key string, now time.Time) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -72,44 +82,73 @@ func (s *sweeper) markSent(key string, now time.Time) {
 	s.lastSent[key] = now
 }
 
-// notify sends one alert email to `to` if the key is off cooldown, stamping the
-// cooldown only when the send actually succeeds. A nil/empty `to` is a no-op.
-func (s *sweeper) notify(app core.App, to []string, now time.Time, key, subject, body string) {
-	if len(to) == 0 || !s.shouldSend(key, now) {
+// notify sends one alert to the requested external channels if the key is off
+// cooldown, stamping the cooldown only when at least one channel succeeds.
+func (s *sweeper) notify(app core.App, to recipients, now time.Time, key, subject, body string) {
+	if !to.any() || !s.shouldSend(key, now) {
 		return
 	}
-	if err := s.send(app, to, subject, body); err != nil {
-		log.Printf("alerts: email to %v: %v", to, err)
-		return
+	delivered := false
+	if len(to.whatsapp) > 0 {
+		if err := s.sendWhatsApp(to.whatsapp, subject, body); err != nil {
+			log.Printf("alerts: whatsapp to %v: %v", to.whatsapp, err)
+		} else {
+			delivered = true
+		}
 	}
-	s.markSent(key, now)
+	if len(to.email) > 0 {
+		if err := s.sendEmail(app, to.email, subject, body); err != nil {
+			log.Printf("alerts: email to %v: %v", to.email, err)
+		} else {
+			delivered = true
+		}
+	}
+	if delivered {
+		s.markSent(key, now)
+	}
 }
 
-// siteCtx carries a site's thresholds plus the per-alert recipient lists — the
-// co-owners who turned on email and that specific alert type. A site has a set of
-// equal co-owners, each with their own notification prefs, so the same incident
-// reaches exactly those who asked for it.
+// siteCtx carries a site's thresholds plus the per-alert recipient lists. A site
+// has equal co-owners, each with their own notification prefs, so the same
+// incident reaches exactly those who asked for it.
 type siteCtx struct {
 	id        string
 	name      string
 	lowPct    float64
 	highPct   float64 // 0 == no high alert
 	offlineMs float64
-	offlineTo []string
-	faultTo   []string
-	tankTo    []string
+	offlineTo recipients
+	faultTo   recipients
+	tankTo    recipients
 }
 
 type prefs struct {
-	offline, fault, tank, email bool
+	offline, fault, tank, email, whatsapp bool
+	chatID                                string
+}
+
+type recipients struct {
+	email    []string
+	whatsapp []string
+}
+
+func (r recipients) any() bool {
+	return len(r.email) > 0 || len(r.whatsapp) > 0
+}
+
+func (r *recipients) addEmail(email string) {
+	if email != "" {
+		r.email = append(r.email, email)
+	}
+}
+
+func (r *recipients) addWhatsApp(chatID string) {
+	if chatID != "" {
+		r.whatsapp = append(r.whatsapp, chatID)
+	}
 }
 
 func (s *sweeper) run(app core.App, now time.Time) error {
-	// Don't bother resolving anything if email can't be sent.
-	if !app.Settings().SMTP.Enabled {
-		return nil
-	}
-
 	sites, err := app.FindAllRecords("sites")
 	if err != nil {
 		return err
@@ -117,7 +156,7 @@ func (s *sweeper) run(app core.App, now time.Time) error {
 	for _, site := range sites {
 		sc, ok := resolveSite(app, site)
 		if !ok {
-			continue // no co-owner opted into any email alert
+			continue
 		}
 		s.sweepOffline(app, sc, now)
 		s.sweepTanks(app, sc, now)
@@ -126,40 +165,46 @@ func (s *sweeper) run(app core.App, now time.Time) error {
 	return nil
 }
 
-// resolveSite gathers a site's thresholds and the per-alert recipient lists. Each
-// co-owner contributes their email to the alert types they enabled (with email on
-// as the master switch). ok is false when no co-owner wants any email alert.
+// resolveSite gathers a site's thresholds and per-alert recipients.
 func resolveSite(app core.App, site *core.Record) (siteCtx, bool) {
 	ownerIDs := site.GetStringSlice("owner")
 	if len(ownerIDs) == 0 {
 		return siteCtx{}, false
 	}
 
-	var offlineTo, faultTo, tankTo []string
+	var offlineTo, faultTo, tankTo recipients
 	for _, ownerID := range ownerIDs {
 		owner, err := app.FindRecordById("users", ownerID)
 		if err != nil {
 			continue
 		}
-		email := owner.GetString("email")
-		if email == "" {
-			continue
-		}
 		p := resolvePrefs(app, ownerID)
-		if !p.email {
-			continue // email channel off — this co-owner gets nothing
-		}
 		if p.offline {
-			offlineTo = append(offlineTo, email)
+			if p.whatsapp {
+				offlineTo.addWhatsApp(p.chatID)
+			}
+			if p.email {
+				offlineTo.addEmail(owner.GetString("email"))
+			}
 		}
 		if p.fault {
-			faultTo = append(faultTo, email)
+			if p.whatsapp {
+				faultTo.addWhatsApp(p.chatID)
+			}
+			if p.email {
+				faultTo.addEmail(owner.GetString("email"))
+			}
 		}
 		if p.tank {
-			tankTo = append(tankTo, email)
+			if p.whatsapp {
+				tankTo.addWhatsApp(p.chatID)
+			}
+			if p.email {
+				tankTo.addEmail(owner.GetString("email"))
+			}
 		}
 	}
-	if len(offlineTo) == 0 && len(faultTo) == 0 && len(tankTo) == 0 {
+	if !offlineTo.any() && !faultTo.any() && !tankTo.any() {
 		return siteCtx{}, false
 	}
 
@@ -186,25 +231,25 @@ func resolveSite(app core.App, site *core.Record) (siteCtx, bool) {
 	}, true
 }
 
-// resolvePrefs reads the owner's notification_prefs. No row → all alert types on
-// but email off (the conservative default), so an unconfigured user is silent.
+// resolvePrefs reads the owner's notification_prefs. No row means alert types
+// default on except offline, while external channels default off.
 func resolvePrefs(app core.App, userID string) prefs {
 	rec, err := app.FindFirstRecordByFilter("notification_prefs", "user = {:u}", dbx.Params{"u": userID})
 	if err != nil || rec == nil {
-		// Offline is opt-in (a flaky link drops constantly → noisiest alert); the
-		// rest default on. Mirrors DEFAULT_NOTIFICATION_PREFS in the frontend.
-		return prefs{offline: false, fault: true, tank: true, email: false}
+		return prefs{offline: false, fault: true, tank: true, email: false, whatsapp: false}
 	}
 	return prefs{
-		offline: rec.GetBool("alert_device_offline"),
-		fault:   rec.GetBool("alert_fault"),
-		tank:    rec.GetBool("alert_tank"),
-		email:   rec.GetBool("channel_email"),
+		offline:  rec.GetBool("alert_device_offline"),
+		fault:    rec.GetBool("alert_fault"),
+		tank:     rec.GetBool("alert_tank"),
+		email:    rec.GetBool("channel_email"),
+		whatsapp: rec.GetBool("channel_whatsapp"),
+		chatID:   normalizeWhatsAppChatID(rec.GetString("whatsapp_chat_id"), rec.GetString("whatsapp_country_code")),
 	}
 }
 
 func (s *sweeper) sweepOffline(app core.App, sc siteCtx, now time.Time) {
-	if len(sc.offlineTo) == 0 {
+	if !sc.offlineTo.any() {
 		return
 	}
 	ctrls, err := app.FindRecordsByFilter("controllers", "site = {:s} && active = true", "", 0, 0, dbx.Params{"s": sc.id})
@@ -213,11 +258,8 @@ func (s *sweeper) sweepOffline(app core.App, sc siteCtx, now time.Time) {
 	}
 	for _, c := range ctrls {
 		seen := c.GetDateTime("last_seen").Time()
-		// Staleness only — the `online` flag is NOT consulted here. The flag flips
-		// false on any brief broker drop (a fast reconnect re-sets it), so alerting on
-		// it would email on every transient blip; last_seen aging past the timeout is
-		// the naturally-debounced signal. A zero last_seen (provisioned, never seen)
-		// can't be stale, so a never-connected device is correctly not an incident.
+		// Staleness only. The `online` flag flips false on any brief broker drop,
+		// so last_seen aging past the timeout is the naturally-debounced signal.
 		stale := !seen.IsZero() && now.Sub(seen) > time.Duration(sc.offlineMs)*time.Millisecond
 		if stale {
 			s.notify(app, sc.offlineTo, now, "offline:"+c.Id, "Controller offline",
@@ -227,10 +269,9 @@ func (s *sweeper) sweepOffline(app core.App, sc siteCtx, now time.Time) {
 }
 
 func (s *sweeper) sweepTanks(app core.App, sc siteCtx, now time.Time) {
-	if len(sc.tankTo) == 0 {
+	if !sc.tankTo.any() {
 		return
 	}
-	// Tank levels live in each controller's latest snapshot (readings ending _level).
 	docs, err := app.FindRecordsByFilter("controller_state", "site = {:s}", "", 0, 0,
 		dbx.Params{"s": sc.id})
 	if err != nil {
@@ -259,17 +300,14 @@ func (s *sweeper) sweepTanks(app core.App, sc siteCtx, now time.Time) {
 }
 
 func (s *sweeper) sweepFaults(app core.App, sc siteCtx, now time.Time) {
-	if len(sc.faultTo) == 0 {
+	if !sc.faultTo.any() {
 		return
 	}
-	// Scan ALL recent transitions (not just FAULT rows) and keep the latest per
-	// controller+route, so a route that has since recovered — its latest
-	// transition is no longer FAULT — does not alert.
 	rows, err := app.FindRecordsByFilter("state_events", "site = {:s}", "-ts", 200, 0, dbx.Params{"s": sc.id})
 	if err != nil {
 		return
 	}
-	seen := map[string]bool{} // first row per key == latest (sorted -ts)
+	seen := map[string]bool{}
 	for _, e := range rows {
 		rk := e.GetString("controller") + ":" + e.GetString("route")
 		if seen[rk] {
@@ -277,7 +315,7 @@ func (s *sweeper) sweepFaults(app core.App, sc siteCtx, now time.Time) {
 		}
 		seen[rk] = true
 		if e.GetString("to_state") != "FAULT" {
-			continue // latest transition isn't a fault — route is fine
+			continue
 		}
 		ts := parseTS(e.GetString("ts"))
 		if ts.IsZero() || now.Sub(ts) > faultRecent {
@@ -288,11 +326,10 @@ func (s *sweeper) sweepFaults(app core.App, sc siteCtx, now time.Time) {
 	}
 }
 
-// send dispatches one alert email to every recipient (the site's co-owners who
-// opted into this alert). The caller (notify) decides whether to stamp the
-// cooldown based on the returned error, so a flaky SMTP server retries next tick
-// instead of suppressing the alert.
-func (s *sweeper) send(app core.App, to []string, subject, body string) error {
+func (s *sweeper) sendEmail(app core.App, to []string, subject, body string) error {
+	if !app.Settings().SMTP.Enabled {
+		return fmt.Errorf("SMTP is not configured")
+	}
 	addrs := make([]mail.Address, len(to))
 	for i, a := range to {
 		addrs[i] = mail.Address{Address: a}
@@ -305,6 +342,72 @@ func (s *sweeper) send(app core.App, to []string, subject, body string) error {
 		Text:    body,
 	}
 	return app.NewMailClient().Send(msg)
+}
+
+func (s *sweeper) sendWhatsApp(to []string, subject, body string) error {
+	if !s.openwa.configured() {
+		return fmt.Errorf("OpenWA is not configured")
+	}
+	text := fmt.Sprintf("MajiFlow alert: %s\n%s", subject, body)
+	var errs []string
+	for _, chatID := range to {
+		if err := s.openwa.sendText(context.Background(), chatID, text); err != nil {
+			errs = append(errs, chatID+": "+err.Error())
+		}
+	}
+	if len(errs) > 0 {
+		return fmt.Errorf("%s", strings.Join(errs, "; "))
+	}
+	return nil
+}
+
+type openWAClient struct {
+	baseURL string
+	apiKey  string
+	session string
+	client  *http.Client
+}
+
+func openWAFromEnv(client *http.Client) openWAClient {
+	return openWAClient{
+		baseURL: strings.TrimRight(os.Getenv("MAJI_OPENWA_BASE_URL"), "/"),
+		apiKey:  os.Getenv("MAJI_OPENWA_API_KEY"),
+		session: os.Getenv("MAJI_OPENWA_SESSION"),
+		client:  client,
+	}
+}
+
+func (c openWAClient) configured() bool {
+	return c.baseURL != "" && c.apiKey != "" && c.session != "" && c.client != nil
+}
+
+func (c openWAClient) sendText(ctx context.Context, chatID, text string) error {
+	if !c.configured() {
+		return fmt.Errorf("OpenWA is not configured")
+	}
+	body, err := json.Marshal(map[string]string{"chatId": chatID, "text": text})
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	url := fmt.Sprintf("%s/api/sessions/%s/messages/send-text", c.baseURL, c.session)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-API-Key", c.apiKey)
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		return nil
+	}
+	b, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+	return fmt.Errorf("OpenWA status %d: %s", resp.StatusCode, strings.TrimSpace(string(b)))
 }
 
 func siteName(r *core.Record) string {
@@ -340,6 +443,38 @@ func tankName(sensor string) string {
 		}
 	}
 	return strings.Join(parts, " ")
+}
+
+var nonDigit = regexp.MustCompile(`\D+`)
+
+func normalizeWhatsAppChatID(raw, countryCode string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	if strings.Contains(raw, "@") {
+		return raw
+	}
+	digits := nonDigit.ReplaceAllString(raw, "")
+	digits = strings.TrimPrefix(digits, "00")
+	if digits == "" {
+		return ""
+	}
+	country := nonDigit.ReplaceAllString(countryCode, "")
+	if country == "" {
+		country = defaultWhatsAppCountryCode
+	}
+	if strings.HasPrefix(digits, country) {
+		return digits + "@c.us"
+	}
+	if strings.HasPrefix(digits, "0") {
+		return country + strings.TrimLeft(digits, "0") + "@c.us"
+	}
+	// Short local form, e.g. 712345678 with KE +254 selected.
+	if len(digits) <= 10 {
+		return country + digits + "@c.us"
+	}
+	return digits + "@c.us"
 }
 
 // reasonText turns a fault/stop token into a readable phrase. Kept in step with

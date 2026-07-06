@@ -12,11 +12,12 @@ interface OwnedSite { id: string; name: string }
  * per-site alert thresholds the enabled types depend on.
  *
  * The toggles (one `notification_prefs` row per user, find-or-create) gate which
- * alert types reach the in-app bell and whether the server also emails them. Two
- * of those types have a tunable level, stored per-site on the `sites` record: the
- * tank-level alert (low/full %) and the controller-offline alert (timeout). So when
- * either is on, a thresholds section appears below with one editor per owned site,
- * showing only the fields for the alerts that are actually enabled.
+ * alert types reach the in-app bell and whether the server also sends them via
+ * WhatsApp/OpenWA or email. Two of those types have a tunable level, stored
+ * per-site on the `sites` record: the tank-level alert (low/full %) and the
+ * controller-offline alert (timeout). So when either is on, a thresholds section
+ * appears below with one editor per owned site, showing only the fields for the
+ * alerts that are actually enabled.
  */
 @Component({
   selector: 'app-account-page',
@@ -33,11 +34,55 @@ interface OwnedSite { id: string; name: string }
       @if (loading()) {
         <div class="flex items-center justify-center py-24"><span class="loading loading-spinner loading-lg text-primary"></span></div>
       } @else {
+        <section class="surface p-5 space-y-4">
+          <div>
+            <h2 class="font-semibold text-sm">Account details</h2>
+            <p class="text-[11px] text-base-content/40 mt-0.5">Your contact details for support and account follow-up.</p>
+          </div>
+
+          <div class="grid sm:grid-cols-2 gap-3">
+            <label class="flex flex-col gap-1">
+              <span class="label-text text-xs text-base-content/60">Name</span>
+              <input
+                type="text"
+                class="input input-bordered input-sm"
+                [disabled]="savingProfile()"
+                [value]="accountName()"
+                (input)="setAccountName($any($event.target).value)"
+              />
+            </label>
+            <label class="flex flex-col gap-1">
+              <span class="label-text text-xs text-base-content/60">Phone</span>
+              <input
+                type="tel"
+                class="input input-bordered input-sm"
+                placeholder="+254712345678"
+                [disabled]="savingProfile()"
+                [value]="accountPhone()"
+                (input)="setAccountPhone($any($event.target).value)"
+              />
+            </label>
+            <label class="flex flex-col gap-1 sm:col-span-2">
+              <span class="label-text text-xs text-base-content/60">Email</span>
+              <input type="email" class="input input-bordered input-sm" [value]="accountEmail()" disabled />
+              <span class="text-[11px] text-base-content/40">Email changes are handled by an admin so account access stays controlled.</span>
+            </label>
+          </div>
+
+          <div class="flex items-center gap-3 pt-2 border-t border-base-300/30">
+            <button class="btn btn-primary btn-sm w-24" (click)="saveProfile()" [disabled]="savingProfile()">
+              @if (savingProfile()) { <span class="loading loading-spinner loading-xs"></span> } @else { Save }
+            </button>
+            @if (profileSaved()) { <span class="text-xs text-emerald-400">Saved</span> }
+            @if (profileError()) { <span class="text-xs text-error">{{ profileError() }}</span> }
+          </div>
+        </section>
+
         <!-- Which alerts, and where they go. Per-user; one Save commits the lot. -->
         <section class="surface p-5 space-y-4">
           <div>
             <h2 class="font-semibold text-sm">Alerts you receive</h2>
-            <p class="text-[11px] text-base-content/40 mt-0.5">Choose which alerts reach the in-app bell, and whether to also get them by email.</p>
+            <p class="text-[11px] text-base-content/40 mt-0.5">Choose which alerts reach the in-app bell, WhatsApp and email.</p>
           </div>
 
           <div class="space-y-2.5">
@@ -55,7 +100,38 @@ interface OwnedSite { id: string; name: string }
             }
           </div>
 
-          <div class="pt-3 border-t border-base-300/30 space-y-1">
+          <div class="pt-3 border-t border-base-300/30 space-y-3">
+            <div class="space-y-2">
+              <label class="flex items-center gap-3 cursor-pointer">
+                <input type="checkbox" class="toggle toggle-sm toggle-primary" [disabled]="saving()"
+                  [checked]="channelWhatsApp()" (change)="setChannelWhatsApp($any($event.target).checked)" />
+                <span class="text-sm">WhatsApp me alerts</span>
+              </label>
+              <div class="pl-12 max-w-sm">
+                <div class="join w-full">
+                  <select
+                    class="select select-bordered select-sm join-item w-32"
+                    [disabled]="saving() || !channelWhatsApp()"
+                    [value]="whatsAppCountryCode()"
+                    (change)="setWhatsAppCountryCode($any($event.target).value)"
+                    aria-label="WhatsApp country code"
+                  >
+                    @for (c of countryCodes; track c.code) {
+                      <option [value]="c.code">{{ c.label }}</option>
+                    }
+                  </select>
+                  <input
+                    type="tel"
+                    class="input input-bordered input-sm join-item min-w-0 flex-1"
+                    placeholder="0712345678"
+                    [disabled]="saving() || !channelWhatsApp()"
+                    [value]="whatsAppChatId()"
+                    (input)="setWhatsAppChatId($any($event.target).value)"
+                  />
+                </div>
+                <p class="text-[11px] text-base-content/40 mt-1">Kenyan numbers can be entered as 0712345678, +254712345678, or 254712345678.</p>
+              </div>
+            </div>
             <label class="flex items-center gap-3 cursor-pointer">
               <input type="checkbox" class="toggle toggle-sm toggle-primary" [disabled]="saving()"
                 [checked]="channelEmail()" (change)="setChannelEmail($any($event.target).checked)" />
@@ -115,6 +191,12 @@ export class AccountPageComponent implements OnInit {
   protected saving = signal(false);
   protected saved = signal(false);
   protected error = signal<string | null>(null);
+  protected savingProfile = signal(false);
+  protected profileSaved = signal(false);
+  protected profileError = signal<string | null>(null);
+  protected accountName = signal('');
+  protected accountEmail = signal('');
+  protected accountPhone = signal('');
 
   // The four alert-type toggles. The email channel is tracked separately in
   // `channelEmail`, so it deliberately isn't part of this map.
@@ -127,7 +209,18 @@ export class AccountPageComponent implements OnInit {
     alert_command_failed: true,
   });
   protected channelEmail = signal(DEFAULT_NOTIFICATION_PREFS.channel_email);
+  protected channelWhatsApp = signal(DEFAULT_NOTIFICATION_PREFS.channel_whatsapp);
+  protected whatsAppChatId = signal(DEFAULT_NOTIFICATION_PREFS.whatsapp_chat_id);
+  protected whatsAppCountryCode = signal(DEFAULT_NOTIFICATION_PREFS.whatsapp_country_code);
   private recordId = '';
+
+  protected readonly countryCodes = [
+    { code: '254', label: 'KE +254' },
+    { code: '255', label: 'TZ +255' },
+    { code: '256', label: 'UG +256' },
+    { code: '250', label: 'RW +250' },
+    { code: '44', label: 'UK +44' },
+  ] as const;
 
   /** Sites the user owns - each gets a threshold editor in the section below. */
   protected sites = signal<OwnedSite[]>([]);
@@ -148,12 +241,37 @@ export class AccountPageComponent implements OnInit {
     this.channelEmail.set(v);
     this.saved.set(false);
   }
+  protected setChannelWhatsApp(v: boolean): void {
+    this.channelWhatsApp.set(v);
+    this.saved.set(false);
+  }
+  protected setWhatsAppChatId(v: string): void {
+    this.whatsAppChatId.set(v);
+    this.saved.set(false);
+  }
+  protected setWhatsAppCountryCode(v: string): void {
+    this.whatsAppCountryCode.set(v);
+    this.saved.set(false);
+  }
+  protected setAccountName(v: string): void {
+    this.accountName.set(v);
+    this.profileSaved.set(false);
+  }
+  protected setAccountPhone(v: string): void {
+    this.accountPhone.set(v);
+    this.profileSaved.set(false);
+  }
 
   async ngOnInit() {
     const user = this.auth.user();
     if (!user) { this.loading.set(false); return; }
     void this.loadSites(user.id);
     try {
+      const profile = await this.backend.accountProfile();
+      this.accountName.set(profile.name);
+      this.accountEmail.set(profile.email);
+      this.accountPhone.set(profile.phone);
+
       const r = await this.backend.pb
         .collection('notification_prefs')
         .getFirstListItem(this.backend.pb.filter('user = {:u}', { u: user.id }), { requestKey: 'prefs:edit' });
@@ -165,10 +283,33 @@ export class AccountPageComponent implements OnInit {
         alert_command_failed: r['alert_command_failed'] !== false,
       });
       this.channelEmail.set(r['channel_email'] === true);
+      this.channelWhatsApp.set(r['channel_whatsapp'] === true);
+      this.whatsAppChatId.set((r['whatsapp_chat_id'] ?? '') as string);
+      this.whatsAppCountryCode.set((r['whatsapp_country_code'] ?? DEFAULT_NOTIFICATION_PREFS.whatsapp_country_code) as string);
     } catch {
       // No row yet - defaults already loaded.
     } finally {
       this.loading.set(false);
+    }
+  }
+
+  protected async saveProfile(): Promise<void> {
+    this.savingProfile.set(true);
+    this.profileSaved.set(false);
+    this.profileError.set(null);
+    try {
+      const profile = await this.backend.accountSave({
+        name: this.accountName().trim(),
+        phone: this.accountPhone().trim(),
+      });
+      this.accountName.set(profile.name);
+      this.accountEmail.set(profile.email);
+      this.accountPhone.set(profile.phone);
+      this.profileSaved.set(true);
+    } catch (err) {
+      this.profileError.set(String(err));
+    } finally {
+      this.savingProfile.set(false);
     }
   }
 
@@ -199,6 +340,9 @@ export class AccountPageComponent implements OnInit {
     const body = {
       user: user.id,
       ...this.flags(),
+      channel_whatsapp: this.channelWhatsApp(),
+      whatsapp_chat_id: this.whatsAppChatId().trim(),
+      whatsapp_country_code: this.whatsAppCountryCode(),
       channel_email: this.channelEmail(),
     };
     try {

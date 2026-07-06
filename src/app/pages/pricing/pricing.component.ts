@@ -7,6 +7,7 @@ import { MarketingNavComponent } from '../../shared/marketing/marketing-nav.comp
 import { MarketingFooterComponent } from '../../shared/marketing/marketing-footer.component';
 import { MktHeroComponent, MktPlanLevelsComponent, MktFeatureListComponent, MktAddonGridComponent } from '../../shared/marketing/ui';
 import { SystemEstimatorComponent, type SizedEstimate } from './system-estimator.component';
+import { MARKETING_WHATSAPP_HREF, MARKETING_WHATSAPP_NUMBER } from '../../shared/marketing/marketing-contact';
 
 type SubmitState = 'idle' | 'sending' | 'done' | 'error';
 type Kit = 'lite' | 'pro' | 'enterprise';
@@ -42,6 +43,12 @@ type Kit = 'lite' | 'pro' | 'enterprise';
         usage, lost irrigation windows, or many people depending on one supply.
       </p>
       <p class="mt-3 text-xs text-cyan-200/80">If you are looking for the cheapest controller box, this probably is not it.</p>
+      <p class="mt-5 text-sm text-white/70">
+        Prefer a quick conversation?
+        <a [href]="whatsappHref" target="_blank" rel="noopener" class="font-semibold text-cyan-200 hover:text-cyan-100">
+          WhatsApp {{ whatsappNumber }}
+        </a>
+      </p>
     </mkt-hero>
 
     <!-- KIT TIERS + ADD-ON SERVICES -->
@@ -370,7 +377,12 @@ type Kit = 'lite' | 'pro' | 'enterprise';
             <span class="text-sm text-slate-700">I agree to be contacted about this deployment assessment.</span>
           </label>
 
-          <p class="mt-2 text-xs text-slate-500">Give us a phone or email so we can reach you.</p>
+          <p class="mt-2 text-xs text-slate-500">
+            Give us a phone or email so we can reach you, or
+            <a [href]="whatsappHref" target="_blank" rel="noopener" class="font-semibold text-cyan-700 hover:text-cyan-600">
+              message us on WhatsApp
+            </a>.
+          </p>
 
           @if (submitState() === 'error') {
             <p class="mt-3 text-sm text-rose-600">{{ errorMsg() }}</p>
@@ -393,6 +405,8 @@ export class PricingComponent {
   protected readonly addons = ADDON_SERVICES;
   protected readonly cloudFeatures = CLOUD_FEATURES;
   protected readonly proStartLabel = kes(KIT_TIERS.find((t) => t.name === 'Pro')?.price ?? 245_000);
+  protected readonly whatsappHref = MARKETING_WHATSAPP_HREF;
+  protected readonly whatsappNumber = MARKETING_WHATSAPP_NUMBER;
 
   constructor() {
     applyPageSeo({

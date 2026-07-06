@@ -125,7 +125,10 @@
       controller runs your schedules and safety on its own, with or without it.
     </p>
     <div class="ostat"><b>{{ outLitresText() }}</b><span>litres delivered this run · flow confirmed · no faults</span></div>
-    <button class="obtn" (click)="replay()">↻ Replay the journey</button>
+    <div class="oactions">
+      <a class="obtn" [href]="whatsappHref" target="_blank" rel="noopener">WhatsApp us</a>
+      <button class="obtn obtn-ghost" (click)="replay()">↻ Replay the journey</button>
+    </div>
   </div>
 </div>
 

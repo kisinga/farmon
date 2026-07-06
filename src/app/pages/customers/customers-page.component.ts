@@ -79,7 +79,9 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
                   @if (c.verified) { <span class="badge badge-success badge-xs ml-1 align-middle">verified</span> }
                   @else { <span class="badge badge-ghost badge-xs ml-1 align-middle">invited</span> }
                 </p>
-                <p class="text-[11px] text-base-content/50 truncate">{{ c.email }}</p>
+                <p class="text-[11px] text-base-content/50 truncate">
+                  {{ c.email }}@if (c.phone) { <span> · {{ c.phone }}</span> }
+                </p>
               </div>
               <div class="hidden sm:flex flex-col items-end text-[11px] text-base-content/50 shrink-0">
                 <button class="link link-hover font-medium text-base-content/70" (click)="openSites(c)"
@@ -122,12 +124,16 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
             <span class="label-text mb-1">Email</span>
             <input type="email" class="input input-bordered w-full" placeholder="jane@example.com" #emailI [value]="editing()?.email ?? ''" />
           </label>
+          <label class="flex flex-col mt-3">
+            <span class="label-text mb-1">Phone</span>
+            <input type="tel" class="input input-bordered w-full" placeholder="+254712345678" #phoneI [value]="editing()?.phone ?? ''" />
+          </label>
           @if (formError()) { <p class="text-error text-xs mt-2">{{ formError() }}</p> }
           <div class="modal-action">
             <button class="btn btn-ghost" (click)="closeForm()" [disabled]="busy()">Cancel</button>
             <button class="btn border-0 bg-cyan-400 text-slate-950 hover:bg-cyan-300"
                     [disabled]="busy()"
-                    (click)="submit(nameI.value, emailI.value)">
+                    (click)="submit(nameI.value, emailI.value, phoneI.value)">
               @if (busy()) { <span class="loading loading-spinner loading-xs"></span> }
               {{ editing() ? 'Save' : 'Create & invite' }}
             </button>
@@ -179,7 +185,7 @@ export class CustomersPageComponent implements OnInit {
     const q = this.search().trim().toLowerCase();
     const list = this.customers();
     return q
-      ? list.filter((c) => c.name.toLowerCase().includes(q) || c.email.toLowerCase().includes(q))
+      ? list.filter((c) => c.name.toLowerCase().includes(q) || c.email.toLowerCase().includes(q) || c.phone.includes(q))
       : list;
   });
 
@@ -253,9 +259,10 @@ export class CustomersPageComponent implements OnInit {
     this.showForm.set(false);
   }
 
-  protected async submit(name: string, email: string): Promise<void> {
+  protected async submit(name: string, email: string, phone: string): Promise<void> {
     const n = name.trim();
     const e = email.trim();
+    const p = phone.trim();
     if (!n) return this.formError.set('Name is required.');
     if (!EMAIL_RE.test(e)) return this.formError.set('A valid email is required.');
     this.busy.set(true);
@@ -263,10 +270,10 @@ export class CustomersPageComponent implements OnInit {
     try {
       const editing = this.editing();
       if (editing) {
-        await this.customersStore.update(editing.id, { name: n, email: e });
+        await this.customersStore.update(editing.id, { name: n, email: e, phone: p });
         this.status.set({ ok: true, text: 'Customer updated.' });
       } else {
-        const { invited } = await this.customersStore.create({ name: n, email: e });
+        const { invited } = await this.customersStore.create({ name: n, email: e, phone: p });
         this.status.set({
           ok: invited,
           text: invited

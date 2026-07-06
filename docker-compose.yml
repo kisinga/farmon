@@ -37,6 +37,10 @@ services:
       MAJI_MQTT_TLS: ${MAJI_MQTT_TLS:-:8883}
       MAJI_MQTT_TLS_CERT: ${MAJI_MQTT_TLS_CERT:-/certs/fullchain.pem}
       MAJI_MQTT_TLS_KEY: ${MAJI_MQTT_TLS_KEY:-/certs/privkey.pem}
+      # OpenWA WhatsApp gateway (optional; primary external alert channel).
+      MAJI_OPENWA_BASE_URL: ${MAJI_OPENWA_BASE_URL:-}
+      MAJI_OPENWA_API_KEY: ${MAJI_OPENWA_API_KEY:-}
+      MAJI_OPENWA_SESSION: ${MAJI_OPENWA_SESSION:-}
       # Broker bind addresses inside the container (rarely changed; app defaults apply).
       MAJI_MQTT_TCP: ${MAJI_MQTT_TCP:-:1883}
       MAJI_MQTT_WS: ${MAJI_MQTT_WS:-:8082}

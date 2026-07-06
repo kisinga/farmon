@@ -25,6 +25,7 @@ import { ScenePacketsComponent } from './scene/scene-packets.component';
 import { SimCaptionComponent } from './chrome/sim-caption.component';
 import { SimStageRailComponent } from './chrome/sim-stage-rail.component';
 import { SimTransportComponent } from './chrome/sim-transport.component';
+import { MARKETING_WHATSAPP_HREF } from '../../shared/marketing/marketing-contact';
 
 /** One-shot beat classes set on the host to (re)start a stage's packet motion. */
 const BEATS = ['s-tap', 's-cmd', 's-control', 's-tele'] as const;
@@ -115,6 +116,7 @@ export class HowItWorksComponent {
   protected readonly checkVisible = computed(() => this.idx() === 3);
   protected readonly valveText = computed(() => (this.actuated() ? 'OPEN' : 'CLOSED'));
   protected readonly label = computed(() => `${this.idx() + 1} / ${STAGES.length}`);
+  protected readonly whatsappHref = MARKETING_WHATSAPP_HREF;
 
   /** Lit zones at the current stage, as a Set, so the per-zone dim bindings are O(1). */
   private readonly focusSet = computed(() => new Set(this.stage().focus));

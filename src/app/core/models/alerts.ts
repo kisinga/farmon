@@ -39,8 +39,8 @@ export interface DerivedAlert {
 }
 
 /** Per-user notification routing, persisted in the `notification_prefs`
- *  collection. The booleans gate BOTH the in-app center filter and the server
- *  email sweep; `channel_email` is the only channel that needs the server. */
+ *  collection. The alert booleans gate BOTH the in-app center filter and the
+ *  server external-alert sweep; WhatsApp/email channels need the server. */
 export interface NotificationPrefs {
   /** The owning user's record id (== auth user id). */
   user: string;
@@ -48,6 +48,11 @@ export interface NotificationPrefs {
   alert_fault: boolean;
   alert_tank: boolean;
   alert_command_failed: boolean;
+  channel_whatsapp: boolean;
+  /** OpenWA chat id (`2547...@c.us`) or a phone number the server normalises. */
+  whatsapp_chat_id: string;
+  /** International dial code used when a local phone number is entered. */
+  whatsapp_country_code: string;
   channel_email: boolean;
 }
 
@@ -72,6 +77,9 @@ export const DEFAULT_NOTIFICATION_PREFS: Omit<NotificationPrefs, 'user'> = {
   alert_fault: true,
   alert_tank: true,
   alert_command_failed: true,
+  channel_whatsapp: false,
+  whatsapp_chat_id: '',
+  whatsapp_country_code: '254',
   channel_email: false,
 };
 

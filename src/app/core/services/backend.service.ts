@@ -22,6 +22,7 @@ import type {
   CustomerEntry,
   AppConfig,
   AppConfigRecord,
+  AccountProfile,
   LeadEntry,
   DocEntry,
   DocDraft,
@@ -139,13 +140,14 @@ export class BackendService {
    *  send failed (e.g. SMTP not configured); either way the account exists and
    *  customerInvite can send it. Admin-only server-side. */
   async customerCreate(
-    input: { name: string; email: string },
+    input: { name: string; email: string; phone?: string },
     opts: { invite?: boolean } = {},
   ): Promise<{ customer: CustomerEntry; invited: boolean }> {
     const password = this.randomPassword(); // never used by the customer; they set their own via the invite
     const r = await this.pb.collection('users').create({
       name: input.name,
       email: input.email,
+      phone: input.phone ?? '',
       emailVisibility: true,
       password,
       passwordConfirm: password,
@@ -162,7 +164,7 @@ export class BackendService {
     return { customer, invited };
   }
 
-  async customerUpdate(id: string, patch: { name: string; email: string }): Promise<void> {
+  async customerUpdate(id: string, patch: { name: string; email: string; phone: string }): Promise<void> {
     await this.pb.collection('users').update(id, patch);
   }
 
@@ -180,6 +182,7 @@ export class BackendService {
       id: r['id'],
       name: (r['name'] ?? '') as string,
       email: (r['email'] ?? '') as string,
+      phone: (r['phone'] ?? '') as string,
       verified: !!r['verified'],
       created: (r['created'] ?? '') as string,
     };
@@ -260,6 +263,31 @@ export class BackendService {
   async getConfig(): Promise<AppConfig> {
     const r = await this.pb.send<{ hostingDeviceCap?: number }>('/api/farmon/config', { method: 'GET' });
     return { hostingDeviceCap: r.hostingDeviceCap ?? HOSTING_DEVICE_CAP };
+  }
+
+  async accountProfile(): Promise<AccountProfile> {
+    const r = await this.pb.send<AccountProfile>('/api/farmon/account', { method: 'GET' });
+    return {
+      id: r.id,
+      name: r.name ?? '',
+      email: r.email ?? '',
+      phone: r.phone ?? '',
+      role: r.role === 'admin' ? 'admin' : 'customer',
+    };
+  }
+
+  async accountSave(patch: { name: string; phone: string }): Promise<AccountProfile> {
+    const r = await this.pb.send<AccountProfile>('/api/farmon/account', {
+      method: 'PATCH',
+      body: patch,
+    });
+    return {
+      id: r.id,
+      name: r.name ?? '',
+      email: r.email ?? '',
+      phone: r.phone ?? '',
+      role: r.role === 'admin' ? 'admin' : 'customer',
+    };
   }
 
   /** Every registered device across all sites the caller can see, with site names. */

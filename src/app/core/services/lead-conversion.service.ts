@@ -39,7 +39,7 @@ export class LeadConversionService {
   private boards = inject(BoardService);
   private backend = inject(BackendService);
 
-  async convert(lead: LeadEntry, opts: { siteName: string; email: string }): Promise<LeadConversionResult> {
+  async convert(lead: LeadEntry, opts: { siteName: string; email: string; phone?: string }): Promise<LeadConversionResult> {
     const siteName = opts.siteName.trim();
     const email = opts.email.trim();
     if (!siteName) throw new Error('A site name is required.');
@@ -62,7 +62,7 @@ export class LeadConversionService {
     // 1. Find-or-create the customer. Silent: invites are a later admin step.
     const existing = await this.customers.findByEmail(email);
     const customer = existing
-      ?? (await this.customers.create({ name: current.name || email, email }, { invite: false })).customer;
+      ?? (await this.customers.create({ name: current.name || email, email, phone: opts.phone ?? current.phone }, { invite: false })).customer;
 
     // 2. Re-compose with the real board when we have the answers; otherwise fall
     //    back to the stored (pin-less) snapshot.

@@ -54,10 +54,20 @@ export interface CustomerEntry {
   id: string;
   name: string;
   email: string;
+  phone: string;
   /** Email verified (also set when they complete the invite/reset flow). */
   verified: boolean;
   /** When the account was created (ISO). */
   created: string;
+}
+
+/** The signed-in user's editable account profile. */
+export interface AccountProfile {
+  id: string;
+  name: string;
+  email: string;
+  phone: string;
+  role: 'admin' | 'customer';
 }
 
 /** Admin-tunable global settings, served by GET /api/farmon/config. */

@@ -28,7 +28,7 @@ export class CustomersStore extends CollectionStore<CustomerEntry[]> {
   /** Create a customer (optionally emailing the set-password invite) and patch
    *  the cached list. Returns the new customer and whether the invite sent. */
   async create(
-    input: { name: string; email: string },
+    input: { name: string; email: string; phone?: string },
     opts?: { invite?: boolean },
   ): Promise<{ customer: CustomerEntry; invited: boolean }> {
     const { customer, invited } = await this.backend.customerCreate(input, opts);
@@ -44,7 +44,7 @@ export class CustomersStore extends CollectionStore<CustomerEntry[]> {
     return needle ? this.list().find((c) => c.email.toLowerCase() === needle) : undefined;
   }
 
-  async update(id: string, patch: { name: string; email: string }): Promise<void> {
+  async update(id: string, patch: { name: string; email: string; phone: string }): Promise<void> {
     await this.backend.customerUpdate(id, patch);
     this.mutate((list) => this.sorted(list.map((c) => (c.id === id ? { ...c, ...patch } : c))));
   }

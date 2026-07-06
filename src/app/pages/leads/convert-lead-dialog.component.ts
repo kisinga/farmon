@@ -54,6 +54,11 @@ import { LeadConversionService, type LeadConversionResult } from '../../core/ser
                 [value]="email()" (input)="email.set($any($event.target).value)" />
               <p class="text-xs text-base-content/50 mt-1">The account is created for this email. No invite is sent now: send it later from Customers.</p>
             </div>
+            <div>
+              <label class="label-text font-medium">Customer phone</label>
+              <input type="tel" class="input input-bordered w-full mt-1" placeholder="+254712345678"
+                [value]="phone()" (input)="phone.set($any($event.target).value)" />
+            </div>
             <p class="text-xs text-base-content/60 rounded-lg bg-base-200/60 px-3 py-2">{{ designNote() }}</p>
           </div>
 
@@ -81,6 +86,7 @@ export class ConvertLeadDialogComponent implements OnInit {
 
   protected readonly siteName = signal('');
   protected readonly email = signal('');
+  protected readonly phone = signal('');
   protected readonly working = signal(false);
   protected readonly error = signal<string | null>(null);
   protected readonly result = signal<LeadConversionResult | null>(null);
@@ -99,6 +105,7 @@ export class ConvertLeadDialogComponent implements OnInit {
     const l = this.lead();
     this.siteName.set(l.name?.trim() || '');
     this.email.set(l.email?.trim() || '');
+    this.phone.set(l.phone?.trim() || '');
   }
 
   protected async run(): Promise<void> {
@@ -106,7 +113,7 @@ export class ConvertLeadDialogComponent implements OnInit {
     this.working.set(true);
     this.error.set(null);
     try {
-      const r = await this.conversion.convert(this.lead(), { siteName: this.siteName(), email: this.email() });
+      const r = await this.conversion.convert(this.lead(), { siteName: this.siteName(), email: this.email(), phone: this.phone() });
       this.result.set(r);
     } catch (e) {
       this.error.set(e instanceof Error ? e.message : 'Could not convert this lead. Please try again.');

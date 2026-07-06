@@ -389,6 +389,9 @@ function toPrefs(r: RecordModel, userId: string): NotificationPrefs {
     alert_fault: r['alert_fault'] !== false,
     alert_tank: r['alert_tank'] !== false,
     alert_command_failed: r['alert_command_failed'] !== false,
+    channel_whatsapp: r['channel_whatsapp'] === true,
+    whatsapp_chat_id: (r['whatsapp_chat_id'] ?? '') as string,
+    whatsapp_country_code: (r['whatsapp_country_code'] ?? DEFAULT_NOTIFICATION_PREFS.whatsapp_country_code) as string,
     channel_email: r['channel_email'] === true,
   };
 }

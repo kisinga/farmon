@@ -1,0 +1,2 @@
+export const MARKETING_WHATSAPP_NUMBER = '+44 7405 562790';
+export const MARKETING_WHATSAPP_HREF = 'https://wa.me/447405562790';

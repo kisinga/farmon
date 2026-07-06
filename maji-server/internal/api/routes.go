@@ -131,6 +131,47 @@ func Register(se *core.ServeEvent, cfg config.Config, pub Publisher) {
 		})
 	})
 
+	// GET/PATCH /account — narrow self-service profile surface. The users
+	// collection remains admin-only for writes so callers cannot patch role,
+	// verification flags, auth fields, or other sensitive columns.
+	g.GET("/account", func(e *core.RequestEvent) error {
+		if e.Auth == nil {
+			return apis.NewUnauthorizedError("authentication required", nil)
+		}
+		return e.JSON(http.StatusOK, map[string]any{
+			"id":    e.Auth.Id,
+			"name":  e.Auth.GetString("name"),
+			"email": e.Auth.GetString("email"),
+			"phone": e.Auth.GetString("phone"),
+			"role":  e.Auth.GetString("role"),
+		})
+	})
+
+	g.PATCH("/account", func(e *core.RequestEvent) error {
+		if e.Auth == nil {
+			return apis.NewUnauthorizedError("authentication required", nil)
+		}
+		var body struct {
+			Name  string `json:"name"`
+			Phone string `json:"phone"`
+		}
+		if err := e.BindBody(&body); err != nil {
+			return apis.NewBadRequestError("invalid body", err)
+		}
+		e.Auth.Set("name", strings.TrimSpace(body.Name))
+		e.Auth.Set("phone", strings.TrimSpace(body.Phone))
+		if err := e.App.Save(e.Auth); err != nil {
+			return apis.NewBadRequestError("save failed", err)
+		}
+		return e.JSON(http.StatusOK, map[string]any{
+			"id":    e.Auth.Id,
+			"name":  e.Auth.GetString("name"),
+			"email": e.Auth.GetString("email"),
+			"phone": e.Auth.GetString("phone"),
+			"role":  e.Auth.GetString("role"),
+		})
+	})
+
 	// GET /latest?site=&controller= — the device shadow (last-known per sensor).
 	g.GET("/latest", func(e *core.RequestEvent) error {
 		q := e.Request.URL.Query()
@@ -381,20 +422,20 @@ func Register(se *core.ServeEvent, cfg config.Config, pub Publisher) {
 	// the command (audit), then publish it to the device over MQTT.
 	g.POST("/command", func(e *core.RequestEvent) error {
 		var body struct {
-			Site       string   `json:"site"`
-			Controller string   `json:"controller"`
-			Action     string   `json:"action"`
-			RouteID    *int     `json:"route_id"`
-			NodeID     string   `json:"node_id"`
-			On         *bool    `json:"on"`
-			OverrideMask      *int `json:"override_mask"`
-			OvSourceMinPct    *int `json:"ov_source_min_pct"`
-			OvDestMaxPct      *int `json:"ov_dest_max_pct"`
-			OvMaxRuntimeMin   *int `json:"ov_max_runtime_min"`
-			OvTargetDurationS *int `json:"ov_target_duration_s"`
-			OvTargetVolumeL   *int `json:"ov_target_volume_l"`
-			CommandID  string   `json:"command_id"`
-			Reclaim    bool     `json:"reclaim"`
+			Site              string `json:"site"`
+			Controller        string `json:"controller"`
+			Action            string `json:"action"`
+			RouteID           *int   `json:"route_id"`
+			NodeID            string `json:"node_id"`
+			On                *bool  `json:"on"`
+			OverrideMask      *int   `json:"override_mask"`
+			OvSourceMinPct    *int   `json:"ov_source_min_pct"`
+			OvDestMaxPct      *int   `json:"ov_dest_max_pct"`
+			OvMaxRuntimeMin   *int   `json:"ov_max_runtime_min"`
+			OvTargetDurationS *int   `json:"ov_target_duration_s"`
+			OvTargetVolumeL   *int   `json:"ov_target_volume_l"`
+			CommandID         string `json:"command_id"`
+			Reclaim           bool   `json:"reclaim"`
 		}
 		if err := e.BindBody(&body); err != nil {
 			return apis.NewBadRequestError("invalid body", err)

@@ -15,6 +15,7 @@ import {
   MktAddonGridComponent,
 } from '../../shared/marketing/ui';
 import { CLOUD_FEATURES, ADDON_SERVICES } from '../../shared/marketing/feature-catalog';
+import { MARKETING_WHATSAPP_HREF } from '../../shared/marketing/marketing-contact';
 
 /** A capability group: one keyword-bearing heading and the things under it. */
 interface FeatureGroup {
@@ -127,7 +128,7 @@ export class FeaturesComponent {
   protected readonly addons = ADDON_SERVICES;
   protected readonly ctaButtons: CtaButton[] = [
     { label: 'Request assessment', route: '/pricing' },
-    { label: 'Get started', route: '/login' },
+    { label: 'WhatsApp us', href: MARKETING_WHATSAPP_HREF },
   ];
 
   constructor() {
