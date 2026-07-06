@@ -6,6 +6,7 @@ import (
 	"crypto/subtle"
 	"encoding/hex"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -15,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/kisinga/majiflow/internal/alerts"
 	"github.com/kisinga/majiflow/internal/auth"
 	"github.com/kisinga/majiflow/internal/command"
 	"github.com/kisinga/majiflow/internal/config"
@@ -170,6 +172,33 @@ func Register(se *core.ServeEvent, cfg config.Config, pub Publisher) {
 			"phone": e.Auth.GetString("phone"),
 			"role":  e.Auth.GetString("role"),
 		})
+	})
+
+	// POST /alerts/test {number, country_code?} — admin-only WhatsApp delivery
+	// probe. It uses the same OpenWA config and phone normalisation as real alerts,
+	// but does not create an incident row.
+	g.POST("/alerts/test", func(e *core.RequestEvent) error {
+		if e.Auth == nil {
+			return apis.NewUnauthorizedError("authentication required", nil)
+		}
+		if !IsAdmin(e.Auth) {
+			return apis.NewForbiddenError("admin role required", nil)
+		}
+		var body struct {
+			Number      string `json:"number"`
+			CountryCode string `json:"country_code"`
+		}
+		if err := e.BindBody(&body); err != nil {
+			return apis.NewBadRequestError("invalid body", err)
+		}
+		chatID, err := alerts.SendWhatsAppTest(body.Number, body.CountryCode)
+		if err != nil {
+			if errors.Is(err, alerts.ErrInvalidWhatsAppRecipient) {
+				return apis.NewBadRequestError(err.Error(), nil)
+			}
+			return apis.NewApiError(http.StatusBadGateway, "test notification failed", err)
+		}
+		return e.JSON(http.StatusOK, map[string]any{"chat_id": chatID})
 	})
 
 	// GET /latest?site=&controller= — the device shadow (last-known per sensor).

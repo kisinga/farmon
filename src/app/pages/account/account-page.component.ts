@@ -149,6 +149,45 @@ interface OwnedSite { id: string; name: string }
           </div>
         </section>
 
+        @if (auth.isAdmin()) {
+          <section class="surface p-5 space-y-4">
+            <div>
+              <h2 class="font-semibold text-sm">Test WhatsApp alert</h2>
+              <p class="text-[11px] text-base-content/40 mt-0.5">Send a live test message to any number.</p>
+            </div>
+
+            <div class="join w-full max-w-sm">
+              <select
+                class="select select-bordered select-sm join-item w-32"
+                [disabled]="testing()"
+                [value]="testCountryCode()"
+                (change)="setTestCountryCode($any($event.target).value)"
+                aria-label="Test country code"
+              >
+                @for (c of countryCodes; track c.code) {
+                  <option [value]="c.code">{{ c.label }}</option>
+                }
+              </select>
+              <input
+                type="tel"
+                class="input input-bordered input-sm join-item min-w-0 flex-1"
+                placeholder="0712345678"
+                [disabled]="testing()"
+                [value]="testNumber()"
+                (input)="setTestNumber($any($event.target).value)"
+              />
+            </div>
+
+            <div class="flex items-center gap-3">
+              <button class="btn btn-secondary btn-sm w-28" (click)="sendTestNotification()" [disabled]="testing() || !testNumber().trim()">
+                @if (testing()) { <span class="loading loading-spinner loading-xs"></span> } @else { Send test }
+              </button>
+              @if (testSent()) { <span class="text-xs text-emerald-400">Sent to {{ testSent() }}</span> }
+              @if (testError()) { <span class="text-xs text-error">{{ testError() }}</span> }
+            </div>
+          </section>
+        }
+
         <!-- Thresholds for the enabled alerts, per site. The values live on each
              site, so they're edited (and saved) per site, not with the prefs above. -->
         @if (showTank() || showOffline()) {
@@ -197,6 +236,11 @@ export class AccountPageComponent implements OnInit {
   protected accountName = signal('');
   protected accountEmail = signal('');
   protected accountPhone = signal('');
+  protected testing = signal(false);
+  protected testNumber = signal('');
+  protected testCountryCode = signal(DEFAULT_NOTIFICATION_PREFS.whatsapp_country_code);
+  protected testSent = signal('');
+  protected testError = signal<string | null>(null);
 
   // The four alert-type toggles. The email channel is tracked separately in
   // `channelEmail`, so it deliberately isn't part of this map.
@@ -260,6 +304,16 @@ export class AccountPageComponent implements OnInit {
   protected setAccountPhone(v: string): void {
     this.accountPhone.set(v);
     this.profileSaved.set(false);
+  }
+  protected setTestNumber(v: string): void {
+    this.testNumber.set(v);
+    this.testSent.set('');
+    this.testError.set(null);
+  }
+  protected setTestCountryCode(v: string): void {
+    this.testCountryCode.set(v);
+    this.testSent.set('');
+    this.testError.set(null);
   }
 
   async ngOnInit() {
@@ -357,6 +411,23 @@ export class AccountPageComponent implements OnInit {
       this.error.set(String(err));
     } finally {
       this.saving.set(false);
+    }
+  }
+
+  protected async sendTestNotification(): Promise<void> {
+    this.testing.set(true);
+    this.testSent.set('');
+    this.testError.set(null);
+    try {
+      const res = await this.backend.sendTestNotification({
+        number: this.testNumber().trim(),
+        countryCode: this.testCountryCode(),
+      });
+      this.testSent.set(res.chatId);
+    } catch (err) {
+      this.testError.set(String(err));
+    } finally {
+      this.testing.set(false);
     }
   }
 }

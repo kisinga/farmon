@@ -290,6 +290,17 @@ export class BackendService {
     };
   }
 
+  async sendTestNotification(input: { number: string; countryCode: string }): Promise<{ chatId: string }> {
+    const r = await this.pb.send<{ chat_id: string }>('/api/farmon/alerts/test', {
+      method: 'POST',
+      body: {
+        number: input.number,
+        country_code: input.countryCode,
+      },
+    });
+    return { chatId: r.chat_id };
+  }
+
   /** Every registered device across all sites the caller can see, with site names. */
   async deviceList(): Promise<DeviceEntry[]> {
     const records = await this.pb

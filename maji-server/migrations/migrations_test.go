@@ -85,6 +85,16 @@ func TestMigrationsApplyCleanly(t *testing.T) {
 	if packs.Fields.GetByName("key") == nil {
 		t.Error("packs.key should exist (migration 34)")
 	}
+
+	incidents, err := app.FindCollectionByNameOrId("notification_incidents")
+	if err != nil {
+		t.Fatalf("notification_incidents collection missing (migration 41): %v", err)
+	}
+	for _, f := range []string{"incident_key", "kind", "status", "first_seen", "last_seen", "last_sent", "resolved_at"} {
+		if incidents.Fields.GetByName(f) == nil {
+			t.Errorf("notification_incidents.%s should exist (migration 41)", f)
+		}
+	}
 }
 
 // Each migration file must have a unique NN_ number. Two files sharing a number

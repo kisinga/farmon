@@ -5,14 +5,15 @@
 // The sweep re-derives the same conditions the frontend does from data the
 // server already stores (controller presence, tank-level shadows, fault
 // transitions), then sends WhatsApp via OpenWA or email when owners opt in. It
-// owns no state beyond an in-memory per-incident cooldown, so it needs no alerts
-// table.
+// persists only a tiny incident ledger: enough to send one external notification
+// per active episode and then re-arm when the condition clears.
 package alerts
 
 import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -21,7 +22,6 @@ import (
 	"os"
 	"regexp"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/pocketbase/dbx"
@@ -39,18 +39,17 @@ const (
 	// cadence (update_interval, capped at 60s) so a healthy device's normal gap
 	// between samples can never read as offline. 0 still means "use the default".
 	offlineFloorSec = 120.0
-	// Re-notify window: one external notification per incident at most this often,
-	// so a stuck condition doesn't spam the owner every tick.
-	cooldown = 30 * time.Minute
 	// A fault transition older than this is treated as history, not a live alert.
 	faultRecent = 30 * time.Minute
 )
+
+var ErrInvalidWhatsAppRecipient = errors.New("valid WhatsApp number is required")
 
 // RunSweeper runs the external-alert loop until the process exits. Safe to start
 // even when SMTP/OpenWA are unconfigured: channel prefs default silent, and each
 // sender reports a retryable error when its infrastructure is missing.
 func RunSweeper(app core.App) {
-	s := &sweeper{lastSent: map[string]time.Time{}, openwa: openWAFromEnv(http.DefaultClient)}
+	s := &sweeper{openwa: openWAFromEnv(http.DefaultClient)}
 	t := time.NewTicker(sweepInterval)
 	defer t.Stop()
 	for now := range t.C {
@@ -61,31 +60,24 @@ func RunSweeper(app core.App) {
 }
 
 type sweeper struct {
-	mu       sync.Mutex
-	lastSent map[string]time.Time
-	openwa   openWAClient
+	openwa whatsAppSender
 }
 
-// shouldSend reports whether a key is outside its cooldown. It does NOT stamp:
-// the send time is recorded only after a successful channel send, so a failed
-// delivery retries on the next tick instead of going dark for a cooldown.
-func (s *sweeper) shouldSend(key string, now time.Time) bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	last, ok := s.lastSent[key]
-	return !ok || now.Sub(last) >= cooldown
+type whatsAppSender interface {
+	configured() bool
+	sendText(ctx context.Context, chatID, text string) error
 }
 
-func (s *sweeper) markSent(key string, now time.Time) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.lastSent[key] = now
-}
-
-// notify sends one alert to the requested external channels if the key is off
-// cooldown, stamping the cooldown only when at least one channel succeeds.
-func (s *sweeper) notify(app core.App, to recipients, now time.Time, key, subject, body string) {
-	if !to.any() || !s.shouldSend(key, now) {
+// notify activates one incident and sends it once per active episode. A failed
+// delivery leaves last_sent empty, so the next sweep retries; a resolved incident
+// clears last_sent when it becomes active again.
+func (s *sweeper) notify(app core.App, to recipients, now time.Time, siteID, key, kind, subject, body string) {
+	incident, err := activateIncident(app, siteID, key, kind, subject, body, now)
+	if err != nil {
+		log.Printf("alerts: incident %s: %v", key, err)
+		return
+	}
+	if !to.any() || incident.GetString("last_sent") != "" {
 		return
 	}
 	delivered := false
@@ -104,7 +96,10 @@ func (s *sweeper) notify(app core.App, to recipients, now time.Time, key, subjec
 		}
 	}
 	if delivered {
-		s.markSent(key, now)
+		incident.Set("last_sent", iso(now))
+		if err := app.Save(incident); err != nil {
+			log.Printf("alerts: mark sent %s: %v", key, err)
+		}
 	}
 }
 
@@ -137,14 +132,73 @@ func (r recipients) any() bool {
 }
 
 func (r *recipients) addEmail(email string) {
+	email = strings.TrimSpace(email)
 	if email != "" {
+		for _, existing := range r.email {
+			if strings.EqualFold(existing, email) {
+				return
+			}
+		}
 		r.email = append(r.email, email)
 	}
 }
 
 func (r *recipients) addWhatsApp(chatID string) {
+	chatID = strings.TrimSpace(chatID)
 	if chatID != "" {
+		for _, existing := range r.whatsapp {
+			if existing == chatID {
+				return
+			}
+		}
 		r.whatsapp = append(r.whatsapp, chatID)
+	}
+}
+
+func activateIncident(app core.App, siteID, key, kind, subject, body string, now time.Time) (*core.Record, error) {
+	coll, err := app.FindCollectionByNameOrId("notification_incidents")
+	if err != nil {
+		return nil, err
+	}
+	rec, _ := app.FindFirstRecordByFilter("notification_incidents", "incident_key = {:k}", dbx.Params{"k": key})
+	if rec == nil {
+		rec = core.NewRecord(coll)
+		rec.Set("site", siteID)
+		rec.Set("incident_key", key)
+		rec.Set("kind", kind)
+		rec.Set("first_seen", iso(now))
+	} else if rec.GetString("status") != "active" {
+		rec.Set("first_seen", iso(now))
+		rec.Set("last_sent", "")
+	}
+	rec.Set("site", siteID)
+	rec.Set("kind", kind)
+	rec.Set("status", "active")
+	rec.Set("subject", subject)
+	rec.Set("body", body)
+	rec.Set("last_seen", iso(now))
+	rec.Set("resolved_at", "")
+	if err := app.Save(rec); err != nil {
+		return nil, err
+	}
+	return rec, nil
+}
+
+func resolveInactiveIncidents(app core.App, siteID string, active map[string]bool, now time.Time) {
+	rows, err := app.FindRecordsByFilter("notification_incidents",
+		"site = {:s} && status = 'active'", "", 0, 0, dbx.Params{"s": siteID})
+	if err != nil {
+		return
+	}
+	for _, rec := range rows {
+		if active[rec.GetString("incident_key")] {
+			continue
+		}
+		rec.Set("status", "resolved")
+		rec.Set("resolved_at", iso(now))
+		if err := app.Save(rec); err != nil {
+			log.Printf("alerts: resolve %s: %v", rec.GetString("incident_key"), err)
+		}
 	}
 }
 
@@ -158,9 +212,11 @@ func (s *sweeper) run(app core.App, now time.Time) error {
 		if !ok {
 			continue
 		}
-		s.sweepOffline(app, sc, now)
-		s.sweepTanks(app, sc, now)
-		s.sweepFaults(app, sc, now)
+		active := map[string]bool{}
+		s.sweepOffline(app, sc, now, active)
+		s.sweepTanks(app, sc, now, active)
+		s.sweepFaults(app, sc, now, active)
+		resolveInactiveIncidents(app, sc.id, active, now)
 	}
 	return nil
 }
@@ -204,10 +260,6 @@ func resolveSite(app core.App, site *core.Record) (siteCtx, bool) {
 			}
 		}
 	}
-	if !offlineTo.any() && !faultTo.any() && !tankTo.any() {
-		return siteCtx{}, false
-	}
-
 	low := site.GetFloat("tank_low_pct")
 	if low <= 0 {
 		low = defaultLowPct
@@ -248,10 +300,7 @@ func resolvePrefs(app core.App, userID string) prefs {
 	}
 }
 
-func (s *sweeper) sweepOffline(app core.App, sc siteCtx, now time.Time) {
-	if !sc.offlineTo.any() {
-		return
-	}
+func (s *sweeper) sweepOffline(app core.App, sc siteCtx, now time.Time, active map[string]bool) {
 	ctrls, err := app.FindRecordsByFilter("controllers", "site = {:s} && active = true", "", 0, 0, dbx.Params{"s": sc.id})
 	if err != nil {
 		return
@@ -262,16 +311,15 @@ func (s *sweeper) sweepOffline(app core.App, sc siteCtx, now time.Time) {
 		// so last_seen aging past the timeout is the naturally-debounced signal.
 		stale := !seen.IsZero() && now.Sub(seen) > time.Duration(sc.offlineMs)*time.Millisecond
 		if stale {
-			s.notify(app, sc.offlineTo, now, "offline:"+c.Id, "Controller offline",
+			key := "device_offline:" + sc.id + ":" + c.Id
+			active[key] = true
+			s.notify(app, sc.offlineTo, now, sc.id, key, "device_offline", "Controller offline",
 				fmt.Sprintf("%s on %s has gone offline (last seen %s).", c.Id, sc.name, lastSeenText(seen)))
 		}
 	}
 }
 
-func (s *sweeper) sweepTanks(app core.App, sc siteCtx, now time.Time) {
-	if !sc.tankTo.any() {
-		return
-	}
+func (s *sweeper) sweepTanks(app core.App, sc siteCtx, now time.Time, active map[string]bool) {
 	docs, err := app.FindRecordsByFilter("controller_state", "site = {:s}", "", 0, 0,
 		dbx.Params{"s": sc.id})
 	if err != nil {
@@ -289,20 +337,21 @@ func (s *sweeper) sweepTanks(app core.App, sc siteCtx, now time.Time) {
 				continue
 			}
 			if v <= sc.lowPct {
-				s.notify(app, sc.tankTo, now, "tanklow:"+sc.id+":"+sensor, "Tank low",
+				key := "tank_low:" + sc.id + ":" + d.GetString("controller") + ":" + sensor
+				active[key] = true
+				s.notify(app, sc.tankTo, now, sc.id, key, "tank_low", "Tank low",
 					fmt.Sprintf("%s on %s is at %.0f%% (low threshold %.0f%%).", tankName(sensor), sc.name, v, sc.lowPct))
 			} else if sc.highPct > 0 && v >= sc.highPct {
-				s.notify(app, sc.tankTo, now, "tankhigh:"+sc.id+":"+sensor, "Tank full",
+				key := "tank_high:" + sc.id + ":" + d.GetString("controller") + ":" + sensor
+				active[key] = true
+				s.notify(app, sc.tankTo, now, sc.id, key, "tank_high", "Tank full",
 					fmt.Sprintf("%s on %s is at %.0f%% (high threshold %.0f%%).", tankName(sensor), sc.name, v, sc.highPct))
 			}
 		}
 	}
 }
 
-func (s *sweeper) sweepFaults(app core.App, sc siteCtx, now time.Time) {
-	if !sc.faultTo.any() {
-		return
-	}
+func (s *sweeper) sweepFaults(app core.App, sc siteCtx, now time.Time, active map[string]bool) {
 	rows, err := app.FindRecordsByFilter("state_events", "site = {:s}", "-ts", 200, 0, dbx.Params{"s": sc.id})
 	if err != nil {
 		return
@@ -321,7 +370,9 @@ func (s *sweeper) sweepFaults(app core.App, sc siteCtx, now time.Time) {
 		if ts.IsZero() || now.Sub(ts) > faultRecent {
 			continue
 		}
-		s.notify(app, sc.faultTo, now, "fault:"+sc.id+":"+rk, "Fault",
+		key := "fault:" + sc.id + ":" + rk
+		active[key] = true
+		s.notify(app, sc.faultTo, now, sc.id, key, "fault", "Fault",
 			fmt.Sprintf("%s on %s reported a fault: %s.", e.GetString("controller"), sc.name, reasonText(e.GetString("reason"))))
 	}
 }
@@ -359,6 +410,21 @@ func (s *sweeper) sendWhatsApp(to []string, subject, body string) error {
 		return fmt.Errorf("%s", strings.Join(errs, "; "))
 	}
 	return nil
+}
+
+// SendWhatsAppTest sends a one-off admin test message to an arbitrary WhatsApp
+// number using the same OpenWA configuration and number normalisation as alerts.
+func SendWhatsAppTest(raw, countryCode string) (string, error) {
+	chatID := normalizeWhatsAppChatID(raw, countryCode)
+	if chatID == "" {
+		return "", ErrInvalidWhatsAppRecipient
+	}
+	s := &sweeper{openwa: openWAFromEnv(http.DefaultClient)}
+	if err := s.sendWhatsApp([]string{chatID}, "Test notification",
+		"This confirms MajiFlow WhatsApp alerts can reach this number."); err != nil {
+		return chatID, err
+	}
+	return chatID, nil
 }
 
 type openWAClient struct {
@@ -425,6 +491,10 @@ func parseTS(s string) time.Time {
 		return t
 	}
 	return time.Time{}
+}
+
+func iso(t time.Time) string {
+	return t.UTC().Format(time.RFC3339)
 }
 
 func lastSeenText(t time.Time) string {
