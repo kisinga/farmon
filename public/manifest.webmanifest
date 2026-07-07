@@ -1,11 +1,10 @@
 {
   "name": "MajiFlow",
   "short_name": "MajiFlow",
-  "description": "Water monitoring and automation — tank levels, flow, pumps and valves, reachable from anywhere.",
-  "start_url": "/",
+  "description": "Water monitoring and automation. Tank levels, flow, pumps and valves, reachable from anywhere.",
+  "start_url": "/overview",
   "scope": "/",
   "display": "standalone",
-  "orientation": "any",
   "background_color": "#0f172a",
   "theme_color": "#0f172a",
   "icons": [
