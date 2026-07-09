@@ -82,14 +82,14 @@ func (s *sweeper) notify(app core.App, to recipients, now time.Time, siteID, key
 	}
 	delivered := false
 	if len(to.whatsapp) > 0 {
-		if err := s.sendWhatsApp(to.whatsapp, subject, body); err != nil {
+		if err := s.sendWhatsApp(to.whatsapp, kind, subject, body); err != nil {
 			log.Printf("alerts: whatsapp to %v: %v", to.whatsapp, err)
 		} else {
 			delivered = true
 		}
 	}
 	if len(to.email) > 0 {
-		if err := s.sendEmail(app, to.email, subject, body); err != nil {
+		if err := s.sendEmail(app, to.email, kind, subject, body); err != nil {
 			log.Printf("alerts: email to %v: %v", to.email, err)
 		} else {
 			delivered = true
@@ -115,11 +115,13 @@ type siteCtx struct {
 	offlineTo recipients
 	faultTo   recipients
 	tankTo    recipients
+	runStartTo recipients
+	runStopTo  recipients
 }
 
 type prefs struct {
-	offline, fault, tank, email, whatsapp bool
-	chatID                                string
+	offline, fault, tank, runStart, runStop, email, whatsapp bool
+	chatID                                                   string
 }
 
 type recipients struct {
@@ -185,8 +187,10 @@ func activateIncident(app core.App, siteID, key, kind, subject, body string, now
 }
 
 func resolveInactiveIncidents(app core.App, siteID string, active map[string]bool, now time.Time) {
+	// Transition incidents are discrete event receipts (keyed by timestamp), not
+	// ongoing conditions, so they are never auto-resolved here.
 	rows, err := app.FindRecordsByFilter("notification_incidents",
-		"site = {:s} && status = 'active'", "", 0, 0, dbx.Params{"s": siteID})
+		"site = {:s} && status = 'active' && kind != 'run_start' && kind != 'run_stop'", "", 0, 0, dbx.Params{"s": siteID})
 	if err != nil {
 		return
 	}
@@ -217,6 +221,9 @@ func (s *sweeper) run(app core.App, now time.Time) error {
 		s.sweepTanks(app, sc, now, active)
 		s.sweepFaults(app, sc, now, active)
 		resolveInactiveIncidents(app, sc.id, active, now)
+		// Transitions are discrete events, not ongoing conditions; they are
+		// notified separately and do not participate in the active-condition map.
+		s.sweepTransitions(app, sc, now)
 	}
 	return nil
 }
@@ -228,7 +235,7 @@ func resolveSite(app core.App, site *core.Record) (siteCtx, bool) {
 		return siteCtx{}, false
 	}
 
-	var offlineTo, faultTo, tankTo recipients
+	var offlineTo, faultTo, tankTo, runStartTo, runStopTo recipients
 	for _, ownerID := range ownerIDs {
 		owner, err := app.FindRecordById("users", ownerID)
 		if err != nil {
@@ -259,6 +266,22 @@ func resolveSite(app core.App, site *core.Record) (siteCtx, bool) {
 				tankTo.addEmail(owner.GetString("email"))
 			}
 		}
+		if p.runStart {
+			if p.whatsapp {
+				runStartTo.addWhatsApp(p.chatID)
+			}
+			if p.email {
+				runStartTo.addEmail(owner.GetString("email"))
+			}
+		}
+		if p.runStop {
+			if p.whatsapp {
+				runStopTo.addWhatsApp(p.chatID)
+			}
+			if p.email {
+				runStopTo.addEmail(owner.GetString("email"))
+			}
+		}
 	}
 	low := site.GetFloat("tank_low_pct")
 	if low <= 0 {
@@ -272,19 +295,21 @@ func resolveSite(app core.App, site *core.Record) (siteCtx, bool) {
 	}
 
 	return siteCtx{
-		id:        site.Id,
-		name:      siteName(site),
-		lowPct:    low,
-		highPct:   site.GetFloat("tank_high_pct"), // 0 disables high alerts
-		offlineMs: offMs * 1000,
-		offlineTo: offlineTo,
-		faultTo:   faultTo,
-		tankTo:    tankTo,
+		id:         site.Id,
+		name:       siteName(site),
+		lowPct:     low,
+		highPct:    site.GetFloat("tank_high_pct"), // 0 disables high alerts
+		offlineMs:  offMs * 1000,
+		offlineTo:  offlineTo,
+		faultTo:    faultTo,
+		tankTo:     tankTo,
+		runStartTo: runStartTo,
+		runStopTo:  runStopTo,
 	}, true
 }
 
 // resolvePrefs reads the owner's notification_prefs. No row means alert types
-// default on except offline, while external channels default off.
+// default on except offline and transitions, while external channels default off.
 func resolvePrefs(app core.App, userID string) prefs {
 	rec, err := app.FindFirstRecordByFilter("notification_prefs", "user = {:u}", dbx.Params{"u": userID})
 	if err != nil || rec == nil {
@@ -294,6 +319,8 @@ func resolvePrefs(app core.App, userID string) prefs {
 		offline:  rec.GetBool("alert_device_offline"),
 		fault:    rec.GetBool("alert_fault"),
 		tank:     rec.GetBool("alert_tank"),
+		runStart: rec.GetBool("alert_run_start"),
+		runStop:  rec.GetBool("alert_run_stop"),
 		email:    rec.GetBool("channel_email"),
 		whatsapp: rec.GetBool("channel_whatsapp"),
 		chatID:   normalizeWhatsAppChatID(rec.GetString("whatsapp_chat_id"), rec.GetString("whatsapp_country_code")),
@@ -377,7 +404,50 @@ func (s *sweeper) sweepFaults(app core.App, sc siteCtx, now time.Time, active ma
 	}
 }
 
-func (s *sweeper) sendEmail(app core.App, to []string, subject, body string) error {
+func (s *sweeper) sweepTransitions(app core.App, sc siteCtx, now time.Time) {
+	rows, err := app.FindRecordsByFilter("state_events", "site = {:s}", "-ts", 200, 0, dbx.Params{"s": sc.id})
+	if err != nil {
+		return
+	}
+	for _, e := range rows {
+		route := e.GetString("route")
+		from := e.GetString("from_state")
+		to := e.GetString("to_state")
+		ts := parseTS(e.GetString("ts"))
+		if ts.IsZero() || now.Sub(ts) > faultRecent {
+			continue
+		}
+		base := sc.id + ":" + e.GetString("controller") + ":" + route + ":" + e.GetString("ts")
+
+		// Run started: entered RUNNING from any non-RUNNING state.
+		if to == "RUNNING" && from != "RUNNING" {
+			key := "run_start:" + base
+			s.notify(app, sc.runStartTo, now, sc.id, key, "run_start", "Run started",
+				fmt.Sprintf("Route %s on %s at %s has started running.", routeLabel(route), sc.name, e.GetString("controller")))
+			continue
+		}
+		// Run stopped: left RUNNING for IDLE or STOPPING. FAULT is handled by the
+		// dedicated fault alert, so we do not double-notify here.
+		if from == "RUNNING" && (to == "IDLE" || to == "STOPPING") {
+			key := "run_stop:" + base
+			reason := reasonText(e.GetString("reason"))
+			if reason == "unknown cause" {
+				reason = strings.ToLower(to)
+			}
+			s.notify(app, sc.runStopTo, now, sc.id, key, "run_stop", "Run stopped",
+				fmt.Sprintf("Route %s on %s at %s stopped (%s).", routeLabel(route), sc.name, e.GetString("controller"), reason))
+		}
+	}
+}
+
+func routeLabel(route string) string {
+	if route == "-1" || route == "" {
+		return "controller"
+	}
+	return route
+}
+
+func (s *sweeper) sendEmail(app core.App, to []string, kind, subject, body string) error {
 	if !app.Settings().SMTP.Enabled {
 		return fmt.Errorf("SMTP is not configured")
 	}
@@ -385,21 +455,39 @@ func (s *sweeper) sendEmail(app core.App, to []string, subject, body string) err
 	for i, a := range to {
 		addrs[i] = mail.Address{Address: a}
 	}
+	emoji := alertEmoji[kind]
+	if emoji == "" {
+		emoji = "🔔"
+	}
 	msg := &mailer.Message{
 		From:    mail.Address{Address: app.Settings().Meta.SenderAddress, Name: app.Settings().Meta.SenderName},
 		To:      addrs,
-		Subject: "MajiFlow alert: " + subject,
+		Subject: emoji + " MajiFlow alert: " + subject,
 		HTML:    fmt.Sprintf("<p>%s</p><p style=\"color:#64748b;font-size:12px\">You're receiving this because email alerts are on for your account. Manage them on your account page.</p>", body),
 		Text:    body,
 	}
 	return app.NewMailClient().Send(msg)
 }
 
-func (s *sweeper) sendWhatsApp(to []string, subject, body string) error {
+var alertEmoji = map[string]string{
+	"device_offline": "📡",
+	"fault":          "🚨",
+	"tank_low":       "🚰",
+	"tank_high":      "🌊",
+	"run_start":      "▶️",
+	"run_stop":       "⏹️",
+	"test":           "🧪",
+}
+
+func (s *sweeper) sendWhatsApp(to []string, kind, subject, body string) error {
 	if !s.openwa.configured() {
 		return fmt.Errorf("OpenWA is not configured")
 	}
-	text := fmt.Sprintf("MajiFlow alert: %s\n%s", subject, body)
+	emoji := alertEmoji[kind]
+	if emoji == "" {
+		emoji = "🔔"
+	}
+	text := fmt.Sprintf("%s *MajiFlow alert: %s*\n\n%s", emoji, subject, body)
 	var errs []string
 	for _, chatID := range to {
 		if err := s.openwa.sendText(context.Background(), chatID, text); err != nil {
@@ -420,7 +508,7 @@ func SendWhatsAppTest(raw, countryCode string) (string, error) {
 		return "", ErrInvalidWhatsAppRecipient
 	}
 	s := &sweeper{openwa: openWAFromEnv(http.DefaultClient)}
-	if err := s.sendWhatsApp([]string{chatID}, "Test notification",
+	if err := s.sendWhatsApp([]string{chatID}, "test", "Test notification",
 		"This confirms MajiFlow WhatsApp alerts can reach this number."); err != nil {
 		return chatID, err
 	}

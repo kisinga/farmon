@@ -3,6 +3,7 @@ package alerts
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -108,6 +109,169 @@ func TestRecipientsDedupe(t *testing.T) {
 func TestSendWhatsAppTestRejectsInvalidNumber(t *testing.T) {
 	if _, err := SendWhatsAppTest("not a number", "254"); !errors.Is(err, ErrInvalidWhatsAppRecipient) {
 		t.Fatalf("expected invalid recipient error, got %v", err)
+	}
+}
+
+func TestFaultIncidentSendsWhatsApp(t *testing.T) {
+	app, site, _ := setupAlertSite(t)
+	defer app.Cleanup()
+
+	// Re-wire the prefs row from the tank fixture to opt into fault + WhatsApp.
+	prefs, _ := app.FindFirstRecordByFilter("notification_prefs", "user != ''", dbx.Params{})
+	if prefs != nil {
+		prefs.Set("alert_tank", false)
+		prefs.Set("alert_fault", true)
+		saveRec(t, app, prefs)
+	}
+
+	ctrl, _ := app.FindRecordById("controllers", "ctrl1")
+
+	now := time.Date(2026, 7, 6, 9, 0, 0, 0, time.UTC)
+	ev := newRec(t, app, "state_events")
+	ev.Set("site", site.Id)
+	ev.Set("controller", ctrl.Id)
+	ev.Set("route", 0)
+	ev.Set("from_state", "RUNNING")
+	ev.Set("to_state", "FAULT")
+	ev.Set("reason", "NO_FLOW")
+	ev.Set("ts", now.Format(time.RFC3339))
+	saveRec(t, app, ev)
+
+	wa := &fakeWhatsApp{}
+	s := &sweeper{openwa: wa}
+	if err := s.run(app, now); err != nil {
+		t.Fatal(err)
+	}
+	if got := len(wa.sent); got != 1 {
+		t.Fatalf("fault transition should send one WhatsApp, got %d", got)
+	}
+	if !strings.Contains(wa.sent[0], "254712345678@c.us") {
+		t.Fatalf("expected normalized Kenyan chat id, got %q", wa.sent[0])
+	}
+}
+
+func TestStaleFaultDoesNotSendWhatsApp(t *testing.T) {
+	app, site, _ := setupAlertSite(t)
+	defer app.Cleanup()
+
+	prefs, _ := app.FindFirstRecordByFilter("notification_prefs", "user != ''", dbx.Params{})
+	if prefs != nil {
+		prefs.Set("alert_tank", false)
+		prefs.Set("alert_fault", true)
+		saveRec(t, app, prefs)
+	}
+
+	ctrl, _ := app.FindRecordById("controllers", "ctrl1")
+
+	now := time.Date(2026, 7, 6, 9, 0, 0, 0, time.UTC)
+	ev := newRec(t, app, "state_events")
+	ev.Set("site", site.Id)
+	ev.Set("controller", ctrl.Id)
+	ev.Set("route", 0)
+	ev.Set("from_state", "RUNNING")
+	ev.Set("to_state", "FAULT")
+	ev.Set("reason", "NO_FLOW")
+	ev.Set("ts", now.Add(-31*time.Minute).Format(time.RFC3339))
+	saveRec(t, app, ev)
+
+	wa := &fakeWhatsApp{}
+	s := &sweeper{openwa: wa}
+	if err := s.run(app, now); err != nil {
+		t.Fatal(err)
+	}
+	if got := len(wa.sent); got != 0 {
+		t.Fatalf("stale fault transition should not send, got %d", got)
+	}
+}
+
+func TestRunStartAndStopSendWhatsApp(t *testing.T) {
+	app, site, _ := setupAlertSite(t)
+	defer app.Cleanup()
+
+	prefs, _ := app.FindFirstRecordByFilter("notification_prefs", "user != ''", dbx.Params{})
+	if prefs != nil {
+		prefs.Set("alert_tank", false)
+		prefs.Set("alert_run_start", true)
+		prefs.Set("alert_run_stop", true)
+		saveRec(t, app, prefs)
+	}
+
+	ctrl, _ := app.FindRecordById("controllers", "ctrl1")
+	now := time.Date(2026, 7, 6, 9, 0, 0, 0, time.UTC)
+
+	start := newRec(t, app, "state_events")
+	start.Set("site", site.Id)
+	start.Set("controller", ctrl.Id)
+	start.Set("route", 1)
+	start.Set("from_state", "IDLE")
+	start.Set("to_state", "RUNNING")
+	start.Set("reason", "")
+	start.Set("ts", now.Format(time.RFC3339))
+	saveRec(t, app, start)
+
+	stop := newRec(t, app, "state_events")
+	stop.Set("site", site.Id)
+	stop.Set("controller", ctrl.Id)
+	stop.Set("route", 1)
+	stop.Set("from_state", "RUNNING")
+	stop.Set("to_state", "IDLE")
+	stop.Set("reason", "MAX_RUNTIME")
+	stop.Set("ts", now.Add(2*time.Minute).Format(time.RFC3339))
+	saveRec(t, app, stop)
+
+	wa := &fakeWhatsApp{}
+	s := &sweeper{openwa: wa}
+	if err := s.run(app, now.Add(3*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if got := len(wa.sent); got != 2 {
+		t.Fatalf("expected run start + run stop (2 sends), got %d", got)
+	}
+	if !strings.Contains(wa.sent[0], "Run stopped") {
+		t.Fatalf("latest event should be run stop, got %q", wa.sent[0])
+	}
+	if !strings.Contains(wa.sent[1], "Run started") {
+		t.Fatalf("older event should be run start, got %q", wa.sent[1])
+	}
+}
+
+func TestRunTransitionDedupedByTimestamp(t *testing.T) {
+	app, site, _ := setupAlertSite(t)
+	defer app.Cleanup()
+
+	prefs, _ := app.FindFirstRecordByFilter("notification_prefs", "user != ''", dbx.Params{})
+	if prefs != nil {
+		prefs.Set("alert_tank", false)
+		prefs.Set("alert_run_start", true)
+		saveRec(t, app, prefs)
+	}
+
+	ctrl, _ := app.FindRecordById("controllers", "ctrl1")
+	now := time.Date(2026, 7, 6, 9, 0, 0, 0, time.UTC)
+
+	start := newRec(t, app, "state_events")
+	start.Set("site", site.Id)
+	start.Set("controller", ctrl.Id)
+	start.Set("route", 1)
+	start.Set("from_state", "IDLE")
+	start.Set("to_state", "RUNNING")
+	start.Set("reason", "")
+	start.Set("ts", now.Format(time.RFC3339))
+	saveRec(t, app, start)
+
+	wa := &fakeWhatsApp{}
+	s := &sweeper{openwa: wa}
+	if err := s.run(app, now.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if got := len(wa.sent); got != 1 {
+		t.Fatalf("first sweep should send once, got %d", got)
+	}
+	if err := s.run(app, now.Add(2*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if got := len(wa.sent); got != 1 {
+		t.Fatalf("same transition should not resend, got %d", got)
 	}
 }
 

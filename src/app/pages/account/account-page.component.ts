@@ -223,6 +223,8 @@ export class AccountPageComponent implements OnInit {
     { key: 'alert_device_offline', label: 'Controller offline', hasThreshold: true },
     { key: 'alert_fault', label: 'Faults (no flow, tank low, max runtime)', hasThreshold: false },
     { key: 'alert_tank', label: 'Tank level (low / full volume)', hasThreshold: true },
+    { key: 'alert_run_start', label: 'Run started', hasThreshold: false },
+    { key: 'alert_run_stop', label: 'Run stopped', hasThreshold: false },
     { key: 'alert_command_failed', label: 'Command did not apply', hasThreshold: false },
   ] as const;
 
@@ -242,14 +244,14 @@ export class AccountPageComponent implements OnInit {
   protected testSent = signal('');
   protected testError = signal<string | null>(null);
 
-  // The four alert-type toggles. The email channel is tracked separately in
-  // `channelEmail`, so it deliberately isn't part of this map.
-  // Offline is opt-in (default off); the rest default on. See
-  // DEFAULT_NOTIFICATION_PREFS for why.
+  // Alert-type toggles. The email/WhatsApp channels are tracked separately.
+  // Offline and run transitions are opt-in (noisy); the rest default on.
   private flags = signal<Record<string, boolean>>({
     alert_device_offline: false,
     alert_fault: true,
     alert_tank: true,
+    alert_run_start: false,
+    alert_run_stop: false,
     alert_command_failed: true,
   });
   protected channelEmail = signal(DEFAULT_NOTIFICATION_PREFS.channel_email);
@@ -334,6 +336,8 @@ export class AccountPageComponent implements OnInit {
         alert_device_offline: r['alert_device_offline'] === true, // opt-in
         alert_fault: r['alert_fault'] !== false,
         alert_tank: r['alert_tank'] !== false,
+        alert_run_start: r['alert_run_start'] === true, // opt-in
+        alert_run_stop: r['alert_run_stop'] === true,   // opt-in
         alert_command_failed: r['alert_command_failed'] !== false,
       });
       this.channelEmail.set(r['channel_email'] === true);

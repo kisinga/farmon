@@ -14,6 +14,8 @@ export type AlertType =
   | 'fault'
   | 'tank_low'
   | 'tank_high'
+  | 'run_start'
+  | 'run_stop'
   | 'command_failed';
 
 export type AlertSeverity = 'info' | 'warning' | 'critical';
@@ -47,6 +49,8 @@ export interface NotificationPrefs {
   alert_device_offline: boolean;
   alert_fault: boolean;
   alert_tank: boolean;
+  alert_run_start: boolean;
+  alert_run_stop: boolean;
   alert_command_failed: boolean;
   channel_whatsapp: boolean;
   /** OpenWA chat id (`2547...@c.us`) or a phone number the server normalises. */
@@ -63,19 +67,21 @@ export function prefKeyFor(type: AlertType): keyof NotificationPrefs {
     case 'fault': return 'alert_fault';
     case 'tank_low':
     case 'tank_high': return 'alert_tank';
+    case 'run_start': return 'alert_run_start';
+    case 'run_stop': return 'alert_run_stop';
     case 'command_failed': return 'alert_command_failed';
   }
 }
 
 // Defaults for an unconfigured user. Most alert types default ON, but
-// `alert_device_offline` is OPT-IN: a device on flaky rural wifi/cellular drops
-// and reconnects constantly, so offline would be the noisiest alert — and presence
-// is already visible on the dashboard. A user must explicitly enable it (and email)
-// to be notified of disconnects.
+// `alert_device_offline` is OPT-IN (noisy on flaky links) and the run-transition
+// types are OPT-IN because they can fire frequently on automated schedules.
 export const DEFAULT_NOTIFICATION_PREFS: Omit<NotificationPrefs, 'user'> = {
   alert_device_offline: false,
   alert_fault: true,
   alert_tank: true,
+  alert_run_start: false,
+  alert_run_stop: false,
   alert_command_failed: true,
   channel_whatsapp: false,
   whatsapp_chat_id: '',

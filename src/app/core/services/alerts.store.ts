@@ -264,7 +264,49 @@ export class AlertsStore implements OnDestroy {
       });
     }
 
-    // 3) Command failures — from the snapshot's re-asserted command outcomes (the
+    // 3) Run transitions — latest-wins per route, shown when the user opts in.
+    const seenStartRoute = new Set<string>();
+    const seenStopRoute = new Set<string>();
+    for (const e of this.events()) {
+      const routeKey = `${e.controller}:${e.route}`;
+      const sc = cfgFor(controllers.get(e.controller)?.site ?? '');
+      const ets = Date.parse(e.ts);
+      const ts = Number.isFinite(ets) ? ets : now;
+      if (e.to === 'RUNNING' && e.from !== 'RUNNING' && !seenStartRoute.has(routeKey)) {
+        seenStartRoute.add(routeKey);
+        out.push({
+          key: `run_start:${routeKey}`,
+          type: 'run_start',
+          severity: 'info',
+          site: controllers.get(e.controller)?.site ?? '',
+          siteName: sc.name,
+          controller: e.controller,
+          title: e.route < 0 ? 'Controller started' : `Route ${e.route} started`,
+          message: `${e.controller} — started running`,
+          ts,
+        });
+      }
+      if (
+        e.from === 'RUNNING' &&
+        (e.to === 'IDLE' || e.to === 'STOPPING') &&
+        !seenStopRoute.has(routeKey)
+      ) {
+        seenStopRoute.add(routeKey);
+        out.push({
+          key: `run_stop:${routeKey}`,
+          type: 'run_stop',
+          severity: 'info',
+          site: controllers.get(e.controller)?.site ?? '',
+          siteName: sc.name,
+          controller: e.controller,
+          title: e.route < 0 ? 'Controller stopped' : `Route ${e.route} stopped`,
+          message: `${e.controller} — stopped (${reasonText(e.reason || e.to)})`,
+          ts,
+        });
+      }
+    }
+
+    // 4) Command failures — from the snapshot's re-asserted command outcomes (the
     //    reliable channel; derived events carry no command_id). Windowed from the
     //    client first-seen time so a stale ring entry doesn't linger forever.
     for (const { row, firstSeen } of this.commandFails().values()) {
@@ -383,11 +425,12 @@ function toSiteCfg(r: RecordModel): SiteAlertCfg {
 function toPrefs(r: RecordModel, userId: string): NotificationPrefs {
   return {
     user: userId,
-    // Opt-in: offline only when explicitly enabled (missing/false → off), unlike
-    // the other types which default on (`!== false`). See DEFAULT_NOTIFICATION_PREFS.
+    // Opt-in: offline and run transitions only when explicitly enabled.
     alert_device_offline: r['alert_device_offline'] === true,
     alert_fault: r['alert_fault'] !== false,
     alert_tank: r['alert_tank'] !== false,
+    alert_run_start: r['alert_run_start'] === true,
+    alert_run_stop: r['alert_run_stop'] === true,
     alert_command_failed: r['alert_command_failed'] !== false,
     channel_whatsapp: r['channel_whatsapp'] === true,
     whatsapp_chat_id: (r['whatsapp_chat_id'] ?? '') as string,

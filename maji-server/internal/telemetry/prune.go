@@ -18,6 +18,9 @@ const (
 	AggRetention     = 30 * 24 * time.Hour
 	EventRetention   = 180 * 24 * time.Hour
 	CommandRetention = 365 * 24 * time.Hour
+	// Transition incidents are discrete event receipts; keep them long enough for
+	// debugging but short enough that they do not grow unbounded.
+	IncidentRetention = 30 * 24 * time.Hour
 )
 
 // pbDateLayout matches PocketBase's stored autodate format (vs RFC3339 for our
@@ -30,6 +33,7 @@ func Prune(app core.App, now time.Time) error {
 	aggCut := now.UTC().Add(-AggRetention).Format(time.RFC3339)
 	eventCut := now.UTC().Add(-EventRetention).Format(time.RFC3339)
 	commandCut := now.UTC().Add(-CommandRetention).Format(pbDateLayout)
+	incidentCut := now.UTC().Add(-IncidentRetention).Format(pbDateLayout)
 
 	deletes := []struct {
 		table, col, cut string
@@ -40,6 +44,7 @@ func Prune(app core.App, now time.Time) error {
 		{"state_events", "ts", eventCut},
 		{"config_events", "ts", eventCut},
 		{"commands", "created", commandCut},
+		{"notification_incidents", "created", incidentCut},
 	}
 
 	for _, d := range deletes {
