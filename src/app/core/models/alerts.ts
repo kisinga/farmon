@@ -83,7 +83,9 @@ export const DEFAULT_NOTIFICATION_PREFS: Omit<NotificationPrefs, 'user'> = {
   alert_run_start: false,
   alert_run_stop: false,
   alert_command_failed: true,
-  channel_whatsapp: false,
+  // WhatsApp is the primary external channel for this deployment, so it defaults
+  // on. The backend falls back to users.phone when no dedicated chat id is set.
+  channel_whatsapp: true,
   whatsapp_chat_id: '',
   whatsapp_country_code: '254',
   channel_email: false,

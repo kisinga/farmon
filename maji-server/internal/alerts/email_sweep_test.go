@@ -235,6 +235,34 @@ func TestRunStartAndStopSendWhatsApp(t *testing.T) {
 	}
 }
 
+func TestWhatsAppFallbackToProfilePhone(t *testing.T) {
+	app, _, _ := setupAlertSite(t)
+	defer app.Cleanup()
+
+	prefs, _ := app.FindFirstRecordByFilter("notification_prefs", "user != ''", dbx.Params{})
+	user, _ := app.FindRecordById("users", prefs.GetString("user"))
+	user.Set("phone", "+254712345678")
+	saveRec(t, app, user)
+	prefs.Set("alert_tank", true)
+	prefs.Set("channel_whatsapp", true)
+	prefs.Set("whatsapp_chat_id", "")
+	saveRec(t, app, prefs)
+
+	// site threshold default low 20, snapshot level 10 -> tank_low alert.
+	wa := &fakeWhatsApp{}
+	s := &sweeper{openwa: wa}
+	now := time.Date(2026, 7, 6, 9, 0, 0, 0, time.UTC)
+	if err := s.run(app, now); err != nil {
+		t.Fatal(err)
+	}
+	if got := len(wa.sent); got != 1 {
+		t.Fatalf("expected one WhatsApp using profile phone fallback, got %d", got)
+	}
+	if !strings.Contains(wa.sent[0], "254712345678@c.us") {
+		t.Fatalf("expected normalized profile phone chat id, got %q", wa.sent[0])
+	}
+}
+
 func TestRunTransitionDedupedByTimestamp(t *testing.T) {
 	app, site, _ := setupAlertSite(t)
 	defer app.Cleanup()

@@ -255,6 +255,7 @@ export class AccountPageComponent implements OnInit {
     alert_command_failed: true,
   });
   protected channelEmail = signal(DEFAULT_NOTIFICATION_PREFS.channel_email);
+  // WhatsApp defaults on; users can still turn it off explicitly.
   protected channelWhatsApp = signal(DEFAULT_NOTIFICATION_PREFS.channel_whatsapp);
   protected whatsAppChatId = signal(DEFAULT_NOTIFICATION_PREFS.whatsapp_chat_id);
   protected whatsAppCountryCode = signal(DEFAULT_NOTIFICATION_PREFS.whatsapp_country_code);

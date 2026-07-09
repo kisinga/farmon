@@ -157,6 +157,16 @@ func (r *recipients) addWhatsApp(chatID string) {
 	}
 }
 
+// effectiveWhatsAppChatID returns the stored WhatsApp chat id if present,
+// otherwise falls back to the user's profile phone number normalised for the
+// default country context.
+func effectiveWhatsAppChatID(p prefs, phone string) string {
+	if p.chatID != "" {
+		return p.chatID
+	}
+	return normalizeWhatsAppChatID(phone, defaultWhatsAppCountryCode)
+}
+
 func activateIncident(app core.App, siteID, key, kind, subject, body string, now time.Time) (*core.Record, error) {
 	coll, err := app.FindCollectionByNameOrId("notification_incidents")
 	if err != nil {
@@ -242,9 +252,10 @@ func resolveSite(app core.App, site *core.Record) (siteCtx, bool) {
 			continue
 		}
 		p := resolvePrefs(app, ownerID)
+		chatID := effectiveWhatsAppChatID(p, owner.GetString("phone"))
 		if p.offline {
 			if p.whatsapp {
-				offlineTo.addWhatsApp(p.chatID)
+				offlineTo.addWhatsApp(chatID)
 			}
 			if p.email {
 				offlineTo.addEmail(owner.GetString("email"))
@@ -252,7 +263,7 @@ func resolveSite(app core.App, site *core.Record) (siteCtx, bool) {
 		}
 		if p.fault {
 			if p.whatsapp {
-				faultTo.addWhatsApp(p.chatID)
+				faultTo.addWhatsApp(chatID)
 			}
 			if p.email {
 				faultTo.addEmail(owner.GetString("email"))
@@ -260,7 +271,7 @@ func resolveSite(app core.App, site *core.Record) (siteCtx, bool) {
 		}
 		if p.tank {
 			if p.whatsapp {
-				tankTo.addWhatsApp(p.chatID)
+				tankTo.addWhatsApp(chatID)
 			}
 			if p.email {
 				tankTo.addEmail(owner.GetString("email"))
@@ -268,7 +279,7 @@ func resolveSite(app core.App, site *core.Record) (siteCtx, bool) {
 		}
 		if p.runStart {
 			if p.whatsapp {
-				runStartTo.addWhatsApp(p.chatID)
+				runStartTo.addWhatsApp(chatID)
 			}
 			if p.email {
 				runStartTo.addEmail(owner.GetString("email"))
@@ -276,7 +287,7 @@ func resolveSite(app core.App, site *core.Record) (siteCtx, bool) {
 		}
 		if p.runStop {
 			if p.whatsapp {
-				runStopTo.addWhatsApp(p.chatID)
+				runStopTo.addWhatsApp(chatID)
 			}
 			if p.email {
 				runStopTo.addEmail(owner.GetString("email"))
@@ -309,11 +320,12 @@ func resolveSite(app core.App, site *core.Record) (siteCtx, bool) {
 }
 
 // resolvePrefs reads the owner's notification_prefs. No row means alert types
-// default on except offline and transitions, while external channels default off.
+// default on except offline, transitions, and email; WhatsApp defaults on and
+// falls back to the user's profile phone if no dedicated chat id is stored.
 func resolvePrefs(app core.App, userID string) prefs {
 	rec, err := app.FindFirstRecordByFilter("notification_prefs", "user = {:u}", dbx.Params{"u": userID})
 	if err != nil || rec == nil {
-		return prefs{offline: false, fault: true, tank: true, email: false, whatsapp: false}
+		return prefs{offline: false, fault: true, tank: true, email: false, whatsapp: true}
 	}
 	return prefs{
 		offline:  rec.GetBool("alert_device_offline"),
