@@ -4,24 +4,18 @@ import { FAULT_MEANINGS, STOP_REASON_MEANINGS, OUTCOME_MEANINGS } from '@core';
 import { RealtimeService } from './realtime.service';
 import { BackendService } from './backend.service';
 import { AuthStore } from './auth.store';
+import { SitesStore } from '../stores/sites.store';
 import type { ControllerRow, ShadowRow, StateEventRow, CommandOutcomeRow } from '../models/runtime';
 import {
   type AlertSeverity,
   type DerivedAlert,
   type NotificationPrefs,
+  type SiteAlertConfig,
   DEFAULT_NOTIFICATION_PREFS,
   prefKeyFor,
   resolveOfflineMs,
 } from '../models/alerts';
 
-/** Per-site alert config, read from the `sites` collection with safe defaults
- *  when the fields are unset (older sites, or before the threshold editor). */
-interface SiteAlertCfg {
-  name: string;
-  lowPct: number;
-  highPct: number | null;
-  offlineMs: number;
-}
 const DEFAULT_LOW_PCT = 20;
 /** Hysteresis margin (percentage points) so a level hovering on the threshold
  *  doesn't flap the alert on and off. */
@@ -52,6 +46,7 @@ export class AlertsStore implements OnDestroy {
   private realtime = inject(RealtimeService);
   private backend = inject(BackendService);
   private auth = inject(AuthStore);
+  private sitesStore = inject(SitesStore);
 
   // --- Inputs (live) ---
   private controllers = signal<Map<string, ControllerRow>>(new Map());
@@ -61,7 +56,8 @@ export class AlertsStore implements OnDestroy {
    *  command_id with the client first-seen time — outcomes carry no server ts and
    *  re-assert every interval, so first-seen anchors the display window. */
   private commandFails = signal<Map<string, { row: CommandOutcomeRow; firstSeen: number }>>(new Map());
-  private siteCfg = signal<Map<string, SiteAlertCfg>>(new Map());
+  /** Per-site thresholds are owned by SitesStore (the shared catalog). */
+  private siteCfg = computed(() => this.sitesStore.configs());
   private now = signal(Date.now());
 
   // --- Derived outputs ---
@@ -102,7 +98,7 @@ export class AlertsStore implements OnDestroy {
     if (this.started) return;
     this.started = true;
     try {
-      await this.loadSiteCfg();
+      await this.sitesStore.ensureLoaded();
       await this.loadPrefs();
 
       const ctrls = await this.realtime.allControllers();
@@ -127,7 +123,7 @@ export class AlertsStore implements OnDestroy {
           });
           this.mergeOutcomes(outcomes);
         }),
-        await this.backend.pb.collection('sites').subscribe('*', (e) => this.applySite(e.record)),
+        await this.backend.pb.collection('sites').subscribe('*', (e) => this.sitesStore.patchSite(e.record)),
       );
 
       this.clock = window.setInterval(() => this.now.set(Date.now()), 30_000);
@@ -146,7 +142,6 @@ export class AlertsStore implements OnDestroy {
     this.events.set([]);
     this.levels.set(new Map());
     this.commandFails.set(new Map());
-    this.siteCfg.set(new Map());
     this.lowLatched.clear();
     this.highLatched.clear();
     this.started = false;
@@ -166,17 +161,6 @@ export class AlertsStore implements OnDestroy {
       }
       return n;
     });
-  }
-
-  private async loadSiteCfg(): Promise<void> {
-    const rows = await this.backend.pb.collection('sites').getFullList({ requestKey: 'alerts:sites' });
-    const map = new Map<string, SiteAlertCfg>();
-    for (const r of rows) map.set(r['id'], toSiteCfg(r));
-    this.siteCfg.set(map);
-  }
-
-  private applySite(r: RecordModel): void {
-    this.siteCfg.update((m) => new Map(m).set(r['id'], toSiteCfg(r)));
   }
 
   private async loadPrefs(): Promise<void> {
@@ -215,7 +199,7 @@ export class AlertsStore implements OnDestroy {
     const cfg = this.siteCfg();
     const out: DerivedAlert[] = [];
 
-    const cfgFor = (siteId: string): SiteAlertCfg =>
+    const cfgFor = (siteId: string): SiteAlertConfig =>
       cfg.get(siteId) ?? { name: 'Site', lowPct: DEFAULT_LOW_PCT, highPct: null, offlineMs: resolveOfflineMs(null) };
 
     // 1) Device offline — staleness only. The `online` flag is NOT consulted: it
@@ -410,17 +394,6 @@ export class AlertsStore implements OnDestroy {
 }
 
 // --- mappers / helpers ---------------------------------------------------------
-
-function toSiteCfg(r: RecordModel): SiteAlertCfg {
-  const low = Number(r['tank_low_pct']);
-  const high = Number(r['tank_high_pct']);
-  return {
-    name: (r['name'] || r['friendlyName'] || 'Site') as string,
-    lowPct: Number.isFinite(low) && low > 0 ? low : DEFAULT_LOW_PCT,
-    highPct: Number.isFinite(high) && high > 0 ? high : null,
-    offlineMs: resolveOfflineMs(r['offline_timeout_s'] as number),
-  };
-}
 
 function toPrefs(r: RecordModel, userId: string): NotificationPrefs {
   return {

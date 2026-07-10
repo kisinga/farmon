@@ -109,3 +109,11 @@ export function resolveOfflineMs(rawSeconds: number | null | undefined): number 
   if (!Number.isFinite(s) || s <= 0) return OFFLINE_DEFAULT_S * 1000;
   return Math.max(s, OFFLINE_FLOOR_S) * 1000;
 }
+
+/** Per-site alert thresholds and display name, derived from the sites catalog. */
+export interface SiteAlertConfig {
+  name: string;
+  lowPct: number;
+  highPct: number | null;
+  offlineMs: number;
+}

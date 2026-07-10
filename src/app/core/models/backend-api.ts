@@ -17,6 +17,23 @@ export type { ValidationResult, RuleDiagnostic, NetworkConfig };
 export type { SiteListEntry, SiteFullPayload, SiteSavePayload, TemplateListEntry, Controller };
 export type { BoardDef, Route, SiteTopology };
 
+/** Server-side site catalog item: everything the overview cards and alert bell need
+ *  without the full topology JSON blob. */
+export interface SiteCatalogItem {
+  id: string;
+  friendlyName: string;
+  owners: string[];
+  controllerCount: number;
+  nodeCount: number;
+  mode: string;
+  deviceCount: number;
+  liveCount: number;
+  commenceDate: string;
+  tankLowPct: number;
+  tankHighPct: number;
+  offlineTimeoutS: number;
+}
+
 // --- Devices (registered controllers) + global config ---
 
 /**

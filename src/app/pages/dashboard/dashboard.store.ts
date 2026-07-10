@@ -120,27 +120,19 @@ export class DashboardStore implements OnDestroy {
     });
   }
 
-  /** Pull the current shadow, recent transitions/commands/configs, presence, and
-   *  runs (a 30d window for the totals widget + the newest-N for the feed) for a
-   *  site. Runs on init and on every realtime reconnect to close the offline gap.
-   *  The reads are independent, so they fire concurrently — one round-trip of
-   *  latency (it adds up through the Cloudflare proxy). */
+  /** Pull the current shadow, recent transitions, and presence — the data needed
+   *  for first paint. Runs on init and on every realtime reconnect to close the
+   *  offline gap. Activity/usage backfill is separate so the loading spinner can
+   *  disappear quickly. */
   private async resync(siteId: string, gap = false): Promise<void> {
-    // A reconnect gap-fill only re-pulls LIVE state (the few seconds a dropped SSE
-    // could have missed); a full sync (init) also pulls the slow/heavy bits. The
-    // SSE gets cut on a ~60-100s proxy idle-timeout loop, so re-pulling the 30d
-    // usage totals + config feed on every reconnect was the bulk of the churn.
     const now = Date.now();
     if (gap && now - this.lastResyncAt < RESYNC_DEBOUNCE_MS) return;
     this.lastResyncAt = now;
 
-    const [{ rows, outcomes }, evts, ctrls, cmds, feedRuns] = await Promise.all([
+    const [{ rows, outcomes }, evts, ctrls] = await Promise.all([
       this.realtime.latest(siteId),
       this.realtime.recentEvents(siteId, 100),
       this.realtime.controllers(siteId),
-      this.realtime.recentCommands(siteId, 100),
-      // Newest-N for the feed's run rows (live-topped-up by subscribeRuns below).
-      this.realtime.recentRuns(siteId, 100).catch(() => [] as UsageRun[]),
     ]);
     const map = new Map<string, ShadowRow>();
     for (const r of rows) map.set(`${r.controller}/${r.sensor}`, r);
@@ -148,20 +140,20 @@ export class DashboardStore implements OnDestroy {
     this.mergeOutcomes(outcomes);
     this.events.set(evts);
     this.controllers.set(new Map(ctrls.map((c) => [c.device_id, c])));
-    this.commands.set(new Map(cmds.map((c) => [c.id, c])));
-    this.feedRuns.set(feedRuns);
+  }
 
-    // Slow-changing + heavy: the config-event feed and the 30d usage totals don't
-    // move during a brief drop, so they ride init only, never a reconnect gap-fill.
-    if (!gap) {
-      // Preload only the default view window (plus the delta's prior window); the totals
-      // widget widens this on demand. Runs concurrently with the config-event fetch.
-      const [cfgs] = await Promise.all([
-        this.realtime.recentConfigEvents(siteId, 100),
-        this.loadRuns(USAGE_SPAN_DEFAULT_HOURS * 2),
-      ]);
-      this.configEvents.set(cfgs);
-    }
+  /** Backfill the activity feed: commands, config events, and recent runs. These
+   *  are not needed for the first paint of routes/system state, so they run after
+   *  the loading spinner is gone. */
+  private async loadActivityFeed(siteId: string): Promise<void> {
+    const [cmds, cfgs, feedRuns] = await Promise.all([
+      this.realtime.recentCommands(siteId, 100),
+      this.realtime.recentConfigEvents(siteId, 100),
+      this.realtime.recentRuns(siteId, 100).catch(() => [] as UsageRun[]),
+    ]);
+    this.commands.set(new Map(cmds.map((c) => [c.id, c])));
+    this.configEvents.set(cfgs);
+    this.feedRuns.set(feedRuns);
   }
 
   /** Ensure at least `hours` of run history is loaded for the totals widget (capped at
@@ -207,6 +199,7 @@ export class DashboardStore implements OnDestroy {
       ]);
       this.offlineMs = resolveOfflineMs(offlineS);
 
+      // Essential live subscriptions: the data needed for first paint.
       this.unsubs.push(
         await this.realtime.subscribeShadow(siteId, (rows, outcomes) => {
           this.shadow.update((m) => {
@@ -223,15 +216,23 @@ export class DashboardStore implements OnDestroy {
         }),
       );
       this.unsubs.push(
+        await this.realtime.subscribeControllers(siteId, (row) => {
+          this.controllers.update((m) => new Map(m).set(row.device_id, row));
+        }),
+      );
+
+      // First paint is ready.
+      this.loading.set(false);
+
+      // Backfill the activity feed now that the UI can render.
+      await this.loadActivityFeed(siteId);
+
+      // Remaining live subscriptions for activity data.
+      this.unsubs.push(
         await this.realtime.subscribeCommands(siteId, (row) => {
           // A command arrives as `sent`, then its outcome reconciles it to
           // done/failed — upsert by id so the row updates in place.
           this.commands.update((m) => new Map(m).set(row.id, row));
-        }),
-      );
-      this.unsubs.push(
-        await this.realtime.subscribeControllers(siteId, (row) => {
-          this.controllers.update((m) => new Map(m).set(row.device_id, row));
         }),
       );
       this.unsubs.push(
@@ -258,7 +259,6 @@ export class DashboardStore implements OnDestroy {
       this.clock = window.setInterval(() => this.now.set(Date.now()), 15_000);
     } catch (err) {
       this.error.set(String(err));
-    } finally {
       this.loading.set(false);
     }
   }

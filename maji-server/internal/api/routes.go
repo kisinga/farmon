@@ -133,6 +133,19 @@ func Register(se *core.ServeEvent, cfg config.Config, pub Publisher) {
 		})
 	})
 
+	// GET /sites — lean site catalog for the overview / home / devices pages and the
+	// alert bell. Returns counts and alert thresholds without the full topology JSON.
+	g.GET("/sites", func(e *core.RequestEvent) error {
+		if e.Auth == nil {
+			return apis.NewUnauthorizedError("authentication required", nil)
+		}
+		entries, err := ListSites(e.App, e.Auth)
+		if err != nil {
+			return apis.NewApiError(http.StatusInternalServerError, "failed to load sites", err)
+		}
+		return e.JSON(http.StatusOK, entries)
+	})
+
 	// GET/PATCH /account — narrow self-service profile surface. The users
 	// collection remains admin-only for writes so callers cannot patch role,
 	// verification flags, auth fields, or other sensitive columns.
@@ -347,21 +360,15 @@ func Register(se *core.ServeEvent, cfg config.Config, pub Publisher) {
 			}
 		}
 
-		// Per-route continuity tracker: within one device epoch, this run's start
-		// counter must equal the previous run's end counter. An epoch change (reflash /
-		// board swap) resets the lineage, so it never counts as a gap.
-		type contKey struct {
-			ctrl  string
-			route int
-		}
-		type contState struct {
-			lastEnd   float64
-			lastEpoch int64
-			haveLast  bool
-			ok        bool
-			gapLitres float64
-		}
 		cont := map[contKey]*contState{}
+
+		// Seed continuity from the most recent metered run before the window, for every
+		// (controller, route) that appears in the window. Doing this in one grouped query
+		// removes the per-route N+1 lookups that made usage totals slow on busy sites.
+		seed, err := seedContinuityPrior(e.App, site, from, q.Get("controller"), q.Get("route"))
+		if err != nil {
+			return apis.NewApiError(http.StatusInternalServerError, "continuity seed failed", err)
+		}
 
 		runs := make([]map[string]any, 0, len(recs))
 		var totalLitres float64
@@ -398,16 +405,11 @@ func Register(se *core.ServeEvent, cfg config.Config, pub Publisher) {
 				st := cont[k]
 				if st == nil {
 					st = &contState{ok: true}
-					// Seed from the metered run immediately before the window, so a gap
-					// straddling the window start is caught (not just gaps between two
-					// in-window runs).
-					prior, _ := e.App.FindRecordsByFilter("runs",
-						"controller = {:pc} && route = {:pr} && metered = true && started_at < {:pf}",
-						"-started_at", 1, 0,
-						dbx.Params{"pc": k.ctrl, "pr": route, "pf": params["from"]})
-					if len(prior) == 1 {
-						st.lastEnd = prior[0].GetFloat("end_litres")
-						st.lastEpoch = int64(prior[0].GetInt("epoch"))
+					// Seed from the pre-computed map of the most recent metered run before
+					// the window for this (controller, route) pair.
+					if prior, ok := seed[k]; ok {
+						st.lastEnd = prior.endLitres
+						st.lastEpoch = prior.epoch
 						st.haveLast = true
 					}
 					cont[k] = st
@@ -919,6 +921,70 @@ func tierTable(tier string) (table, timeCol string, ok bool) {
 	default:
 		return "", "", false
 	}
+}
+
+// contKey identifies a (controller, route) pair for usage continuity tracking.
+type contKey struct {
+	ctrl  string
+	route int
+}
+
+// contState tracks whether consecutive metered runs on one route are continuous.
+type contState struct {
+	lastEnd   float64
+	lastEpoch int64
+	haveLast  bool
+	ok        bool
+	gapLitres float64
+}
+
+type continuityPrior struct {
+	endLitres float64
+	epoch     int64
+}
+
+// seedContinuityPrior returns the most recent metered run before the requested
+// window for every (controller, route) pair, in a single grouped query. This
+// replaces the per-route N+1 lookups in the /usage handler.
+func seedContinuityPrior(app core.App, siteID string, from time.Time, controllerFilter, routeFilter string) (map[contKey]continuityPrior, error) {
+	out := map[contKey]continuityPrior{}
+	params := dbx.Params{
+		"s":    siteID,
+		"from": from.UTC().Format(time.RFC3339),
+	}
+	where := "site = {:s} AND metered != 0 AND started_at < {:from}"
+	if controllerFilter != "" {
+		where += " AND controller = {:c}"
+		params["c"] = controllerFilter
+	}
+	if routeFilter != "" {
+		if n, err := strconv.Atoi(routeFilter); err == nil {
+			where += " AND route = {:rt}"
+			params["rt"] = n
+		}
+	}
+
+	sql := "SELECT r.controller, r.route, r.end_litres, r.epoch FROM runs r " +
+		"INNER JOIN (" +
+		"  SELECT controller, route, MAX(started_at) AS started_at " +
+		"  FROM runs " +
+		"  WHERE " + where + " " +
+		"  GROUP BY controller, route" +
+		") m ON r.controller = m.controller AND r.route = m.route AND r.started_at = m.started_at"
+
+	var rows []struct {
+		Controller string  `db:"controller"`
+		Route      int     `db:"route"`
+		EndLitres  float64 `db:"end_litres"`
+		Epoch      int     `db:"epoch"`
+	}
+	if err := app.DB().NewQuery(sql).Bind(params).All(&rows); err != nil {
+		return nil, err
+	}
+	for _, r := range rows {
+		out[contKey{r.Controller, r.Route}] = continuityPrior{endLitres: r.EndLitres, epoch: int64(r.Epoch)}
+	}
+	return out, nil
 }
 
 // IsAdmin reports whether the caller has full-platform privileges. A PocketBase

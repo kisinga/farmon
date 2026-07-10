@@ -1,4 +1,4 @@
-import { Component, computed, inject, input, signal } from '@angular/core';
+import { Component, computed, inject, input, OnInit, signal } from '@angular/core';
 import { NgxEchartsDirective } from 'ngx-echarts';
 import type { EChartsOption } from 'echarts';
 import { formatDurationS, formatLitres, findRoute, routeLabel, type DashboardSpec } from '@core';
@@ -156,12 +156,18 @@ function runGroup(
     </div>
   `,
 })
-export class UsageTotalsComponent {
+export class UsageTotalsComponent implements OnInit {
   private store = inject(DashboardStore);
 
   /** Completed runs for the currently-loaded window; the store fetches them lazily
-   *  (default window on init, widened by {@link onSpan}). */
+   *  (default window when this widget mounts, widened by {@link onSpan}). */
   protected readonly runs = this.store.runs;
+
+  ngOnInit(): void {
+    // Load the default window (plus the delta's prior window) the first time the
+    // widget is rendered, keeping it out of the dashboard's critical path.
+    void this.store.loadRuns(USAGE_SPAN_DEFAULT_HOURS * 2);
+  }
   /** The dashboard spec, for resolving a run's (controller, route) -> route label. */
   readonly spec = input.required<DashboardSpec>();
 

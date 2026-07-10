@@ -1,29 +1,79 @@
-import { Injectable, inject } from '@angular/core';
+import { Injectable, computed, inject } from '@angular/core';
+import type { RecordModel } from 'pocketbase';
 import { BackendService } from '../services/backend.service';
-import type { SiteListEntry } from '../models/backend-api';
+import type { SiteCatalogItem, SiteListEntry } from '../models/backend-api';
+import type { SiteAlertConfig } from '../models/alerts';
+import { resolveOfflineMs } from '../models/alerts';
 import { CollectionStore } from './collection-store';
 
+/** Map the rich server catalog item to the display shape the cards expect.
+ *  The fields are a superset, so this is just a cast-like copy. */
+function toListEntry(item: SiteCatalogItem): SiteListEntry {
+  return { ...item };
+}
+
+function toAlertConfig(item: SiteCatalogItem): SiteAlertConfig {
+  const low = Number(item.tankLowPct);
+  const high = Number(item.tankHighPct);
+  return {
+    name: item.friendlyName,
+    lowPct: Number.isFinite(low) && low > 0 ? low : 20,
+    highPct: Number.isFinite(high) && high > 0 ? high : null,
+    offlineMs: resolveOfflineMs(item.offlineTimeoutS),
+  };
+}
+
+function patchItemFromRecord(item: SiteCatalogItem, r: RecordModel): SiteCatalogItem {
+  const name = r['name'];
+  const low = r['tank_low_pct'];
+  const high = r['tank_high_pct'];
+  const offline = r['offline_timeout_s'];
+  const owners = r['owner'];
+  return {
+    ...item,
+    friendlyName: typeof name === 'string' ? name : item.friendlyName,
+    tankLowPct: typeof low === 'number' ? low : item.tankLowPct,
+    tankHighPct: typeof high === 'number' ? high : item.tankHighPct,
+    offlineTimeoutS: typeof offline === 'number' ? offline : item.offlineTimeoutS,
+    owners: Array.isArray(owners) ? (owners as string[]) : item.owners,
+  };
+}
+
 /**
- * SitesStore — the shared site catalog. Home, Overview and Devices all read the
- * site list; the base Cached shares one fetch (its in-flight dedup is what stops
- * their `controllers`/`sites` scans from auto-cancelling each other).
+ * SitesStore — the single source of truth for the site catalog.
  *
- * Mutations keep the cached list honest: rename/assign/delete patch it in place
- * (the open Overview updates with no refetch); create/import invalidate it
- * (callers navigate into the new site, so the next read refetches with its
- * derived counts). The editor invalidates after a save (topology counts changed).
+ * It owns the lean server-backed catalog (display fields + alert thresholds) and
+ * exposes both the card-list projection and the per-site alert config. Other
+ * stores (AlertsStore) read from here instead of fetching sites again.
  */
 @Injectable({ providedIn: 'root' })
-export class SitesStore extends CollectionStore<SiteListEntry[]> {
+export class SitesStore extends CollectionStore<SiteCatalogItem[]> {
   private backend = inject(BackendService);
-  /** The cached site catalog (alias of the base `value`). */
-  readonly list = this.value;
+  /** Site list projection (shape the UI cards expect). */
+  readonly list = computed<SiteListEntry[]>(() => this.value().map(toListEntry));
+  /** Alert thresholds by site id. */
+  readonly configs = computed(() => {
+    const map = new Map<string, SiteAlertConfig>();
+    for (const item of this.value()) map.set(item.id, toAlertConfig(item));
+    return map;
+  });
 
   constructor() {
     super([]);
   }
-  protected fetch(): Promise<SiteListEntry[]> {
+  protected fetch(): Promise<SiteCatalogItem[]> {
     return this.backend.siteList();
+  }
+
+  /** Alert configuration for a site, derived from the shared catalog. */
+  siteConfig(siteId: string): SiteAlertConfig | undefined {
+    return this.configs().get(siteId);
+  }
+
+  /** Update a single entry from a realtime record (name/thresholds/owners). */
+  patchSite(record: RecordModel): void {
+    const id = record['id'] as string;
+    this.mutate((list) => list.map((s) => (s.id === id ? patchItemFromRecord(s, record) : s)));
   }
 
   // --- Mutations: keep the cached list honest ----------------------------
@@ -65,7 +115,7 @@ export class SitesStore extends CollectionStore<SiteListEntry[]> {
   toggleOwner(siteId: string, userId: string, assigned: boolean): Promise<void> {
     const prior = this.ownerOps.get(siteId) ?? Promise.resolve();
     const next = prior.catch(() => {}).then(async () => {
-      const current = this.list().find((s) => s.id === siteId)?.owners ?? [];
+      const current = this.value().find((s) => s.id === siteId)?.owners ?? [];
       if (current.includes(userId) === assigned) return; // already in desired state
       const updated = assigned ? [...current, userId] : current.filter((id) => id !== userId);
       await this.setOwners(siteId, updated);

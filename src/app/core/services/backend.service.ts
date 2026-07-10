@@ -10,6 +10,7 @@ import {
 import type { ExpansionBoardCatalog, ExpansionBoardDef, CommandAction } from '@core';
 import { HOSTING_DEVICE_CAP } from '@core';
 import type {
+  SiteCatalogItem,
   SiteListEntry,
   SiteFullPayload,
   SiteSavePayload,
@@ -52,27 +53,11 @@ export class BackendService {
 
   // --- Sites ---------------------------------------------------------------
 
-  async siteList(): Promise<SiteListEntry[]> {
-    const records = await this.pb
-      .collection('sites')
-      .getFullList({ sort: 'name', requestKey: 'sites:list' });
-    // Provisioned-device counts per site (what the hosting cap measures — distinct
-    // from the designed controllers in the topology). One scoped query, grouped here.
-    // Distinct requestKey from the device list so the two controller scans the
-    // Devices page fires in parallel don't auto-cancel each other.
-    const devices = await this.pb
-      .collection('controllers')
-      .getFullList({ fields: 'site,active,last_seen', requestKey: 'controllers:counts' });
-    const deviceCounts = new Map<string, number>(); // active (registered) → hosting cap
-    const liveCounts = new Map<string, number>(); // ever-connected → the design lock
-    for (const d of devices) {
-      const sid = d['site'] as string;
-      if (d['active'] !== false) deviceCounts.set(sid, (deviceCounts.get(sid) ?? 0) + 1);
-      if (d['last_seen']) liveCounts.set(sid, (liveCounts.get(sid) ?? 0) + 1);
-    }
-    return records.map((r) =>
-      this.toListEntry(r, deviceCounts.get(r['id']) ?? 0, liveCounts.get(r['id']) ?? 0),
-    );
+  async siteList(): Promise<SiteCatalogItem[]> {
+    return this.pb.send<SiteCatalogItem[]>('/api/farmon/sites', {
+      method: 'GET',
+      requestKey: 'sites:list',
+    });
   }
 
   async siteLoad(id: string): Promise<SiteFullPayload> {
@@ -741,21 +726,6 @@ export class BackendService {
   }
 
   // --- Helpers -------------------------------------------------------------
-
-  private toListEntry(r: RecordModel, deviceCount = 0, liveCount = 0): SiteListEntry {
-    const topo = r['draft_topology'] as SiteTopology | null;
-    return {
-      id: r['id'],
-      friendlyName: r['name'],
-      owners: (r['owner'] ?? []) as string[],
-      controllerCount: topo?.controllers?.length ?? 0,
-      nodeCount: topo?.nodes?.length ?? 0,
-      mode: (r['mode'] ?? '') as string,
-      deviceCount,
-      liveCount,
-      commenceDate: (r['commence_date'] ?? '') as string,
-    };
-  }
 
   private toDeviceEntry(r: RecordModel): DeviceEntry {
     const site = r['expand']?.['site'] as RecordModel | undefined;
