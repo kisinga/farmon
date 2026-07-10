@@ -23,6 +23,24 @@ function toAlertConfig(item: SiteCatalogItem): SiteAlertConfig {
   };
 }
 
+function toCatalogItem(r: RecordModel): SiteCatalogItem {
+  const owners = r['owner'];
+  return {
+    id: r['id'] as string,
+    friendlyName: (r['name'] as string) ?? '',
+    owners: Array.isArray(owners) ? (owners as string[]) : [],
+    controllerCount: Number(r['controller_count'] ?? 0),
+    nodeCount: Number(r['node_count'] ?? 0),
+    mode: (r['mode'] as string) ?? '',
+    deviceCount: Number(r['device_count'] ?? 0),
+    liveCount: Number(r['live_count'] ?? 0),
+    commenceDate: (r['commence_date'] as string) ?? '',
+    tankLowPct: Number(r['tank_low_pct'] ?? 0),
+    tankHighPct: Number(r['tank_high_pct'] ?? 0),
+    offlineTimeoutS: Number(r['offline_timeout_s'] ?? 0),
+  };
+}
+
 function patchItemFromRecord(item: SiteCatalogItem, r: RecordModel): SiteCatalogItem {
   const name = r['name'];
   const low = r['tank_low_pct'];
@@ -30,7 +48,9 @@ function patchItemFromRecord(item: SiteCatalogItem, r: RecordModel): SiteCatalog
   const offline = r['offline_timeout_s'];
   const owners = r['owner'];
   return {
-    ...item,
+    ...toCatalogItem(r),
+    // Preserve existing counts if the realtime record didn't carry them
+    // (some update events only include changed fields).
     friendlyName: typeof name === 'string' ? name : item.friendlyName,
     tankLowPct: typeof low === 'number' ? low : item.tankLowPct,
     tankHighPct: typeof high === 'number' ? high : item.tankHighPct,
@@ -42,7 +62,7 @@ function patchItemFromRecord(item: SiteCatalogItem, r: RecordModel): SiteCatalog
 /**
  * SitesStore — the single source of truth for the site catalog.
  *
- * It owns the lean server-backed catalog (display fields + alert thresholds) and
+ * It owns the server-backed catalog (display fields + alert thresholds) and
  * exposes both the card-list projection and the per-site alert config. Other
  * stores (AlertsStore) read from here instead of fetching sites again.
  */
@@ -61,8 +81,9 @@ export class SitesStore extends CollectionStore<SiteCatalogItem[]> {
   constructor() {
     super([]);
   }
-  protected fetch(): Promise<SiteCatalogItem[]> {
-    return this.backend.siteList();
+  protected async fetch(): Promise<SiteCatalogItem[]> {
+    const records = await this.backend.siteList();
+    return records.map(toCatalogItem);
   }
 
   /** Alert configuration for a site, derived from the shared catalog. */
@@ -70,7 +91,7 @@ export class SitesStore extends CollectionStore<SiteCatalogItem[]> {
     return this.configs().get(siteId);
   }
 
-  /** Update a single entry from a realtime record (name/thresholds/owners). */
+  /** Update a single entry from a realtime record (name/thresholds/owners/counts). */
   patchSite(record: RecordModel): void {
     const id = record['id'] as string;
     this.mutate((list) => list.map((s) => (s.id === id ? patchItemFromRecord(s, record) : s)));

@@ -55,17 +55,20 @@ export class RealtimeService {
    *  command `outcomes` (the reliable "did my command land" channel) so a result
    *  that arrived before page load is seeded too. */
   async latest(siteId: string): Promise<{ rows: ShadowRow[]; outcomes: CommandOutcomeRow[] }> {
-    const docs = await this.pb.send<{ controller: string; snapshot: string; ts: string }[]>(
-      `/api/farmon/latest?site=${encodeURIComponent(siteId)}`,
-      { method: 'GET' },
-    );
+    const docs = await this.pb.collection('controller_state').getFullList<RecordModel>({
+      filter: this.pb.filter('site = {:s}', { s: siteId }),
+      sort: 'controller',
+      requestKey: `latest:${siteId}`,
+    });
     const rows: ShadowRow[] = [];
     const outcomes: CommandOutcomeRow[] = [];
     for (const d of docs) {
-      const snap = parseSnap(d.snapshot);
+      const snap = parseSnap(d['getString']('snapshot'));
       if (!snap) continue;
-      rows.push(...explodeSnapshot(d.controller, snap, d.ts));
-      outcomes.push(...snapOutcomes(d.controller, snap));
+      const controller = d['getString']('controller');
+      const ts = d['getString']('ts');
+      rows.push(...explodeSnapshot(controller, snap, ts));
+      outcomes.push(...snapOutcomes(controller, snap));
     }
     return { rows, outcomes };
   }
@@ -95,7 +98,7 @@ export class RealtimeService {
    *  rollup for the bulk and a short `telemetry_raw` tail for the live edge, then
    *  merges them raw-wins-at-seam (see TelemetryStore). `requestKey` defaults to null
    *  so the two concurrent fetches for one widget never auto-cancel each other. */
-  history(
+  async history(
     siteId: string,
     controller: string,
     sensor: string,
@@ -104,18 +107,29 @@ export class RealtimeService {
     tier: TelemetryTier,
     requestKey: string | null = null,
   ): Promise<TelemetryHistory> {
-    const q = new URLSearchParams({
-      site: siteId,
-      controller,
-      sensor,
-      tier,
-      from: from.toISOString(),
-      to: to.toISOString(),
-    });
-    return this.pb.send<TelemetryHistory>(`/api/farmon/telemetry?${q.toString()}`, {
-      method: 'GET',
+    const timeCol = tier === 'telemetry_raw' ? 'ts' : 'window';
+    const records = await this.pb.collection(tier).getFullList<RecordModel>({
+      filter: this.pb.filter(
+        'site = {:s} && controller = {:c} && sensor = {:n} && {:t1} >= {:from} && {:t2} <= {:to}',
+        { s: siteId, c: controller, n: sensor, t1: timeCol, t2: timeCol, from: from.toISOString(), to: to.toISOString() },
+      ),
+      sort: timeCol,
       requestKey,
     });
+
+    const samples = records.map((r) => {
+      const ts = r['getString'](timeCol);
+      if (tier === 'telemetry_raw') {
+        return { ts, value: r['getFloat']('value') };
+      }
+      return {
+        ts,
+        avg: r['getFloat']('avg'),
+        min: r['getFloat']('min'),
+        max: r['getFloat']('max'),
+      };
+    });
+    return { tier, samples };
   }
 
   /** Most-recent transitions for a site (newest first). */

@@ -7,7 +7,6 @@ import (
 	"encoding/hex"
 	"encoding/pem"
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -133,19 +132,6 @@ func Register(se *core.ServeEvent, cfg config.Config, pub Publisher) {
 		})
 	})
 
-	// GET /sites — lean site catalog for the overview / home / devices pages and the
-	// alert bell. Returns counts and alert thresholds without the full topology JSON.
-	g.GET("/sites", func(e *core.RequestEvent) error {
-		if e.Auth == nil {
-			return apis.NewUnauthorizedError("authentication required", nil)
-		}
-		entries, err := ListSites(e.App, e.Auth)
-		if err != nil {
-			return apis.NewApiError(http.StatusInternalServerError, "failed to load sites", err)
-		}
-		return e.JSON(http.StatusOK, entries)
-	})
-
 	// GET/PATCH /account — narrow self-service profile surface. The users
 	// collection remains admin-only for writes so callers cannot patch role,
 	// verification flags, auth fields, or other sensitive columns.
@@ -212,90 +198,6 @@ func Register(se *core.ServeEvent, cfg config.Config, pub Publisher) {
 			return apis.NewApiError(http.StatusBadGateway, "test notification failed", err)
 		}
 		return e.JSON(http.StatusOK, map[string]any{"chat_id": chatID})
-	})
-
-	// GET /latest?site=&controller= — the device shadow (last-known per sensor).
-	g.GET("/latest", func(e *core.RequestEvent) error {
-		q := e.Request.URL.Query()
-		site := q.Get("site")
-		if err := requireSiteAccess(e, site); err != nil {
-			return err
-		}
-		filter := "site = {:s}"
-		params := dbx.Params{"s": site}
-		if ctrl := q.Get("controller"); ctrl != "" {
-			filter += " && controller = {:c}"
-			params["c"] = ctrl
-		}
-		// One latest-snapshot doc per controller; the browser explodes it into its
-		// per-channel view (the same shape the realtime controller_state stream gives).
-		recs, err := e.App.FindRecordsByFilter("controller_state", filter, "controller", 500, 0, params)
-		if err != nil {
-			return apis.NewBadRequestError("query failed", err)
-		}
-		out := make([]map[string]any, 0, len(recs))
-		for _, r := range recs {
-			out = append(out, map[string]any{
-				"controller": r.GetString("controller"),
-				"snapshot":   r.GetString("snapshot"),
-				"ts":         r.GetString("ts"),
-			})
-		}
-		return e.JSON(http.StatusOK, out)
-	})
-
-	// GET /telemetry?site=&controller=&sensor=&tier=&from=&to= — history from an
-	// EXPLICIT storage tier. The client always picks the tier (telemetry_raw |
-	// telemetry_5min | telemetry_1hr): it reads the 5min rollup for the bulk and a
-	// short raw tail for the live edge, then merges them raw-wins-at-seam. The server
-	// no longer infers a tier from the span (the old pickTier is gone) — it just
-	// validates the requested tier and serves it.
-	g.GET("/telemetry", func(e *core.RequestEvent) error {
-		q := e.Request.URL.Query()
-		site := q.Get("site")
-		if err := requireSiteAccess(e, site); err != nil {
-			return err
-		}
-		ctrl, sensor := q.Get("controller"), q.Get("sensor")
-		if ctrl == "" || sensor == "" {
-			return apis.NewBadRequestError("controller and sensor are required", nil)
-		}
-		table, timeCol, ok := tierTable(q.Get("tier"))
-		if !ok {
-			return apis.NewBadRequestError("tier must be one of telemetry_raw, telemetry_5min, telemetry_1hr", nil)
-		}
-		from, err := time.Parse(time.RFC3339, q.Get("from"))
-		if err != nil {
-			return apis.NewBadRequestError("invalid 'from' (RFC3339)", nil)
-		}
-		to, err := time.Parse(time.RFC3339, q.Get("to"))
-		if err != nil {
-			return apis.NewBadRequestError("invalid 'to' (RFC3339)", nil)
-		}
-
-		filter := "site = {:s} && controller = {:c} && sensor = {:n} && " +
-			timeCol + " >= {:from} && " + timeCol + " <= {:to}"
-		params := dbx.Params{
-			"s": site, "c": ctrl, "n": sensor,
-			"from": from.UTC().Format(time.RFC3339),
-			"to":   to.UTC().Format(time.RFC3339),
-		}
-		recs, err := e.App.FindRecordsByFilter(table, filter, timeCol, 5000, 0, params)
-		if err != nil {
-			return apis.NewBadRequestError("query failed", err)
-		}
-		out := make([]map[string]any, 0, len(recs))
-		for _, r := range recs {
-			if table == "telemetry_raw" {
-				out = append(out, map[string]any{"ts": r.GetString("ts"), "value": r.GetFloat("value")})
-			} else {
-				out = append(out, map[string]any{
-					"ts":  r.GetString("window"),
-					"avg": r.GetFloat("avg"), "min": r.GetFloat("min"), "max": r.GetFloat("max"),
-				})
-			}
-		}
-		return e.JSON(http.StatusOK, map[string]any{"tier": table, "samples": out})
 	})
 
 	// GET /usage?site=&controller=&route=&from=&to= — the billing-grade usage facade.
@@ -603,30 +505,12 @@ func Register(se *core.ServeEvent, cfg config.Config, pub Publisher) {
 		if err != nil || siteRec == nil {
 			return apis.NewApiError(http.StatusInternalServerError, "site not found", err)
 		}
-		// Cap + registration apply to managed sites. An explicit mode wins; an unset
-		// mode follows the server build shape (cloud → managed). On-prem is uncapped.
-		managed := siteRec.GetString("mode") == "managed" ||
-			(siteRec.GetString("mode") == "" && cfg.Mode == config.ModeCloud)
 
-		// Find-or-create. A missing row means first provision → register: a new device
-		// on a managed site counts against the hosting cap (active rows only — a
-		// deregistered slot is free). Re-provisioning an existing device only refreshes
-		// its secrets and is never capped.
+		// Find-or-create. With subscriptions free there is no device cap; every
+		// provisioned controller on a site is allowed. Re-provisioning an existing
+		// device refreshes its secrets.
 		rec, err := e.App.FindRecordById("controllers", body.Controller)
 		if err != nil || rec == nil {
-			if managed {
-				cap := HostingCap(e.App)
-				count, cerr := e.App.CountRecords("controllers", dbx.HashExp{"site": body.Site, "active": true})
-				if cerr != nil {
-					return apis.NewApiError(http.StatusInternalServerError, "failed to count devices", cerr)
-				}
-				if int(count) >= cap {
-					return apis.NewBadRequestError(
-						fmt.Sprintf("hosting plan covers up to %d devices per site; remove a device or move to on-prem to add more", cap),
-						nil,
-					)
-				}
-			}
 			coll, cerr := e.App.FindCollectionByNameOrId("controllers")
 			if cerr != nil {
 				return apis.NewApiError(http.StatusInternalServerError, "controllers collection missing", cerr)
@@ -904,23 +788,6 @@ func firmwareBaseURL(cfg config.Config, e *core.RequestEvent) string {
 		host = host[i+3:] // strip any scheme so we can force http
 	}
 	return "http://" + host
-}
-
-// tierTable validates the client-supplied tier and returns its backing table +
-// time column. The client always chooses the tier (it reads the 5min rollup for the
-// bulk plus a short raw tail for the live edge, merged raw-wins-at-seam), so the
-// server no longer infers one from the span. An unknown tier is rejected (ok=false).
-func tierTable(tier string) (table, timeCol string, ok bool) {
-	switch tier {
-	case "telemetry_raw":
-		return "telemetry_raw", "ts", true
-	case "telemetry_5min":
-		return "telemetry_5min", "window", true
-	case "telemetry_1hr":
-		return "telemetry_1hr", "window", true
-	default:
-		return "", "", false
-	}
 }
 
 // contKey identifies a (controller, route) pair for usage continuity tracking.

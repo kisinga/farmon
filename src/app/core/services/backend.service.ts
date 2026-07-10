@@ -53,9 +53,9 @@ export class BackendService {
 
   // --- Sites ---------------------------------------------------------------
 
-  async siteList(): Promise<SiteCatalogItem[]> {
-    return this.pb.send<SiteCatalogItem[]>('/api/farmon/sites', {
-      method: 'GET',
+  async siteList(): Promise<RecordModel[]> {
+    return this.pb.collection('sites').getFullList({
+      sort: 'name',
       requestKey: 'sites:list',
     });
   }

@@ -64,7 +64,7 @@ func TestMigrationsApplyCleanly(t *testing.T) {
 	}
 
 	// 33 dropped the dead commercial tier and added the segment + entitlement fields;
-	// 34 added the packs relation.
+	// 34 added the packs relation; 46 denormalized the catalog counts.
 	sites, err := app.FindCollectionByNameOrId("sites")
 	if err != nil {
 		t.Fatalf("sites collection missing: %v", err)
@@ -72,9 +72,9 @@ func TestMigrationsApplyCleanly(t *testing.T) {
 	if sites.Fields.GetByName("tier") != nil {
 		t.Error("sites.tier should have been dropped (migration 33)")
 	}
-	for _, f := range []string{"segment", "price_override", "addons", "packs"} {
+	for _, f := range []string{"segment", "price_override", "addons", "packs", "controller_count", "node_count", "device_count", "live_count"} {
 		if sites.Fields.GetByName(f) == nil {
-			t.Errorf("sites.%s should exist (migrations 33/34)", f)
+			t.Errorf("sites.%s should exist (migrations 33/34/46)", f)
 		}
 	}
 	// 34 created the entitlement catalog.
