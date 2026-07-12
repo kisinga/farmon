@@ -113,6 +113,7 @@ type siteCtx struct {
 	highPct   float64 // 0 == no high alert
 	offlineMs float64
 	offlineTo recipients
+	onlineTo  recipients
 	faultTo   recipients
 	tankTo    recipients
 	runStartTo recipients
@@ -120,8 +121,8 @@ type siteCtx struct {
 }
 
 type prefs struct {
-	offline, fault, tank, runStart, runStop, email, whatsapp bool
-	chatID                                                   string
+	offline, online, fault, tank, runStart, runStop, email, whatsapp bool
+	chatID                                                           string
 }
 
 type recipients struct {
@@ -245,7 +246,7 @@ func resolveSite(app core.App, site *core.Record) (siteCtx, bool) {
 		return siteCtx{}, false
 	}
 
-	var offlineTo, faultTo, tankTo, runStartTo, runStopTo recipients
+	var offlineTo, onlineTo, faultTo, tankTo, runStartTo, runStopTo recipients
 	for _, ownerID := range ownerIDs {
 		owner, err := app.FindRecordById("users", ownerID)
 		if err != nil {
@@ -259,6 +260,14 @@ func resolveSite(app core.App, site *core.Record) (siteCtx, bool) {
 			}
 			if p.email {
 				offlineTo.addEmail(owner.GetString("email"))
+			}
+		}
+		if p.online {
+			if p.whatsapp {
+				onlineTo.addWhatsApp(chatID)
+			}
+			if p.email {
+				onlineTo.addEmail(owner.GetString("email"))
 			}
 		}
 		if p.fault {
@@ -312,6 +321,7 @@ func resolveSite(app core.App, site *core.Record) (siteCtx, bool) {
 		highPct:    site.GetFloat("tank_high_pct"), // 0 disables high alerts
 		offlineMs:  offMs * 1000,
 		offlineTo:  offlineTo,
+		onlineTo:   onlineTo,
 		faultTo:    faultTo,
 		tankTo:     tankTo,
 		runStartTo: runStartTo,
@@ -320,15 +330,16 @@ func resolveSite(app core.App, site *core.Record) (siteCtx, bool) {
 }
 
 // resolvePrefs reads the owner's notification_prefs. No row means alert types
-// default on except offline, transitions, and email; WhatsApp defaults on and
-// falls back to the user's profile phone if no dedicated chat id is stored.
+// default on except offline/online pairs, transitions, and email; WhatsApp defaults
+// on and falls back to the user's profile phone if no dedicated chat id is stored.
 func resolvePrefs(app core.App, userID string) prefs {
 	rec, err := app.FindFirstRecordByFilter("notification_prefs", "user = {:u}", dbx.Params{"u": userID})
 	if err != nil || rec == nil {
-		return prefs{offline: false, fault: true, tank: true, email: false, whatsapp: true}
+		return prefs{offline: false, online: false, fault: true, tank: true, email: false, whatsapp: true}
 	}
 	return prefs{
 		offline:  rec.GetBool("alert_device_offline"),
+		online:   rec.GetBool("alert_device_online"),
 		fault:    rec.GetBool("alert_fault"),
 		tank:     rec.GetBool("alert_tank"),
 		runStart: rec.GetBool("alert_run_start"),
@@ -349,12 +360,57 @@ func (s *sweeper) sweepOffline(app core.App, sc siteCtx, now time.Time, active m
 		// Staleness only. The `online` flag flips false on any brief broker drop,
 		// so last_seen aging past the timeout is the naturally-debounced signal.
 		stale := !seen.IsZero() && now.Sub(seen) > time.Duration(sc.offlineMs)*time.Millisecond
+		key := "device_offline:" + sc.id + ":" + c.Id
 		if stale {
-			key := "device_offline:" + sc.id + ":" + c.Id
 			active[key] = true
 			s.notify(app, sc.offlineTo, now, sc.id, key, "device_offline", "Controller offline",
 				fmt.Sprintf("%s on %s has gone offline (last seen %s).", c.Id, sc.name, lastSeenText(seen)))
+		} else {
+			// Controller is fresh: resolve any active offline incident and notify
+			// owners who opted into recovery messages.
+			s.notifyOnline(app, sc, now, c.Id)
 		}
+	}
+}
+
+// notifyOnline resolves an active device_offline incident and sends a recovery
+// notification, but only if the original offline notification was delivered.
+// A failed delivery leaves the incident active so the next sweep retries.
+func (s *sweeper) notifyOnline(app core.App, sc siteCtx, now time.Time, controllerID string) {
+	key := "device_offline:" + sc.id + ":" + controllerID
+	rec, err := app.FindFirstRecordByFilter("notification_incidents",
+		"site = {:s} && incident_key = {:k} && status = 'active'", dbx.Params{"s": sc.id, "k": key})
+	if err != nil || rec == nil {
+		return
+	}
+
+	if rec.GetString("last_sent") != "" && sc.onlineTo.any() {
+		subject := "Controller back online"
+		body := fmt.Sprintf("%s on %s is back online.", controllerID, sc.name)
+		delivered := false
+		if len(sc.onlineTo.whatsapp) > 0 {
+			if err := s.sendWhatsApp(sc.onlineTo.whatsapp, "device_online", subject, body); err != nil {
+				log.Printf("alerts: whatsapp online %s: %v", controllerID, err)
+			} else {
+				delivered = true
+			}
+		}
+		if len(sc.onlineTo.email) > 0 {
+			if err := s.sendEmail(app, sc.onlineTo.email, "device_online", subject, body); err != nil {
+				log.Printf("alerts: email online %s: %v", controllerID, err)
+			} else {
+				delivered = true
+			}
+		}
+		if delivered {
+			rec.Set("last_sent", iso(now))
+		}
+	}
+
+	rec.Set("status", "resolved")
+	rec.Set("resolved_at", iso(now))
+	if err := app.Save(rec); err != nil {
+		log.Printf("alerts: resolve %s: %v", key, err)
 	}
 }
 
@@ -483,6 +539,7 @@ func (s *sweeper) sendEmail(app core.App, to []string, kind, subject, body strin
 
 var alertEmoji = map[string]string{
 	"device_offline": "📡",
+	"device_online":  "✅",
 	"fault":          "🚨",
 	"tank_low":       "🚰",
 	"tank_high":      "🌊",

@@ -11,6 +11,7 @@
 
 export type AlertType =
   | 'device_offline'
+  | 'device_online'
   | 'fault'
   | 'tank_low'
   | 'tank_high'
@@ -47,6 +48,7 @@ export interface NotificationPrefs {
   /** The owning user's record id (== auth user id). */
   user: string;
   alert_device_offline: boolean;
+  alert_device_online: boolean;
   alert_fault: boolean;
   alert_tank: boolean;
   alert_run_start: boolean;
@@ -64,6 +66,7 @@ export interface NotificationPrefs {
 export function prefKeyFor(type: AlertType): keyof NotificationPrefs {
   switch (type) {
     case 'device_offline': return 'alert_device_offline';
+    case 'device_online': return 'alert_device_online';
     case 'fault': return 'alert_fault';
     case 'tank_low':
     case 'tank_high': return 'alert_tank';
@@ -78,6 +81,7 @@ export function prefKeyFor(type: AlertType): keyof NotificationPrefs {
 // types are OPT-IN because they can fire frequently on automated schedules.
 export const DEFAULT_NOTIFICATION_PREFS: Omit<NotificationPrefs, 'user'> = {
   alert_device_offline: false,
+  alert_device_online: false,
   alert_fault: true,
   alert_tank: true,
   alert_run_start: false,

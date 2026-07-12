@@ -22,6 +22,8 @@ const DEFAULT_LOW_PCT = 20;
 const TANK_MARGIN = 5;
 /** A command-failure transition is shown for this long after it happened. */
 const COMMAND_FAIL_WINDOW_MS = 10 * 60_000;
+/** A controller-back-online transition is shown for this long after it happens. */
+const ONLINE_ALERT_WINDOW_MS = 10 * 60_000;
 /** Transition `to`/`reason` tokens that mean an operator command did not land. */
 const FAIL_OUTCOMES = new Set(['REFUSED', 'REJECTED', 'STALE']);
 
@@ -82,6 +84,10 @@ export class AlertsStore implements OnDestroy {
   // Hysteresis latches: a key stays alarming until it clears past the margin.
   private lowLatched = new Set<string>();
   private highLatched = new Set<string>();
+  // Offline/online transition detection: which controllers were stale last pass,
+  // and when each controller transitioned back to fresh this episode.
+  private wasStale = new Set<string>();
+  private onlineTs = new Map<string, number>();
 
   constructor() {
     // Start/stop with the auth session.
@@ -144,6 +150,8 @@ export class AlertsStore implements OnDestroy {
     this.commandFails.set(new Map());
     this.lowLatched.clear();
     this.highLatched.clear();
+    this.wasStale.clear();
+    this.onlineTs.clear();
     this.started = false;
   }
 
@@ -202,17 +210,21 @@ export class AlertsStore implements OnDestroy {
     const cfgFor = (siteId: string): SiteAlertConfig =>
       cfg.get(siteId) ?? { name: 'Site', lowPct: DEFAULT_LOW_PCT, highPct: null, offlineMs: resolveOfflineMs(null) };
 
-    // 1) Device offline — staleness only. The `online` flag is NOT consulted: it
-    //    flips false on any brief broker drop (a fast reconnect re-sets it), so
-    //    alerting on it would fire on every transient blip. last_seen aging past the
-    //    site timeout is the naturally-debounced signal; a never-seen device (NaN)
-    //    can't be stale, so it's correctly not an incident (no commissioning spam).
+    // 1) Device offline / back online — staleness only. The `online` flag is NOT
+    //    consulted: it flips false on any brief broker drop (a fast reconnect re-sets
+    //    it), so alerting on it would fire on every transient blip. last_seen aging
+    //    past the site timeout is the naturally-debounced signal; a never-seen device
+    //    (NaN) can't be stale, so it's correctly not an incident (no commissioning
+    //    spam). A stale→fresh transition emits a time-windowed "back online" alert.
+    const nowStale = new Set<string>();
     for (const c of controllers.values()) {
       if (!c.active) continue;
       const sc = cfgFor(c.site);
       const seen = Date.parse(c.last_seen);
       const stale = Number.isFinite(seen) && now - seen > sc.offlineMs;
       if (stale) {
+        nowStale.add(c.device_id);
+        this.onlineTs.delete(c.device_id);
         out.push({
           key: `device_offline:${c.device_id}`,
           type: 'device_offline',
@@ -224,8 +236,35 @@ export class AlertsStore implements OnDestroy {
           message: `${c.device_id} — last seen ${ago(seen, now)}`,
           ts: seen,
         });
+      } else if (this.wasStale.has(c.device_id)) {
+        this.onlineTs.set(c.device_id, now);
       }
     }
+    this.wasStale = nowStale;
+
+    // Time-windowed back-online alerts (one per stale→fresh episode).
+    const onlineExpired: string[] = [];
+    for (const [deviceId, ts] of this.onlineTs) {
+      if (now - ts > ONLINE_ALERT_WINDOW_MS) {
+        onlineExpired.push(deviceId);
+        continue;
+      }
+      const c = controllers.get(deviceId);
+      if (!c) continue;
+      const sc = cfgFor(c.site);
+      out.push({
+        key: `device_online:${deviceId}:${ts}`,
+        type: 'device_online',
+        severity: 'info',
+        site: c.site,
+        siteName: sc.name,
+        controller: deviceId,
+        title: 'Controller back online',
+        message: `${deviceId} — back online`,
+        ts,
+      });
+    }
+    for (const id of onlineExpired) this.onlineTs.delete(id);
 
     // 2) Faults — ride the (derived) transition stream; latest-wins per route.
     const seenRoute = new Set<string>();
@@ -398,8 +437,9 @@ export class AlertsStore implements OnDestroy {
 function toPrefs(r: RecordModel, userId: string): NotificationPrefs {
   return {
     user: userId,
-    // Opt-in: offline and run transitions only when explicitly enabled.
+    // Opt-in: offline/online pairs and run transitions only when explicitly enabled.
     alert_device_offline: r['alert_device_offline'] === true,
+    alert_device_online: r['alert_device_online'] === true,
     alert_fault: r['alert_fault'] !== false,
     alert_tank: r['alert_tank'] !== false,
     alert_run_start: r['alert_run_start'] === true,

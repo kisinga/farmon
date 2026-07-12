@@ -303,6 +303,69 @@ func TestRunTransitionDedupedByTimestamp(t *testing.T) {
 	}
 }
 
+func TestOfflineAndOnlineNotifications(t *testing.T) {
+	app, _, _ := setupAlertSite(t)
+	defer app.Cleanup()
+
+	prefs, _ := app.FindFirstRecordByFilter("notification_prefs", "user != ''", dbx.Params{})
+	if prefs != nil {
+		prefs.Set("alert_tank", false)
+		prefs.Set("alert_device_offline", true)
+		prefs.Set("alert_device_online", true)
+		saveRec(t, app, prefs)
+	}
+
+	ctrl, _ := app.FindRecordById("controllers", "ctrl1")
+	now := time.Date(2026, 7, 6, 9, 0, 0, 0, time.UTC)
+
+	// Stale controller triggers offline alert.
+	ctrl.Set("last_seen", now.Add(-5*time.Minute))
+	saveRec(t, app, ctrl)
+
+	wa := &fakeWhatsApp{}
+	s := &sweeper{openwa: wa}
+	if err := s.run(app, now); err != nil {
+		t.Fatal(err)
+	}
+	if got := len(wa.sent); got != 1 {
+		t.Fatalf("expected one offline notification, got %d", got)
+	}
+	if !strings.Contains(wa.sent[0], "Controller offline") {
+		t.Fatalf("expected offline subject, got %q", wa.sent[0])
+	}
+
+	// Fresh controller resolves the incident and sends a recovery alert.
+	ctrl.Set("last_seen", now)
+	saveRec(t, app, ctrl)
+	if err := s.run(app, now.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if got := len(wa.sent); got != 2 {
+		t.Fatalf("expected offline + online notifications (2 sends), got %d", got)
+	}
+	if !strings.Contains(wa.sent[1], "Controller back online") {
+		t.Fatalf("expected online subject, got %q", wa.sent[1])
+	}
+
+	// Subsequent sweeps should not resend the recovery alert.
+	if err := s.run(app, now.Add(2*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if got := len(wa.sent); got != 2 {
+		t.Fatalf("same online episode should not resend, got %d", got)
+	}
+
+	// Going offline again should re-arm and send a new offline notification.
+	ctrl.Set("last_seen", now.Add(-5*time.Minute))
+	saveRec(t, app, ctrl)
+	if err := s.run(app, now.Add(3*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if got := len(wa.sent); got != 3 {
+		t.Fatalf("expected re-armed offline notification, got %d", got)
+	}
+}
+
 func setupAlertSite(t *testing.T) (*tests.TestApp, *core.Record, *core.Record) {
 	t.Helper()
 	app, err := tests.NewTestApp()

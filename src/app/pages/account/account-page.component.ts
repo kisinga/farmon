@@ -221,6 +221,7 @@ export class AccountPageComponent implements OnInit {
 
   protected readonly types = [
     { key: 'alert_device_offline', label: 'Controller offline', hasThreshold: true },
+    { key: 'alert_device_online', label: 'Controller back online', hasThreshold: false },
     { key: 'alert_fault', label: 'Faults (no flow, tank low, max runtime)', hasThreshold: false },
     { key: 'alert_tank', label: 'Tank level (low / full volume)', hasThreshold: true },
     { key: 'alert_run_start', label: 'Run started', hasThreshold: false },
@@ -245,9 +246,10 @@ export class AccountPageComponent implements OnInit {
   protected testError = signal<string | null>(null);
 
   // Alert-type toggles. The email/WhatsApp channels are tracked separately.
-  // Offline and run transitions are opt-in (noisy); the rest default on.
+  // Offline/online pairs and run transitions are opt-in (noisy); the rest default on.
   private flags = signal<Record<string, boolean>>({
     alert_device_offline: false,
+    alert_device_online: false,
     alert_fault: true,
     alert_tank: true,
     alert_run_start: false,
@@ -335,6 +337,7 @@ export class AccountPageComponent implements OnInit {
       this.recordId = r['id'];
       this.flags.set({
         alert_device_offline: r['alert_device_offline'] === true, // opt-in
+        alert_device_online: r['alert_device_online'] === true,  // opt-in
         alert_fault: r['alert_fault'] !== false,
         alert_tank: r['alert_tank'] !== false,
         alert_run_start: r['alert_run_start'] === true, // opt-in
