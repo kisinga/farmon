@@ -2,6 +2,7 @@ import { Injectable, inject, signal } from '@angular/core';
 import type { RecordModel, UnsubscribeFunc } from 'pocketbase';
 import type { ControllerSnapshot } from '@core';
 import { BackendService } from './backend.service';
+import { getNumber, getString } from '../util/record';
 import type { ShadowRow, TelemetryHistory, StateEventRow, ControllerRow, CommandOutcomeRow, CommandLogRow, ConfigEventRow, UsageReport, UsageRun } from '../models/runtime';
 
 /** Liveness of the PocketBase realtime SSE stream. `connecting` is the idle
@@ -63,10 +64,10 @@ export class RealtimeService {
     const rows: ShadowRow[] = [];
     const outcomes: CommandOutcomeRow[] = [];
     for (const d of docs) {
-      const snap = parseSnap(d['getString']('snapshot'));
+      const snap = parseSnap(getString(d, 'snapshot'));
       if (!snap) continue;
-      const controller = d['getString']('controller');
-      const ts = d['getString']('ts');
+      const controller = getString(d, 'controller');
+      const ts = getString(d, 'ts');
       rows.push(...explodeSnapshot(controller, snap, ts));
       outcomes.push(...snapOutcomes(controller, snap));
     }
@@ -118,15 +119,15 @@ export class RealtimeService {
     });
 
     const samples = records.map((r) => {
-      const ts = r['getString'](timeCol);
+      const ts = getString(r, timeCol);
       if (tier === 'telemetry_raw') {
-        return { ts, value: r['getFloat']('value') };
+        return { ts, value: getNumber(r, 'value') };
       }
       return {
         ts,
-        avg: r['getFloat']('avg'),
-        min: r['getFloat']('min'),
-        max: r['getFloat']('max'),
+        avg: getNumber(r, 'avg'),
+        min: getNumber(r, 'min'),
+        max: getNumber(r, 'max'),
       };
     });
     return { tier, samples };

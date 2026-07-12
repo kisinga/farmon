@@ -4,6 +4,7 @@ import { BackendService } from '../services/backend.service';
 import type { SiteCatalogItem, SiteListEntry } from '../models/backend-api';
 import type { SiteAlertConfig } from '../models/alerts';
 import { resolveOfflineMs } from '../models/alerts';
+import { getNumber, getString, getStringArray } from '../util/record';
 import { CollectionStore } from './collection-store';
 
 /** Map the rich server catalog item to the display shape the cards expect.
@@ -24,38 +25,32 @@ function toAlertConfig(item: SiteCatalogItem): SiteAlertConfig {
 }
 
 function toCatalogItem(r: RecordModel): SiteCatalogItem {
-  const owners = r['owner'];
   return {
-    id: r['id'] as string,
-    friendlyName: (r['name'] as string) ?? '',
-    owners: Array.isArray(owners) ? (owners as string[]) : [],
-    controllerCount: Number(r['controller_count'] ?? 0),
-    nodeCount: Number(r['node_count'] ?? 0),
-    mode: (r['mode'] as string) ?? '',
-    deviceCount: Number(r['device_count'] ?? 0),
-    liveCount: Number(r['live_count'] ?? 0),
-    commenceDate: (r['commence_date'] as string) ?? '',
-    tankLowPct: Number(r['tank_low_pct'] ?? 0),
-    tankHighPct: Number(r['tank_high_pct'] ?? 0),
-    offlineTimeoutS: Number(r['offline_timeout_s'] ?? 0),
+    id: getString(r, 'id'),
+    friendlyName: getString(r, 'name'),
+    owners: getStringArray(r, 'owner'),
+    controllerCount: getNumber(r, 'controller_count'),
+    nodeCount: getNumber(r, 'node_count'),
+    mode: getString(r, 'mode'),
+    deviceCount: getNumber(r, 'device_count'),
+    liveCount: getNumber(r, 'live_count'),
+    commenceDate: getString(r, 'commence_date'),
+    tankLowPct: getNumber(r, 'tank_low_pct'),
+    tankHighPct: getNumber(r, 'tank_high_pct'),
+    offlineTimeoutS: getNumber(r, 'offline_timeout_s'),
   };
 }
 
 function patchItemFromRecord(item: SiteCatalogItem, r: RecordModel): SiteCatalogItem {
-  const name = r['name'];
-  const low = r['tank_low_pct'];
-  const high = r['tank_high_pct'];
-  const offline = r['offline_timeout_s'];
-  const owners = r['owner'];
   return {
     ...toCatalogItem(r),
-    // Preserve existing counts if the realtime record didn't carry them
+    // Preserve existing values if the realtime record didn't carry them
     // (some update events only include changed fields).
-    friendlyName: typeof name === 'string' ? name : item.friendlyName,
-    tankLowPct: typeof low === 'number' ? low : item.tankLowPct,
-    tankHighPct: typeof high === 'number' ? high : item.tankHighPct,
-    offlineTimeoutS: typeof offline === 'number' ? offline : item.offlineTimeoutS,
-    owners: Array.isArray(owners) ? (owners as string[]) : item.owners,
+    friendlyName: getString(r, 'name', item.friendlyName),
+    tankLowPct: getNumber(r, 'tank_low_pct', item.tankLowPct),
+    tankHighPct: getNumber(r, 'tank_high_pct', item.tankHighPct),
+    offlineTimeoutS: getNumber(r, 'offline_timeout_s', item.offlineTimeoutS),
+    owners: getStringArray(r, 'owner').length > 0 ? getStringArray(r, 'owner') : item.owners,
   };
 }
 
@@ -93,7 +88,7 @@ export class SitesStore extends CollectionStore<SiteCatalogItem[]> {
 
   /** Update a single entry from a realtime record (name/thresholds/owners/counts). */
   patchSite(record: RecordModel): void {
-    const id = record['id'] as string;
+    const id = getString(record, 'id');
     this.mutate((list) => list.map((s) => (s.id === id ? patchItemFromRecord(s, record) : s)));
   }
 
