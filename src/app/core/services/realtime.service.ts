@@ -109,11 +109,17 @@ export class RealtimeService {
     requestKey: string | null = null,
   ): Promise<TelemetryHistory> {
     const timeCol = tier === 'telemetry_raw' ? 'ts' : 'window';
+    // PocketBase filter placeholders can only bind values, not identifiers, so the
+    // time column name is interpolated directly (it is a fixed, known constant).
+    const filter = `site = {:s} && controller = {:c} && sensor = {:n} && ${timeCol} >= {:from} && ${timeCol} <= {:to}`;
     const records = await this.pb.collection(tier).getFullList<RecordModel>({
-      filter: this.pb.filter(
-        'site = {:s} && controller = {:c} && sensor = {:n} && {:t1} >= {:from} && {:t2} <= {:to}',
-        { s: siteId, c: controller, n: sensor, t1: timeCol, t2: timeCol, from: from.toISOString(), to: to.toISOString() },
-      ),
+      filter: this.pb.filter(filter, {
+        s: siteId,
+        c: controller,
+        n: sensor,
+        from: from.toISOString(),
+        to: to.toISOString(),
+      }),
       sort: timeCol,
       requestKey,
     });
