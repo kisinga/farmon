@@ -24,7 +24,7 @@ RUN npm run build
 # → /build/dist/app/browser
 
 # ── Stage 2: build the Go server (cloud binary) ──────────────────────────────
-FROM golang:1.24-alpine AS api
+FROM golang:1.25-alpine AS api
 RUN apk add --no-cache git
 WORKDIR /src
 # Module graph first (cached unless go.mod/go.sum change).
