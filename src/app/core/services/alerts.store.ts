@@ -85,9 +85,10 @@ export class AlertsStore implements OnDestroy {
   private lowLatched = new Set<string>();
   private highLatched = new Set<string>();
   // Offline/online transition detection: which controllers were stale last pass,
-  // and when each controller transitioned back to fresh this episode.
+  // when each one first became stale this episode, and when it transitioned back.
   private wasStale = new Set<string>();
-  private onlineTs = new Map<string, number>();
+  private offlineSinceTs = new Map<string, number>();
+  private onlineTs = new Map<string, { ts: number; offlineSince: number }>();
 
   constructor() {
     // Start/stop with the auth session.
@@ -151,6 +152,7 @@ export class AlertsStore implements OnDestroy {
     this.lowLatched.clear();
     this.highLatched.clear();
     this.wasStale.clear();
+    this.offlineSinceTs.clear();
     this.onlineTs.clear();
     this.started = false;
   }
@@ -215,7 +217,8 @@ export class AlertsStore implements OnDestroy {
     //    it), so alerting on it would fire on every transient blip. last_seen aging
     //    past the site timeout is the naturally-debounced signal; a never-seen device
     //    (NaN) can't be stale, so it's correctly not an incident (no commissioning
-    //    spam). A stale→fresh transition emits a time-windowed "back online" alert.
+    //    spam). A stale→fresh transition emits a time-windowed "back online" alert
+    //    that includes how long the controller was offline.
     const nowStale = new Set<string>();
     for (const c of controllers.values()) {
       if (!c.active) continue;
@@ -225,6 +228,9 @@ export class AlertsStore implements OnDestroy {
       if (stale) {
         nowStale.add(c.device_id);
         this.onlineTs.delete(c.device_id);
+        if (!this.offlineSinceTs.has(c.device_id)) {
+          this.offlineSinceTs.set(c.device_id, Number.isFinite(seen) ? seen : now);
+        }
         out.push({
           key: `device_offline:${c.device_id}`,
           type: 'device_offline',
@@ -237,14 +243,16 @@ export class AlertsStore implements OnDestroy {
           ts: seen,
         });
       } else if (this.wasStale.has(c.device_id)) {
-        this.onlineTs.set(c.device_id, now);
+        const offlineSince = this.offlineSinceTs.get(c.device_id) ?? now;
+        this.onlineTs.set(c.device_id, { ts: now, offlineSince });
+        this.offlineSinceTs.delete(c.device_id);
       }
     }
     this.wasStale = nowStale;
 
     // Time-windowed back-online alerts (one per stale→fresh episode).
     const onlineExpired: string[] = [];
-    for (const [deviceId, ts] of this.onlineTs) {
+    for (const [deviceId, { ts, offlineSince }] of this.onlineTs) {
       if (now - ts > ONLINE_ALERT_WINDOW_MS) {
         onlineExpired.push(deviceId);
         continue;
@@ -252,6 +260,7 @@ export class AlertsStore implements OnDestroy {
       const c = controllers.get(deviceId);
       if (!c) continue;
       const sc = cfgFor(c.site);
+      const duration = formatDuration(ts - offlineSince);
       out.push({
         key: `device_online:${deviceId}:${ts}`,
         type: 'device_online',
@@ -260,7 +269,7 @@ export class AlertsStore implements OnDestroy {
         siteName: sc.name,
         controller: deviceId,
         title: 'Controller back online',
-        message: `${deviceId} — back online`,
+        message: `${deviceId} — back online${duration ? ` after ${duration}` : ''}`,
         ts,
       });
     }
@@ -481,6 +490,18 @@ function ago(ts: number, now: number): string {
   const h = Math.round(m / 60);
   if (h < 24) return `${h}h ago`;
   return `${Math.round(h / 24)}d ago`;
+}
+
+/** Formats a millisecond duration as "2h 5m", "5m", or "<1m". */
+function formatDuration(ms: number): string {
+  if (!Number.isFinite(ms) || ms < 0) return '';
+  const m = Math.round(ms / 60_000);
+  if (m < 1) return '<1m';
+  const h = Math.floor(m / 60);
+  const rem = m % 60;
+  if (h > 0 && rem > 0) return `${h}h ${rem}m`;
+  if (h > 0) return `${h}h`;
+  return `${m}m`;
 }
 
 function loadAcked(): Set<string> {

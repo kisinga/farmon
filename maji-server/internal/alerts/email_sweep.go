@@ -71,8 +71,8 @@ type whatsAppSender interface {
 // notify activates one incident and sends it once per active episode. A failed
 // delivery leaves last_sent empty, so the next sweep retries; a resolved incident
 // clears last_sent when it becomes active again.
-func (s *sweeper) notify(app core.App, to recipients, now time.Time, siteID, key, kind, subject, body string) {
-	incident, err := activateIncident(app, siteID, key, kind, subject, body, now)
+func (s *sweeper) notify(app core.App, to recipients, now time.Time, siteID, key, kind, subject, body string, offlineSince ...time.Time) {
+	incident, err := activateIncident(app, siteID, key, kind, subject, body, now, offlineSince...)
 	if err != nil {
 		log.Printf("alerts: incident %s: %v", key, err)
 		return
@@ -168,7 +168,7 @@ func effectiveWhatsAppChatID(p prefs, phone string) string {
 	return normalizeWhatsAppChatID(phone, defaultWhatsAppCountryCode)
 }
 
-func activateIncident(app core.App, siteID, key, kind, subject, body string, now time.Time) (*core.Record, error) {
+func activateIncident(app core.App, siteID, key, kind, subject, body string, now time.Time, offlineSince ...time.Time) (*core.Record, error) {
 	coll, err := app.FindCollectionByNameOrId("notification_incidents")
 	if err != nil {
 		return nil, err
@@ -180,9 +180,15 @@ func activateIncident(app core.App, siteID, key, kind, subject, body string, now
 		rec.Set("incident_key", key)
 		rec.Set("kind", kind)
 		rec.Set("first_seen", iso(now))
+		if len(offlineSince) > 0 && !offlineSince[0].IsZero() {
+			rec.Set("offline_since", iso(offlineSince[0]))
+		}
 	} else if rec.GetString("status") != "active" {
 		rec.Set("first_seen", iso(now))
 		rec.Set("last_sent", "")
+		if len(offlineSince) > 0 && !offlineSince[0].IsZero() {
+			rec.Set("offline_since", iso(offlineSince[0]))
+		}
 	}
 	rec.Set("site", siteID)
 	rec.Set("kind", kind)
@@ -364,7 +370,7 @@ func (s *sweeper) sweepOffline(app core.App, sc siteCtx, now time.Time, active m
 		if stale {
 			active[key] = true
 			s.notify(app, sc.offlineTo, now, sc.id, key, "device_offline", "Controller offline",
-				fmt.Sprintf("%s on %s has gone offline (last seen %s).", c.Id, sc.name, lastSeenText(seen)))
+				fmt.Sprintf("%s on %s has gone offline (last seen %s).", c.Id, sc.name, lastSeenText(seen)), seen)
 		} else {
 			// Controller is fresh: resolve any active offline incident and notify
 			// owners who opted into recovery messages.
@@ -374,8 +380,9 @@ func (s *sweeper) sweepOffline(app core.App, sc siteCtx, now time.Time, active m
 }
 
 // notifyOnline resolves an active device_offline incident and sends a recovery
-// notification, but only if the original offline notification was delivered.
-// A failed delivery leaves the incident active so the next sweep retries.
+// notification to owners who opted in. The duration is taken from the incident's
+// offline_since timestamp so it reflects the actual outage length. A failed delivery
+// leaves the incident active so the next sweep retries.
 func (s *sweeper) notifyOnline(app core.App, sc siteCtx, now time.Time, controllerID string) {
 	key := "device_offline:" + sc.id + ":" + controllerID
 	rec, err := app.FindFirstRecordByFilter("notification_incidents",
@@ -384,9 +391,18 @@ func (s *sweeper) notifyOnline(app core.App, sc siteCtx, now time.Time, controll
 		return
 	}
 
-	if rec.GetString("last_sent") != "" && sc.onlineTo.any() {
+	if sc.onlineTo.any() {
+		offlineSince := parseTS(rec.GetString("offline_since"))
+		duration := ""
+		if !offlineSince.IsZero() {
+			duration = durationText(now.Sub(offlineSince))
+		}
 		subject := "Controller back online"
-		body := fmt.Sprintf("%s on %s is back online.", controllerID, sc.name)
+		body := fmt.Sprintf("%s on %s is back online", controllerID, sc.name)
+		if duration != "" {
+			body += fmt.Sprintf(" after %s", duration)
+		}
+		body += "."
 		delivered := false
 		if len(sc.onlineTo.whatsapp) > 0 {
 			if err := s.sendWhatsApp(sc.onlineTo.whatsapp, "device_online", subject, body); err != nil {
@@ -659,6 +675,23 @@ func lastSeenText(t time.Time) string {
 		return "unknown"
 	}
 	return t.UTC().Format("2006-01-02 15:04 UTC")
+}
+
+// durationText formats a duration as "2h 5m", "5m", or "<1m".
+func durationText(d time.Duration) string {
+	d = d.Round(time.Minute)
+	if d < time.Minute {
+		return "<1m"
+	}
+	h := d / time.Hour
+	m := (d % time.Hour) / time.Minute
+	if h > 0 && m > 0 {
+		return fmt.Sprintf("%dh %dm", h, m)
+	}
+	if h > 0 {
+		return fmt.Sprintf("%dh", h)
+	}
+	return fmt.Sprintf("%dm", m)
 }
 
 func tankName(sensor string) string {

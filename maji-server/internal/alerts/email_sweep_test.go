@@ -346,6 +346,9 @@ func TestOfflineAndOnlineNotifications(t *testing.T) {
 	if !strings.Contains(wa.sent[1], "Controller back online") {
 		t.Fatalf("expected online subject, got %q", wa.sent[1])
 	}
+	if !strings.Contains(wa.sent[1], "after 6m") {
+		t.Fatalf("expected offline duration in online message, got %q", wa.sent[1])
+	}
 
 	// Subsequent sweeps should not resend the recovery alert.
 	if err := s.run(app, now.Add(2*time.Minute)); err != nil {
