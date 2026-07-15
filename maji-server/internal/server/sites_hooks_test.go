@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/kisinga/majiflow/internal/config"
+	"github.com/pocketbase/dbx"
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tests"
 )
@@ -140,13 +141,81 @@ func TestSiteCreateViaAPI(t *testing.T) {
 	})
 
 	scenario := tests.ApiScenario{
-		Name:           "admin creates site",
-		Method:         http.MethodPost,
-		URL:            "/api/collections/sites/records",
-		Body:           bytes.NewReader(body),
-		Headers:        map[string]string{"Content-Type": "application/json", "Authorization": tok},
-		ExpectedStatus: 200,
-		TestAppFactory: func(t testing.TB) *tests.TestApp { return app },
+		Name:            "admin creates site",
+		Method:          http.MethodPost,
+		URL:             "/api/collections/sites/records",
+		Body:            bytes.NewReader(body),
+		Headers:         map[string]string{"Content-Type": "application/json", "Authorization": tok},
+		ExpectedStatus:  200,
+		ExpectedContent: []string{`"name":"Riverside"`, `"slug":"riverside"`},
+		AfterTestFunc: func(t testing.TB, app *tests.TestApp, res *http.Response) {
+			rec, err := app.FindFirstRecordByFilter("sites", "slug = {:s}", dbx.Params{"s": "riverside"})
+			if err != nil {
+				t.Fatalf("site was not persisted: %v", err)
+			}
+			owners := rec.GetStringSlice("owner")
+			if len(owners) != 1 || owners[0] != admin.Id {
+				t.Fatalf("owner = %v, want [%s]", owners, admin.Id)
+			}
+		},
+		DisableTestAppCleanup: true,
+		TestAppFactory:        func(t testing.TB) *tests.TestApp { return app },
+	}
+	scenario.Test(t)
+}
+
+// A customer-created site must be visible to that customer in the catalog list.
+func TestCustomerSiteCreateAndList(t *testing.T) {
+	app, err := tests.NewTestApp()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer app.Cleanup()
+
+	registerSiteHooks(app, config.Config{Mode: config.ModeCloud})
+
+	users, _ := app.FindCollectionByNameOrId("users")
+	cust := core.NewRecord(users)
+	cust.Set("email", "cust@x.com")
+	cust.Set("password", "password123")
+	cust.Set("role", "customer")
+	cust.Set("verified", true)
+	if err := app.Save(cust); err != nil {
+		t.Fatal(err)
+	}
+
+	tok, err := cust.NewAuthToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	body, _ := json.Marshal(map[string]any{
+		"name":           "Edu farm",
+		"slug":           "edu-farm",
+		"draft_topology": map[string]any{"schema": 1, "controllers": []any{map[string]any{"id": "edu-farm-bd4acf7f"}}, "nodes": []any{map[string]any{"id": "n1"}}},
+		"owner":          []string{cust.Id},
+	})
+
+	scenario := tests.ApiScenario{
+		Name:            "customer creates site",
+		Method:          http.MethodPost,
+		URL:             "/api/collections/sites/records",
+		Body:            bytes.NewReader(body),
+		Headers:         map[string]string{"Content-Type": "application/json", "Authorization": tok},
+		ExpectedStatus:  200,
+		ExpectedContent: []string{`"name":"Edu farm"`, `"slug":"edu-farm"`},
+		AfterTestFunc: func(t testing.TB, app *tests.TestApp, res *http.Response) {
+			rec, err := app.FindFirstRecordByFilter("sites", "slug = {:s}", dbx.Params{"s": "edu-farm"})
+			if err != nil {
+				t.Fatalf("site was not persisted: %v", err)
+			}
+			owners := rec.GetStringSlice("owner")
+			if len(owners) != 1 || owners[0] != cust.Id {
+				t.Fatalf("owner = %v, want [%s]", owners, cust.Id)
+			}
+		},
+		DisableTestAppCleanup: true,
+		TestAppFactory:        func(t testing.TB) *tests.TestApp { return app },
 	}
 	scenario.Test(t)
 }

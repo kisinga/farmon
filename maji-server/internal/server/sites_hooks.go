@@ -61,32 +61,27 @@ func registerSiteHooks(app core.App, cfg config.Config) {
 // themselves among its owners. owner is a multi-relation (co-owners), so a
 // non-admin may seed only an empty set or one containing solely themselves.
 func guardOwnerCreate(e *core.RecordRequestEvent) error {
-	if api.IsAdmin(e.Auth) || e.Auth == nil {
-		return nil
-	}
-	for _, owner := range e.Record.GetStringSlice("owner") {
-		if owner != e.Auth.Id {
-			return apis.NewForbiddenError("cannot assign a site to another user", nil)
+	if !api.IsAdmin(e.Auth) && e.Auth != nil {
+		for _, owner := range e.Record.GetStringSlice("owner") {
+			if owner != e.Auth.Id {
+				return apis.NewForbiddenError("cannot assign a site to another user", nil)
+			}
 		}
 	}
-	return nil
+	return e.Next()
 }
 
 // guardOwnerUpdate stops a customer from changing a site's co-owner set (owner has
 // no field rule, so without this a customer could rewrite it and lock others out
 // or remove themselves). Only admins assign co-owners; order is irrelevant.
 func guardOwnerUpdate(e *core.RecordRequestEvent) error {
-	if api.IsAdmin(e.Auth) {
-		return nil
+	if !api.IsAdmin(e.Auth) {
+		old, err := e.App.FindRecordById("sites", e.Record.Id)
+		if err == nil && !sameStringSet(e.Record.GetStringSlice("owner"), old.GetStringSlice("owner")) {
+			return apis.NewForbiddenError("only an admin can reassign a site", nil)
+		}
 	}
-	old, err := e.App.FindRecordById("sites", e.Record.Id)
-	if err != nil {
-		return nil // missing record — let the normal flow surface it
-	}
-	if !sameStringSet(e.Record.GetStringSlice("owner"), old.GetStringSlice("owner")) {
-		return apis.NewForbiddenError("only an admin can reassign a site", nil)
-	}
-	return nil
+	return e.Next()
 }
 
 // topologyChangedForModel reports whether the incoming update modified draft_topology.
