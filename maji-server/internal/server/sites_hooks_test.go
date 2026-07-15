@@ -1,6 +1,9 @@
 package server
 
 import (
+	"bytes"
+	"encoding/json"
+	"net/http"
 	"testing"
 
 	"github.com/kisinga/majiflow/internal/config"
@@ -100,4 +103,50 @@ func TestHooksKeepSiteCounts(t *testing.T) {
 	if site.GetInt("node_count") != 1 {
 		t.Errorf("node_count after topology update = %d, want 1", site.GetInt("node_count"))
 	}
+}
+
+// Regression: site creation through the public PocketBase API must succeed with the
+// same payload the Angular frontend sends. A missing collection or broken create rule
+// surfaces as a 404 "The requested resource wasn't found" in the UI.
+func TestSiteCreateViaAPI(t *testing.T) {
+	app, err := tests.NewTestApp()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer app.Cleanup()
+
+	registerSiteHooks(app, config.Config{Mode: config.ModeCloud})
+
+	users, _ := app.FindCollectionByNameOrId("users")
+	admin := core.NewRecord(users)
+	admin.Set("email", "admin@x.com")
+	admin.Set("password", "password123")
+	admin.Set("role", "admin")
+	admin.Set("verified", true)
+	if err := app.Save(admin); err != nil {
+		t.Fatal(err)
+	}
+
+	tok, err := admin.NewAuthToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	body, _ := json.Marshal(map[string]any{
+		"name":           "Riverside",
+		"slug":           "riverside",
+		"draft_topology": map[string]any{"schema": 1, "controllers": []any{}, "nodes": []any{}},
+		"owner":          []string{admin.Id},
+	})
+
+	scenario := tests.ApiScenario{
+		Name:           "admin creates site",
+		Method:         http.MethodPost,
+		URL:            "/api/collections/sites/records",
+		Body:           bytes.NewReader(body),
+		Headers:        map[string]string{"Content-Type": "application/json", "Authorization": tok},
+		ExpectedStatus: 200,
+		TestAppFactory: func(t testing.TB) *tests.TestApp { return app },
+	}
+	scenario.Test(t)
 }
