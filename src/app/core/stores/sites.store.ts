@@ -97,13 +97,13 @@ export class SitesStore extends CollectionStore<SiteCatalogItem[]> {
 
   async create(slug: string, friendlyName: string, topology?: StoredSiteTopology): Promise<{ id: string }> {
     const r = await this.backend.siteCreate(slug, friendlyName, topology);
-    this.invalidate();
+    await this.reload();
     return r;
   }
 
   async import(text: string): Promise<{ id: string }> {
     const r = await this.backend.siteImport(text);
-    this.invalidate();
+    await this.reload();
     return r;
   }
 
