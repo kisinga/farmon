@@ -7,7 +7,7 @@ import {
   parseExpansionBoardDef,
   parseSiteImport,
 } from '@core';
-import type { ExpansionBoardCatalog, ExpansionBoardDef, CommandAction } from '@core';
+import type { ExpansionBoardCatalog, ExpansionBoardDef, CommandAction, StoredSiteTopology } from '@core';
 import { HOSTING_DEVICE_CAP } from '@core';
 import type {
   SiteCatalogItem,
@@ -65,10 +65,6 @@ export class BackendService {
     // viewer may read (same-site, per migration 32). Best-effort: records the rule
     // hides simply don't appear; the activity feed falls back to the owner-id set.
     const r = await this.pb.collection('sites').getOne(id, { expand: 'owner' });
-    const siteId = r['id'] as string | undefined;
-    if (!siteId) {
-      throw new Error('Site record is missing an id');
-    }
     const owners = (r['owner'] ?? []) as string[];
     const ownerRecords = ((r['expand'] as Record<string, RecordModel[]> | undefined)?.['owner'] ?? []);
     const people = ownerRecords.map((u) => ({ id: u['id'] as string, name: u['name'] as string | undefined, email: u['email'] as string | undefined }));
@@ -82,18 +78,14 @@ export class BackendService {
         }
       : undefined;
     return {
-      site: { id: siteId, friendlyName: r['name'], deployment, owners, people, commenceDate: (r['commence_date'] ?? '') as string },
+      site: { id: r.id, friendlyName: r['name'], deployment, owners, people, commenceDate: (r['commence_date'] ?? '') as string },
       topology: (r['draft_topology'] ?? null) as SiteFullPayload['topology'],
     };
   }
 
   async siteSave(payload: SiteSavePayload): Promise<void> {
-    const siteId = payload.site.id;
-    if (!siteId) {
-      throw new Error('Cannot save site: missing site id');
-    }
     const d = payload.site.deployment;
-    await this.pb.collection('sites').update(siteId, {
+    await this.pb.collection('sites').update(payload.site.id, {
       name: payload.site.friendlyName,
       draft_topology: payload.topology,
       ...(d
@@ -102,19 +94,15 @@ export class BackendService {
     });
   }
 
-  async siteCreate(slug: string, friendlyName: string): Promise<{ id: string }> {
+  async siteCreate(slug: string, friendlyName: string, topology?: StoredSiteTopology): Promise<{ id: string }> {
     const me = this.pb.authStore.record?.id;
     const r = await this.pb.collection('sites').create({
       name: friendlyName,
       slug,
-      draft_topology: createEmptySiteTopology(),
+      draft_topology: topology ?? createEmptySiteTopology(),
       owner: me ? [me] : [],
     });
-    const id = r['id'] as string | undefined;
-    if (!id) {
-      throw new Error('Site creation response is missing an id');
-    }
-    return { id };
+    return { id: r.id };
   }
 
   async siteRename(id: string, friendlyName: string): Promise<void> {

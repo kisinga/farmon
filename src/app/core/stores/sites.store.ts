@@ -2,6 +2,7 @@ import { Injectable, computed, inject } from '@angular/core';
 import type { RecordModel } from 'pocketbase';
 import { BackendService } from '../services/backend.service';
 import type { SiteCatalogItem, SiteListEntry } from '../models/backend-api';
+import type { StoredSiteTopology } from '@core';
 import type { SiteAlertConfig } from '../models/alerts';
 import { resolveOfflineMs } from '../models/alerts';
 import { getNumber, getString, getStringArray } from '../util/record';
@@ -94,8 +95,8 @@ export class SitesStore extends CollectionStore<SiteCatalogItem[]> {
 
   // --- Mutations: keep the cached list honest ----------------------------
 
-  async create(slug: string, friendlyName: string): Promise<{ id: string }> {
-    const r = await this.backend.siteCreate(slug, friendlyName);
+  async create(slug: string, friendlyName: string, topology?: StoredSiteTopology): Promise<{ id: string }> {
+    const r = await this.backend.siteCreate(slug, friendlyName, topology);
     this.invalidate();
     return r;
   }

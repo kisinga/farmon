@@ -361,10 +361,8 @@ export class EasyModeComponent implements OnInit {
     this.formError.set(null);
     try {
       const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-      const { id } = await this.sitesStore.create(slug, name);
-      if (r?.topology) {
-        await this.backend.siteSave({ site: { id, friendlyName: name }, topology: toStoredTopology(r.topology) });
-      }
+      const topology = r?.topology ? toStoredTopology(r.topology) : undefined;
+      const { id } = await this.sitesStore.create(slug, name, topology);
       this.close.emit();
       this.router.navigate(['/site', id]);
     } catch (e) {
