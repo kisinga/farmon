@@ -19,6 +19,7 @@ export class Cached<T> {
 
   private loaded = false;
   private inflight?: Promise<T>;
+  private generation = 0;
 
   constructor(private readonly fetcher: () => Promise<T>, initial: T) {
     this._value = signal(initial);
@@ -27,11 +28,16 @@ export class Cached<T> {
 
   /**
    * Already loaded → resolves to the cached value. Otherwise fetch once;
-   * concurrent callers share the single in-flight promise. `force` refetches
-   * even when loaded (reusing an in-flight forced load if one exists).
+   * concurrent callers share the single in-flight promise. `force` starts a
+   * fresh fetch immediately, even if another load is already in flight, so
+   * mutations like "create then reload" always see the latest server state.
    */
   ensureLoaded(force = false): Promise<T> {
     if (this.loaded && !force) return Promise.resolve(this._value());
+    if (force) {
+      this.loaded = false;
+      return (this.inflight = this.run());
+    }
     return (this.inflight ??= this.run());
   }
 
@@ -62,21 +68,31 @@ export class Cached<T> {
     return this.loaded;
   }
 
-  private async run(): Promise<T> {
-    this.loading.set(true);
-    this.error.set(null);
-    try {
-      const value = await this.fetcher();
-      this._value.set(value);
-      this.loaded = true;
-      return value;
-    } catch (err) {
-      this.error.set(String(err));
-      throw err;
-    } finally {
-      this.loading.set(false);
-      this.inflight = undefined;
-    }
+  private run(): Promise<T> {
+    const runGen = ++this.generation;
+    const promise = (async () => {
+      this.loading.set(true);
+      this.error.set(null);
+      try {
+        const value = await this.fetcher();
+        if (runGen === this.generation) {
+          this._value.set(value);
+          this.loaded = true;
+        }
+        return value;
+      } catch (err) {
+        if (runGen === this.generation) {
+          this.error.set(String(err));
+        }
+        throw err;
+      } finally {
+        if (runGen === this.generation) {
+          this.loading.set(false);
+          this.inflight = undefined;
+        }
+      }
+    })();
+    return promise;
   }
 }
 
