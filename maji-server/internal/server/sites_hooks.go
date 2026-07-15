@@ -30,10 +30,12 @@ func registerSiteHooks(app core.App, cfg config.Config) {
 		return guardOwnerUpdate(e)
 	})
 
-	// Keep topology counts in sync on every sites create/update (including
-	// app.Save/internal paths) by recomputing before the DB write.
+	// Keep topology counts and partner mirrors in sync on every sites create/update
+	// (including app.Save/internal paths) by recomputing before the DB write.
 	app.OnModelCreate("sites").BindFunc(func(e *core.ModelEvent) error {
-		recomputeTopologyCounts(e.Model.(*core.Record))
+		site := e.Model.(*core.Record)
+		recomputeTopologyCounts(site)
+		recomputePartnerSet(e.App, site)
 		return e.Next()
 	})
 	app.OnModelUpdate("sites").BindFunc(func(e *core.ModelEvent) error {
@@ -41,6 +43,7 @@ func registerSiteHooks(app core.App, cfg config.Config) {
 		if topologyChangedForModel(e.App, site) {
 			recomputeTopologyCounts(site)
 		}
+		recomputePartnerSet(e.App, site)
 		return e.Next()
 	})
 
@@ -60,12 +63,28 @@ func registerSiteHooks(app core.App, cfg config.Config) {
 // guardOwnerCreate stops a customer from creating a site with anyone but
 // themselves among its owners. owner is a multi-relation (co-owners), so a
 // non-admin may seed only an empty set or one containing solely themselves.
+// Partners can create sites for their own customers (or for themselves).
 func guardOwnerCreate(e *core.RecordRequestEvent) error {
-	if !api.IsAdmin(e.Auth) && e.Auth != nil {
-		for _, owner := range e.Record.GetStringSlice("owner") {
-			if owner != e.Auth.Id {
-				return apis.NewForbiddenError("cannot assign a site to another user", nil)
+	if api.IsAdmin(e.Auth) || e.Auth == nil {
+		return e.Next()
+	}
+	owners := e.Record.GetStringSlice("owner")
+	if api.IsPartner(e.Auth) {
+		for _, owner := range owners {
+			if owner == e.Auth.Id {
+				continue
 			}
+			u, err := e.App.FindRecordById("users", owner)
+			if err != nil || u.GetString("partner") != e.Auth.Id {
+				return apis.NewForbiddenError("can only assign the site to your own customers", nil)
+			}
+		}
+		return e.Next()
+	}
+	// customer
+	for _, owner := range owners {
+		if owner != e.Auth.Id {
+			return apis.NewForbiddenError("cannot assign a site to another user", nil)
 		}
 	}
 	return e.Next()
@@ -73,12 +92,33 @@ func guardOwnerCreate(e *core.RecordRequestEvent) error {
 
 // guardOwnerUpdate stops a customer from changing a site's co-owner set (owner has
 // no field rule, so without this a customer could rewrite it and lock others out
-// or remove themselves). Only admins assign co-owners; order is irrelevant.
+// or remove themselves). Only admins and the customer's partner can reassign
+// co-owners; order is irrelevant.
 func guardOwnerUpdate(e *core.RecordRequestEvent) error {
-	if !api.IsAdmin(e.Auth) {
-		old, err := e.App.FindRecordById("sites", e.Record.Id)
-		if err == nil && !sameStringSet(e.Record.GetStringSlice("owner"), old.GetStringSlice("owner")) {
-			return apis.NewForbiddenError("only an admin can reassign a site", nil)
+	if api.IsAdmin(e.Auth) {
+		return e.Next()
+	}
+	old, err := e.App.FindRecordById("sites", e.Record.Id)
+	if err != nil {
+		return e.Next() // missing record — let the normal flow surface it
+	}
+	oldOwners := old.GetStringSlice("owner")
+	newOwners := e.Record.GetStringSlice("owner")
+	// Customers cannot change the owner set at all.
+	if !api.IsPartner(e.Auth) && !sameStringSet(oldOwners, newOwners) {
+		return apis.NewForbiddenError("only an admin can reassign a site", nil)
+	}
+	// Partners can only add/remove their own customers (or themselves).
+	if api.IsPartner(e.Auth) {
+		changed := symmetricDiff(oldOwners, newOwners)
+		for _, owner := range changed {
+			if owner == e.Auth.Id {
+				continue
+			}
+			u, err := e.App.FindRecordById("users", owner)
+			if err != nil || u.GetString("partner") != e.Auth.Id {
+				return apis.NewForbiddenError("can only reassign the site among your own customers", nil)
+			}
 		}
 	}
 	return e.Next()
@@ -95,6 +135,35 @@ func topologyChangedForModel(app core.App, record *core.Record) bool {
 		return true
 	}
 	return record.GetString("draft_topology") != old.GetString("draft_topology")
+}
+
+// recomputePartnerSet mirrors the partner(s) of the site's owners onto
+// sites.partner so RBAC can scope partner access without nested multi-relation
+// rule paths.
+func recomputePartnerSet(app core.App, site *core.Record) {
+	owners := site.GetStringSlice("owner")
+	if len(owners) == 0 {
+		site.Set("partner", []string{})
+		return
+	}
+	seen := make(map[string]struct{}, len(owners))
+	partners := make([]string, 0, len(owners))
+	for _, id := range owners {
+		u, err := app.FindRecordById("users", id)
+		if err != nil {
+			continue
+		}
+		p := u.GetString("partner")
+		if p == "" {
+			continue
+		}
+		if _, ok := seen[p]; ok {
+			continue
+		}
+		seen[p] = struct{}{}
+		partners = append(partners, p)
+	}
+	site.Set("partner", partners)
 }
 
 // recomputeTopologyCounts sets controller_count and node_count from the site's
@@ -170,4 +239,28 @@ func sameStringSet(a, b []string) bool {
 		seen[id] = struct{}{}
 	}
 	return len(seen) == len(set)
+}
+
+// symmetricDiff returns the ids that are in exactly one of the two owner sets.
+func symmetricDiff(a, b []string) []string {
+	inA := make(map[string]bool, len(a))
+	for _, id := range a {
+		inA[id] = true
+	}
+	inB := make(map[string]bool, len(b))
+	for _, id := range b {
+		inB[id] = true
+	}
+	var out []string
+	for id := range inA {
+		if !inB[id] {
+			out = append(out, id)
+		}
+	}
+	for id := range inB {
+		if !inA[id] {
+			out = append(out, id)
+		}
+	}
+	return out
 }

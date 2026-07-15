@@ -228,7 +228,7 @@ function relTime(iso: string): string {
             }
           </div>
 
-          @if (isAdmin()) {
+          @if (isManager()) {
             <div class="mt-3 flex flex-wrap items-end gap-2">
               <label class="text-xs text-base-content/50">
                 Firmware image (.bin)
@@ -276,6 +276,7 @@ export class DeployPageComponent {
   private devicesStore = inject(DevicesStore);
   private auth = inject(AuthStore);
   protected isAdmin = this.auth.isAdmin;
+  protected isManager = this.auth.isManager;
   private confirmService = inject(ConfirmService);
   private diagrams = inject(TopologyDiagramService);
 

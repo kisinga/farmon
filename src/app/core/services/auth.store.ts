@@ -1,7 +1,7 @@
 import { Injectable, computed, inject, signal } from '@angular/core';
 import { BackendService } from './backend.service';
 
-export type UserRole = 'admin' | 'customer';
+export type UserRole = 'admin' | 'partner' | 'customer';
 
 export interface AuthUser {
   id: string;
@@ -26,6 +26,8 @@ export class AuthStore {
   readonly user = signal<AuthUser | null>(this.read());
   readonly isAuthenticated = computed(() => this.user() !== null);
   readonly isAdmin = computed(() => this.user()?.role === 'admin');
+  readonly isPartner = computed(() => this.user()?.role === 'partner');
+  readonly isManager = computed(() => this.user()?.role === 'admin' || this.user()?.role === 'partner');
   readonly role = computed<UserRole | null>(() => this.user()?.role ?? null);
 
   constructor() {
@@ -44,10 +46,11 @@ export class AuthStore {
   private read(): AuthUser | null {
     const r = this.pb.authStore.record;
     if (!this.pb.authStore.isValid || !r) return null;
+    const role = r['role'];
     return {
       id: r.id,
       email: r['email'] ?? '',
-      role: r['role'] === 'admin' ? 'admin' : 'customer',
+      role: role === 'admin' || role === 'partner' ? role : 'customer',
     };
   }
 }

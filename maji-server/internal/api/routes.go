@@ -863,6 +863,12 @@ func IsAdmin(auth *core.Record) bool {
 	return auth != nil && (auth.IsSuperuser() || auth.GetString("role") == "admin")
 }
 
+// IsPartner reports whether the caller is a partner (a scoped manager of their
+// own customers and sites). Superusers are not partners for hook purposes.
+func IsPartner(auth *core.Record) bool {
+	return auth != nil && auth.GetString("role") == "partner"
+}
+
 // requireSiteAccess enforces authentication and site ownership (admins bypass).
 func requireSiteAccess(e *core.RequestEvent, siteID string) error {
 	if e.Auth == nil {

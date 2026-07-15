@@ -84,7 +84,7 @@ export interface AccountProfile {
   name: string;
   email: string;
   phone: string;
-  role: 'admin' | 'customer';
+  role: 'admin' | 'partner' | 'customer';
 }
 
 /** Admin-tunable global settings, served by GET /api/farmon/config. */

@@ -73,7 +73,7 @@ export class HomeComponent {
   protected sites = signal<SiteListEntry[] | null>(null);
 
   constructor() {
-    if (this.auth.isAdmin()) {
+    if (this.auth.isManager()) {
       void this.router.navigate(['/overview']);
       return;
     }

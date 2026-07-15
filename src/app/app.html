@@ -10,13 +10,15 @@
     </div>
 
     <div class="navbar-center hidden md:flex gap-1">
-      @if (auth.isAdmin()) {
+      @if (auth.isManager()) {
         <a routerLink="/overview" routerLinkActive="btn-active" class="btn btn-ghost btn-sm">Sites</a>
         <a routerLink="/customers" routerLinkActive="btn-active" class="btn btn-ghost btn-sm">Customers</a>
         <a routerLink="/devices" routerLinkActive="btn-active" class="btn btn-ghost btn-sm">Devices</a>
-        <a routerLink="/boards" routerLinkActive="btn-active" class="btn btn-ghost btn-sm">Boards</a>
-        <a routerLink="/docs" routerLinkActive="btn-active" class="btn btn-ghost btn-sm">Docs</a>
-        <a routerLink="/leads" routerLinkActive="btn-active" class="btn btn-ghost btn-sm">Leads</a>
+        @if (auth.isAdmin()) {
+          <a routerLink="/boards" routerLinkActive="btn-active" class="btn btn-ghost btn-sm">Boards</a>
+          <a routerLink="/docs" routerLinkActive="btn-active" class="btn btn-ghost btn-sm">Docs</a>
+          <a routerLink="/leads" routerLinkActive="btn-active" class="btn btn-ghost btn-sm">Leads</a>
+        }
       } @else if (auth.isAuthenticated()) {
         <a routerLink="/home" routerLinkActive="btn-active" class="btn btn-ghost btn-sm">My Sites</a>
       }

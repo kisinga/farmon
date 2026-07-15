@@ -3,6 +3,7 @@ import { authGuard } from './core/guards/auth.guard';
 import { roleGuard } from './core/guards/role.guard';
 
 const ADMIN = { roles: ['admin'] };
+const MANAGER = { roles: ['admin', 'partner'] };
 
 export const routes: Routes = [
   {
@@ -50,18 +51,18 @@ export const routes: Routes = [
       import('./pages/account/account-page.component').then((m) => m.AccountPageComponent),
   },
   {
-    // Admin: sites catalog.
+    // Admin/partner: sites catalog.
     path: 'overview',
     canActivate: [roleGuard],
-    data: ADMIN,
+    data: MANAGER,
     loadComponent: () =>
       import('./pages/overview/overview.component').then((m) => m.OverviewComponent),
   },
   {
-    // Admin: customer accounts (users with role=customer).
+    // Admin/partner: customer accounts (users with role=customer).
     path: 'customers',
     canActivate: [roleGuard],
-    data: ADMIN,
+    data: MANAGER,
     loadComponent: () =>
       import('./pages/customers/customers-page.component').then((m) => m.CustomersPageComponent),
   },
@@ -74,10 +75,10 @@ export const routes: Routes = [
       import('./pages/boards/boards-page.component').then((m) => m.BoardsPageComponent),
   },
   {
-    // Admin: registered-device fleet (the provisioning registry).
+    // Admin/partner: registered-device fleet (the provisioning registry).
     path: 'devices',
     canActivate: [roleGuard],
-    data: ADMIN,
+    data: MANAGER,
     loadComponent: () =>
       import('./pages/devices/devices-page.component').then((m) => m.DevicesPageComponent),
   },
@@ -123,27 +124,27 @@ export const routes: Routes = [
       import('./pages/automations/automations.component').then((m) => m.AutomationsComponent),
   },
   {
-    // Admin: the unified workspace (site overview panel + shared canvas).
+    // Admin/partner: the unified workspace (site overview panel + shared canvas).
     path: 'site/:name',
     canActivate: [roleGuard],
-    data: ADMIN,
+    data: MANAGER,
     loadComponent: () =>
       import('./pages/editor/editor.component').then((m) => m.EditorComponent),
   },
   {
-    // Admin: per-controller editor — bare path opens the Design canvas.
+    // Admin/partner: per-controller editor — bare path opens the Design canvas.
     path: 'site/:name/system/:config',
     canActivate: [roleGuard],
-    data: ADMIN,
+    data: MANAGER,
     loadComponent: () =>
       import('./pages/editor/editor.component').then((m) => m.EditorComponent),
   },
   {
-    // Admin: a specific workspace section (config/schedules/sharing/firmware) —
+    // Admin/partner: a specific workspace section (config/schedules/sharing/firmware) —
     // each section is its own bookmarkable URL. Same component; it reads :section.
     path: 'site/:name/system/:config/:section',
     canActivate: [roleGuard],
-    data: ADMIN,
+    data: MANAGER,
     loadComponent: () =>
       import('./pages/editor/editor.component').then((m) => m.EditorComponent),
   },

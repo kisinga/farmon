@@ -129,6 +129,8 @@ export class BackendService {
     opts: { invite?: boolean } = {},
   ): Promise<{ customer: CustomerEntry; invited: boolean }> {
     const password = this.randomPassword(); // never used by the customer; they set their own via the invite
+    const me = this.pb.authStore.record?.id;
+    const myRole = this.pb.authStore.record?.['role'];
     const r = await this.pb.collection('users').create({
       name: input.name,
       email: input.email,
@@ -137,6 +139,7 @@ export class BackendService {
       password,
       passwordConfirm: password,
       role: 'customer',
+      ...(myRole === 'partner' && me ? { partner: me } : {}),
     });
     const customer = this.toCustomerEntry(r);
     if (opts.invite === false) return { customer, invited: false };
@@ -252,12 +255,13 @@ export class BackendService {
 
   async accountProfile(): Promise<AccountProfile> {
     const r = await this.pb.send<AccountProfile>('/api/farmon/account', { method: 'GET' });
+    const role = r.role === 'admin' || r.role === 'partner' ? r.role : 'customer';
     return {
       id: r.id,
       name: r.name ?? '',
       email: r.email ?? '',
       phone: r.phone ?? '',
-      role: r.role === 'admin' ? 'admin' : 'customer',
+      role,
     };
   }
 
@@ -266,12 +270,13 @@ export class BackendService {
       method: 'PATCH',
       body: patch,
     });
+    const role = r.role === 'admin' || r.role === 'partner' ? r.role : 'customer';
     return {
       id: r.id,
       name: r.name ?? '',
       email: r.email ?? '',
       phone: r.phone ?? '',
-      role: r.role === 'admin' ? 'admin' : 'customer',
+      role,
     };
   }
 

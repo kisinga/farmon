@@ -57,6 +57,10 @@ func New(cfg config.Config) *pocketbase.PocketBase {
 	// Guards site ownership, the managed device cap, and reconciles controllers.
 	registerSiteHooks(app, cfg)
 
+	// User-account guards: partners can manage their own customers but cannot
+	// escalate roles or reassign partners.
+	registerUserHooks(app)
+
 	// Automation write guards: controller-belongs-to-site + per-controller cap.
 	automations.RegisterGuards(app)
 

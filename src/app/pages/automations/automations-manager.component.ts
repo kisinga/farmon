@@ -269,7 +269,7 @@ export class AutomationsManagerComponent {
   private started = false;
   private unsub?: UnsubscribeFunc;
 
-  protected canEdit = computed(() => this.isOwner() || this.auth.isAdmin());
+  protected canEdit = computed(() => this.isOwner() || this.auth.isManager());
   protected atCap = computed(() => this.rows().length >= MAX_AUTOMATIONS);
   /** Any per-route tunable exists (drives the "Route defaults" disclosure). */
   protected hasRouteTuning = computed(() => this.dash.spec().controllers.some((c) => c.tunables.some((t) => t.scope === 'route')));

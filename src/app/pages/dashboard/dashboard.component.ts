@@ -711,9 +711,9 @@ export class DashboardComponent {
   private async load(): Promise<void> {
     const { site, topology } = await this.backend.siteLoad(this.siteId);
     this.siteName.set(site.friendlyName);
-    // Admin looking at a site they're not a co-owner of → start read-only.
+    // Admin/partner looking at a site they're not a co-owner of → start read-only.
     const me = this.auth.user()?.id;
-    this.adminViewing.set(this.auth.isAdmin() && !(!!me && (site.owners?.includes(me) ?? false)));
+    this.adminViewing.set(this.auth.isManager() && !(!!me && (site.owners?.includes(me) ?? false)));
     const topo = topology ? parseTopology(topology) : createEmptySiteTopology();
     this.topology.set(topo);
     const spec = buildDashboardSpec(topo);

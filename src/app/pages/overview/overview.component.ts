@@ -165,7 +165,7 @@ import { siteColor, initials } from '../../core/util/site-colors';
                   Design
                 </button>
                 <span class="flex-1"></span>
-                @if (isAdmin()) {
+                @if (isManager()) {
                   @if (site.owners.length) {
                     <button class="flex items-center -space-x-2 hover:opacity-80 transition-opacity pr-1"
                       (click)="openOwner(site, $event)"
@@ -226,7 +226,7 @@ import { siteColor, initials } from '../../core/util/site-colors';
 
     @if (showEasy()) { <app-easy-mode (close)="showEasy.set(false)" /> }
 
-    <!-- Co-owner assignment dialog (admin): assign any number of customers to this site -->
+    <!-- Co-owner assignment dialog (admin/partner): assign any number of customers to this site -->
     @if (ownerModalSite(); as s) {
       <app-assign-picker
         [title]="'Assign customers'"
@@ -256,7 +256,8 @@ export class OverviewComponent implements OnInit {
   protected showEasy = signal(false);
   protected renamingId = signal<string | null>(null);
   protected readonly isAdmin = this.auth.isAdmin;
-  /** Customers an admin can assign a site to (shared cache with the Customers page). */
+  protected readonly isManager = this.auth.isManager;
+  /** Customers an admin/partner can assign a site to (shared cache with the Customers page). */
   protected customers = computed(() => this.customersStore.list());
   /** Site whose owner-management dialog is open (tracked by id so it stays live
    *  against the cached list after an assignment patches the owner). */
@@ -301,7 +302,7 @@ export class OverviewComponent implements OnInit {
       this.configStore.ensureLoaded(),
     ]);
     this.cap.set(this.configStore.cap());
-    if (this.isAdmin()) {
+    if (this.isManager()) {
       await this.customersStore.ensureLoaded().catch(() => []);
     }
     this.loading.set(false);
