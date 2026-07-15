@@ -65,6 +65,10 @@ export class BackendService {
     // viewer may read (same-site, per migration 32). Best-effort: records the rule
     // hides simply don't appear; the activity feed falls back to the owner-id set.
     const r = await this.pb.collection('sites').getOne(id, { expand: 'owner' });
+    const siteId = r['id'] as string | undefined;
+    if (!siteId) {
+      throw new Error('Site record is missing an id');
+    }
     const owners = (r['owner'] ?? []) as string[];
     const ownerRecords = ((r['expand'] as Record<string, RecordModel[]> | undefined)?.['owner'] ?? []);
     const people = ownerRecords.map((u) => ({ id: u['id'] as string, name: u['name'] as string | undefined, email: u['email'] as string | undefined }));
@@ -78,14 +82,18 @@ export class BackendService {
         }
       : undefined;
     return {
-      site: { id: r['id'], friendlyName: r['name'], deployment, owners, people, commenceDate: (r['commence_date'] ?? '') as string },
+      site: { id: siteId, friendlyName: r['name'], deployment, owners, people, commenceDate: (r['commence_date'] ?? '') as string },
       topology: (r['draft_topology'] ?? null) as SiteFullPayload['topology'],
     };
   }
 
   async siteSave(payload: SiteSavePayload): Promise<void> {
+    const siteId = payload.site.id;
+    if (!siteId) {
+      throw new Error('Cannot save site: missing site id');
+    }
     const d = payload.site.deployment;
-    await this.pb.collection('sites').update(payload.site.id, {
+    await this.pb.collection('sites').update(siteId, {
       name: payload.site.friendlyName,
       draft_topology: payload.topology,
       ...(d
@@ -102,7 +110,11 @@ export class BackendService {
       draft_topology: createEmptySiteTopology(),
       owner: me ? [me] : [],
     });
-    return { id: r['id'] };
+    const id = r['id'] as string | undefined;
+    if (!id) {
+      throw new Error('Site creation response is missing an id');
+    }
+    return { id };
   }
 
   async siteRename(id: string, friendlyName: string): Promise<void> {

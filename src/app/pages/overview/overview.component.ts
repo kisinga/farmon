@@ -392,6 +392,10 @@ export class OverviewComponent implements OnInit {
     if (!friendlyName.trim()) return;
     const slug = friendlyName.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
     const { id } = await this.sitesStore.create(slug, friendlyName.trim());
+    if (!id) {
+      console.error('[Overview] Site created without an id');
+      return;
+    }
     this.showCreate.set(false);
     this.router.navigate(['/site', id]);
   }

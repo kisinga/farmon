@@ -455,6 +455,9 @@ export class WorkspaceService {
     const site = this._site();
     const topology = this._siteTopology();
     if (!site || !topology) return;
+    if (!site.id) {
+      throw new Error('Cannot save workspace: loaded site has no id');
+    }
 
     const payload: SiteSavePayload = {
       site: { id: site.id, friendlyName: site.friendlyName, deployment: site.deployment },
