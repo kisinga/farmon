@@ -132,6 +132,35 @@ func Register(se *core.ServeEvent, cfg config.Config, pub Publisher) {
 		})
 	})
 
+	// GET /branding returns the partner organization branding for the authenticated
+	// user, if any. The UI falls back to its default MajiFlow branding when the
+	// caller has no partner org or the org has no logo/colors set.
+	g.GET("/branding", func(e *core.RequestEvent) error {
+		if e.Auth == nil {
+			return apis.NewUnauthorizedError("authentication required", nil)
+		}
+		partnerID := e.Auth.GetString("partner")
+		if partnerID == "" {
+			return e.JSON(http.StatusOK, map[string]any{})
+		}
+		org, err := e.App.FindRecordById("partners", partnerID)
+		if err != nil {
+			return e.JSON(http.StatusOK, map[string]any{})
+		}
+		logo := org.GetString("logo")
+		logoURL := ""
+		if logo != "" {
+			logoURL = "/api/files/" + org.Collection().Id + "/" + org.Id + "/" + logo
+		}
+		return e.JSON(http.StatusOK, map[string]any{
+			"name":           org.GetString("name"),
+			"slug":           org.GetString("slug"),
+			"logo_url":       logoURL,
+			"brand_primary":  org.GetString("brand_primary"),
+			"brand_accent":   org.GetString("brand_accent"),
+		})
+	})
+
 	// GET/PATCH /account — narrow self-service profile surface. The users
 	// collection remains admin-only for writes so callers cannot patch role,
 	// verification flags, auth fields, or other sensitive columns.
@@ -885,8 +914,12 @@ func requireSiteAccess(e *core.RequestEvent, siteID string) error {
 		return apis.NewNotFoundError("site not found", nil)
 	}
 	// owner is a set of co-owners (multi-relation); access is granted to any of them.
-	if !slices.Contains(site.GetStringSlice("owner"), e.Auth.Id) {
-		return apis.NewForbiddenError("you do not own this site", nil)
+	if slices.Contains(site.GetStringSlice("owner"), e.Auth.Id) {
+		return nil
 	}
-	return nil
+	// partners also get access to sites that belong to their organization.
+	if IsPartner(e.Auth) && slices.Contains(site.GetStringSlice("partner"), e.Auth.GetString("partner")) {
+		return nil
+	}
+	return apis.NewForbiddenError("you do not own this site", nil)
 }

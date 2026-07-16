@@ -132,6 +132,7 @@ export class BackendService {
     const password = this.randomPassword(); // never used by the customer; they set their own via the invite
     const me = this.pb.authStore.record?.id;
     const myRole = this.pb.authStore.record?.['role'];
+    const myPartner = this.pb.authStore.record?.['partner'];
     const r = await this.pb.collection('users').create({
       name: input.name,
       email: input.email,
@@ -140,7 +141,7 @@ export class BackendService {
       password,
       passwordConfirm: password,
       role: 'customer',
-      ...(myRole === 'partner' && me ? { partner: me } : {}),
+      ...(myRole === 'partner' && myPartner ? { partner: myPartner } : {}),
     });
     const customer = this.toCustomerEntry(r);
     if (opts.invite === false) return { customer, invited: false };

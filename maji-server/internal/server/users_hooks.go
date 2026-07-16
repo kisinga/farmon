@@ -31,8 +31,8 @@ func guardUserCreate(e *core.RecordRequestEvent) error {
 	if e.Record.GetString("role") != "customer" {
 		return apis.NewForbiddenError("partners can only create customers", nil)
 	}
-	if e.Record.GetString("partner") != e.Auth.Id {
-		return apis.NewForbiddenError("customer must be assigned to you", nil)
+	if e.Record.GetString("partner") != e.Auth.GetString("partner") {
+		return apis.NewForbiddenError("customer must be assigned to your partner organization", nil)
 	}
 	return e.Next()
 }
@@ -58,16 +58,16 @@ func guardUserUpdate(e *core.RecordRequestEvent) error {
 		return apis.NewForbiddenError("only admins can reassign partners", nil)
 	}
 
-	// Partners can update only their own assigned customers.
-	if api.IsPartner(e.Auth) {
-		if old.GetString("partner") != e.Auth.Id {
-			return apis.NewForbiddenError("not your customer", nil)
-		}
+	// Users can update their own profile fields.
+	if e.Auth.Id == e.Record.Id {
 		return e.Next()
 	}
 
-	// Users can update their own profile fields.
-	if e.Auth.Id == e.Record.Id {
+	// Partners can update only customers in their own organization.
+	if api.IsPartner(e.Auth) {
+		if old.GetString("role") != "customer" || old.GetString("partner") != e.Auth.GetString("partner") {
+			return apis.NewForbiddenError("not your customer", nil)
+		}
 		return e.Next()
 	}
 

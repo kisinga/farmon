@@ -6,6 +6,7 @@ import { AuthStore } from './core/services/auth.store';
 import { RealtimeService } from './core/services/realtime.service';
 import { TrackingService } from './core/services/tracking.service';
 import { FeatureFlagsService } from './core/services/feature-flags.service';
+import { BrandingService } from './core/services/branding.service';
 import { ConfirmDialogComponent } from './shared/confirm-dialog/confirm-dialog.component';
 import { AlertsCenterComponent } from './shared/alerts-center.component';
 import { BRAND_LOGO_SVG } from './shared/brand-logo';
@@ -20,6 +21,7 @@ import { filter } from 'rxjs';
 })
 export class App implements OnInit {
   protected auth = inject(AuthStore);
+  protected branding = inject(BrandingService);
   private router = inject(Router);
   private sanitizer = inject(DomSanitizer);
   private swUpdate = inject(SwUpdate);

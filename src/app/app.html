@@ -4,8 +4,12 @@
   <header class="navbar relative z-20 bg-base-100 border-b border-base-300/60 shadow-lg shadow-black/30 px-4 min-h-[var(--header-h)] h-[var(--header-h)]">
     <div class="navbar-start gap-3">
       <a routerLink="/home" class="flex items-center gap-2.5 shrink-0 hover:opacity-80 transition-opacity">
-        <span class="w-7 h-7 block" [innerHTML]="logoSvg"></span>
-        <span class="font-bold text-base tracking-tight">MajiFlow</span>
+        @if (branding.logoUrl(); as logo) {
+          <img [src]="logo" alt="" class="w-7 h-7 object-contain" />
+        } @else {
+          <span class="w-7 h-7 block" [innerHTML]="logoSvg"></span>
+        }
+        <span class="font-bold text-base tracking-tight">{{ branding.name() || 'MajiFlow' }}</span>
       </a>
     </div>
 

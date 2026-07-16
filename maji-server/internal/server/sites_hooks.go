@@ -75,7 +75,7 @@ func guardOwnerCreate(e *core.RecordRequestEvent) error {
 				continue
 			}
 			u, err := e.App.FindRecordById("users", owner)
-			if err != nil || u.GetString("partner") != e.Auth.Id {
+			if err != nil || u.GetString("partner") != e.Auth.GetString("partner") {
 				return apis.NewForbiddenError("can only assign the site to your own customers", nil)
 			}
 		}
@@ -116,7 +116,7 @@ func guardOwnerUpdate(e *core.RecordRequestEvent) error {
 				continue
 			}
 			u, err := e.App.FindRecordById("users", owner)
-			if err != nil || u.GetString("partner") != e.Auth.Id {
+			if err != nil || u.GetString("partner") != e.Auth.GetString("partner") {
 				return apis.NewForbiddenError("can only reassign the site among your own customers", nil)
 			}
 		}
