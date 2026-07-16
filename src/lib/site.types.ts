@@ -46,6 +46,11 @@ export interface SiteMetadata {
   /** Hosting/commissioning start (ISO), stamped at first live connect; '' until then.
    *  Populated by siteLoad; drives the warranty term in the generated handover. */
   commenceDate?: string;
+  /**
+   * IANA zone name for wall-clock display only (e.g. 'Africa/Nairobi'). Storage
+   * stays UTC end-to-end — the browser converts at the edge. '' = default EAT.
+   */
+  display_timezone?: string;
 }
 
 // ---------------------------------------------------------------------------

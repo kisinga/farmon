@@ -1,19 +1,22 @@
-import { ChangeDetectionStrategy, Component, inject, input, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, input, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { DomSanitizer, type SafeHtml } from '@angular/platform-browser';
 import { BRAND_LOGO_SVG } from '../brand-logo';
+import { FeatureFlagsService } from '../../core/services/feature-flags.service';
 
-/** A nav link: internal `route` or external `href` (rendered desktop-only). */
+/** A nav link: internal `route` or external `href` (rendered desktop-only).
+ *  `feature` ties the link to a feature flag — hidden while the flag is off. */
 export interface NavLink {
   label: string;
   route?: string;
   href?: string;
+  feature?: string;
 }
 
 const DEFAULT_LINKS: NavLink[] = [
   { label: 'How it works', route: '/how-it-works' },
   { label: 'Features', route: '/features' },
-  { label: 'Assessment', route: '/pricing' },
+  { label: 'Assessment', route: '/pricing', feature: 'pricing_page' },
 ];
 
 /**
@@ -37,7 +40,7 @@ const DEFAULT_LINKS: NavLink[] = [
 
         <!-- Desktop links -->
         <div class="hidden sm:flex items-center gap-3">
-          @for (l of links(); track l.label) {
+          @for (l of visibleLinks(); track l.label) {
             @if (l.href) {
               <a [href]="l.href" [target]="externalTarget(l.href)" [rel]="externalRel(l.href)"
                  class="text-sm font-medium text-white/70 hover:text-white transition-colors whitespace-nowrap px-3 py-2">{{ l.label }}</a>
@@ -72,7 +75,7 @@ const DEFAULT_LINKS: NavLink[] = [
       <!-- Mobile dropdown panel -->
       @if (open()) {
         <div class="sm:hidden border-t border-white/10 bg-slate-950/95 px-4 pb-3">
-          @for (l of links(); track l.label) {
+          @for (l of visibleLinks(); track l.label) {
             @if (l.href) {
               <a [href]="l.href" [target]="externalTarget(l.href)" [rel]="externalRel(l.href)" (click)="close()"
                  class="block text-sm font-medium text-white/70 hover:text-white py-3">{{ l.label }}</a>
@@ -90,6 +93,12 @@ export class MarketingNavComponent {
   readonly links = input<NavLink[]>(DEFAULT_LINKS);
   protected readonly logo: SafeHtml = inject(DomSanitizer).bypassSecurityTrustHtml(BRAND_LOGO_SVG);
   protected readonly open = signal(false);
+  private readonly featureFlags = inject(FeatureFlagsService);
+
+  /** Links minus any whose feature flag is off. */
+  protected readonly visibleLinks = computed(() =>
+    this.links().filter((l) => !l.feature || this.featureFlags.isEnabled(l.feature)),
+  );
 
   protected toggle(): void {
     this.open.update((v) => !v);

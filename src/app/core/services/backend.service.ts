@@ -31,6 +31,7 @@ import type {
   BoardBundle,
 } from '../models/backend-api';
 import { sha256Hex } from '../util/hash';
+import type { Attribution } from './tracking.service';
 
 /**
  * PocketBase base URL. When the SPA is served by maji-server it is same-origin;
@@ -78,7 +79,7 @@ export class BackendService {
         }
       : undefined;
     return {
-      site: { id: r.id, friendlyName: r['name'], deployment, owners, people, commenceDate: (r['commence_date'] ?? '') as string },
+      site: { id: r.id, friendlyName: r['name'], deployment, owners, people, commenceDate: (r['commence_date'] ?? '') as string, display_timezone: (r['display_timezone'] ?? '') as string },
       topology: (r['draft_topology'] ?? null) as SiteFullPayload['topology'],
     };
   }
@@ -227,6 +228,7 @@ export class BackendService {
     consent: boolean;
     estimate: unknown;
     hp: string;
+    attrib?: Attribution;
   }): Promise<void> {
     await this.pb.collection('leads').create({
       name: input.name,
@@ -236,6 +238,9 @@ export class BackendService {
       estimate: input.estimate,
       source: 'pricing',
       hp: input.hp,
+      // First-touch marketing attribution (UTMs / landing page / referrer),
+      // captured by TrackingService; undefined keys are dropped by the SDK.
+      ...input.attrib,
     });
   }
 

@@ -19,8 +19,8 @@ import type { Vertical } from './catalog';
 /** Verticals that get a default watering schedule. */
 const IRRIGATION: ReadonlySet<Vertical> = new Set<Vertical>(['farm', 'greenhouse']);
 
-/** First window starts at 06:00; each zone gets its own non-overlapping slot. */
-const FIRST_WINDOW_MIN = 6 * 60;
+/** First window starts at 06:00 site-local time (03:00 UTC = 180); each zone gets its own non-overlapping slot. */
+const FIRST_WINDOW_MIN = 3 * 60;
 const WINDOW_MINUTES = 60;
 const MINUTES_PER_DAY = 24 * 60;
 

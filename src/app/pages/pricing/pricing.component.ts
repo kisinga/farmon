@@ -1,6 +1,7 @@
 import { Component, computed, inject, signal, type WritableSignal } from '@angular/core';
 import type { SiteTopology, EasyModeProfile } from '@core';
 import { BackendService } from '../../core/services/backend.service';
+import { TrackingService } from '../../core/services/tracking.service';
 import { KIT_TIERS, ADDON_SERVICES, CLOUD_FEATURES, estimate, kes, type EstimateInput, type Segment } from './pricing.model';
 import { applyPageSeo } from '../../shared/seo';
 import { MarketingNavComponent } from '../../shared/marketing/marketing-nav.component';
@@ -402,6 +403,7 @@ type Kit = 'lite' | 'pro' | 'enterprise';
 })
 export class PricingComponent {
   private readonly backend = inject(BackendService);
+  private readonly tracking = inject(TrackingService);
   protected readonly addons = ADDON_SERVICES;
   protected readonly cloudFeatures = CLOUD_FEATURES;
   protected readonly proStartLabel = kes(KIT_TIERS.find((t) => t.name === 'Pro')?.price ?? 245_000);
@@ -584,6 +586,7 @@ export class PricingComponent {
           note: this.note().trim() || undefined,
         },
         hp: this.hp(),
+        attrib: this.tracking.attribution(),
       });
       this.submitState.set('done');
     } catch {

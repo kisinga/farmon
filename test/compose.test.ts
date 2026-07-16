@@ -251,8 +251,8 @@ assert(sweepBad === '', 'gate: no clean result carries an error; errors hand off
 const water1 = planWateringAutomations(r1.topology!, 'site_test', 'farm');
 assert(water1.length === 3, 'planner: farm 3-zone yields 3 windows', String(water1.length));
 assert(water1.every(a => a.trigger_type === 'time' && a.enabled && a.controller === 'controller1'), 'planner: time-triggered, enabled, controller set');
-assert(new Set(water1.map(a => a.time_min)).size === 3 && Math.min(...water1.map(a => a.time_min)) === 360,
-  'planner: windows are distinct and start at 06:00', JSON.stringify(water1.map(a => a.time_min)));
+assert(new Set(water1.map(a => a.time_min)).size === 3 && Math.min(...water1.map(a => a.time_min)) === 180,
+  'planner: windows are distinct and start at 03:00 UTC (06:00 EAT)', JSON.stringify(water1.map(a => a.time_min)));
 assert(water1.every(a => a.override_mask === 0 && a.route_set_version > 0), 'planner: no overrides, route-set version stamped');
 assert(planWateringAutomations(r2.topology!, 'site_test', 'residential').length === 0, 'planner: a home gets no auto-watering');
 assert(planWateringAutomations(r3.topology!, 'site_test', 'water_business').length === 0, 'planner: a kiosk gets no auto-watering');

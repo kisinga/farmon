@@ -23,7 +23,7 @@
  *     u8  days_mask          (bit0=MON..bit6=SUN; 0 = every day)
  *     u8  level_threshold_pct
  *     u16 route_index        (browser-resolved; valid only when route_set_version matches)
- *     u16 time_min           (minutes since midnight; time trigger)
+ *     u16 time_min           (minutes since UTC midnight; time trigger)
  *     u8  override_mask      (OV_* bits — see codegen/generators/routes.ts)
  *     u8  ov_source_min_pct
  *     u8  ov_dest_max_pct
@@ -57,7 +57,7 @@ export interface WireAutomation {
   days_mask: number;            // bit0=MON..bit6=SUN; 0 = every day
   level_threshold_pct: number;
   route_index: number;
-  time_min: number;             // minutes since midnight
+  time_min: number;             // minutes since UTC midnight
   override_mask: number;
   ov_source_min_pct: number;
   ov_dest_max_pct: number;

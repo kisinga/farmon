@@ -70,8 +70,10 @@ type whatsAppSender interface {
 
 // notify activates one incident and sends it once per active episode. A failed
 // delivery leaves last_sent empty, so the next sweep retries; a resolved incident
-// clears last_sent when it becomes active again.
-func (s *sweeper) notify(app core.App, to recipients, now time.Time, siteID, key, kind, subject, body string, offlineSince ...time.Time) {
+// clears last_sent when it becomes active again. subject/body are the built-in
+// copy; vars carries the same facts for the operator-editable templates, which
+// override per channel when a matching active row exists.
+func (s *sweeper) notify(app core.App, to recipients, now time.Time, siteID, key, kind, subject, body string, vars map[string]string, offlineSince ...time.Time) {
 	incident, err := activateIncident(app, siteID, key, kind, subject, body, now, offlineSince...)
 	if err != nil {
 		log.Printf("alerts: incident %s: %v", key, err)
@@ -82,14 +84,16 @@ func (s *sweeper) notify(app core.App, to recipients, now time.Time, siteID, key
 	}
 	delivered := false
 	if len(to.whatsapp) > 0 {
-		if err := s.sendWhatsApp(to.whatsapp, kind, subject, body); err != nil {
+		subj, bod := renderTemplate(app, kind, "whatsapp", vars, subject, body)
+		if err := s.sendWhatsApp(to.whatsapp, kind, subj, bod); err != nil {
 			log.Printf("alerts: whatsapp to %v: %v", to.whatsapp, err)
 		} else {
 			delivered = true
 		}
 	}
 	if len(to.email) > 0 {
-		if err := s.sendEmail(app, to.email, kind, subject, body); err != nil {
+		subj, bod := renderTemplate(app, kind, "email", vars, subject, body)
+		if err := s.sendEmail(app, to.email, kind, subj, bod); err != nil {
 			log.Printf("alerts: email to %v: %v", to.email, err)
 		} else {
 			delivered = true
@@ -107,15 +111,15 @@ func (s *sweeper) notify(app core.App, to recipients, now time.Time, siteID, key
 // has equal co-owners, each with their own notification prefs, so the same
 // incident reaches exactly those who asked for it.
 type siteCtx struct {
-	id        string
-	name      string
-	lowPct    float64
-	highPct   float64 // 0 == no high alert
-	offlineMs float64
-	offlineTo recipients
-	onlineTo  recipients
-	faultTo   recipients
-	tankTo    recipients
+	id         string
+	name       string
+	lowPct     float64
+	highPct    float64 // 0 == no high alert
+	offlineMs  float64
+	offlineTo  recipients
+	onlineTo   recipients
+	faultTo    recipients
+	tankTo     recipients
 	runStartTo recipients
 	runStopTo  recipients
 }
@@ -370,7 +374,8 @@ func (s *sweeper) sweepOffline(app core.App, sc siteCtx, now time.Time, active m
 		if stale {
 			active[key] = true
 			s.notify(app, sc.offlineTo, now, sc.id, key, "device_offline", "Controller offline",
-				fmt.Sprintf("%s on %s has gone offline (last seen %s).", c.Id, sc.name, lastSeenText(seen)), seen)
+				fmt.Sprintf("%s on %s has gone offline (last seen %s).", c.Id, sc.name, lastSeenText(seen)),
+				map[string]string{"controller": c.Id, "site": sc.name, "last_seen": lastSeenText(seen)}, seen)
 		} else {
 			// Controller is fresh: resolve any active offline incident and notify
 			// owners who opted into recovery messages.
@@ -403,16 +408,19 @@ func (s *sweeper) notifyOnline(app core.App, sc siteCtx, now time.Time, controll
 			body += fmt.Sprintf(" after %s", duration)
 		}
 		body += "."
+		vars := map[string]string{"controller": controllerID, "site": sc.name, "duration": duration}
 		delivered := false
 		if len(sc.onlineTo.whatsapp) > 0 {
-			if err := s.sendWhatsApp(sc.onlineTo.whatsapp, "device_online", subject, body); err != nil {
+			subj, bod := renderTemplate(app, "device_online", "whatsapp", vars, subject, body)
+			if err := s.sendWhatsApp(sc.onlineTo.whatsapp, "device_online", subj, bod); err != nil {
 				log.Printf("alerts: whatsapp online %s: %v", controllerID, err)
 			} else {
 				delivered = true
 			}
 		}
 		if len(sc.onlineTo.email) > 0 {
-			if err := s.sendEmail(app, sc.onlineTo.email, "device_online", subject, body); err != nil {
+			subj, bod := renderTemplate(app, "device_online", "email", vars, subject, body)
+			if err := s.sendEmail(app, sc.onlineTo.email, "device_online", subj, bod); err != nil {
 				log.Printf("alerts: email online %s: %v", controllerID, err)
 			} else {
 				delivered = true
@@ -451,12 +459,14 @@ func (s *sweeper) sweepTanks(app core.App, sc siteCtx, now time.Time, active map
 				key := "tank_low:" + sc.id + ":" + d.GetString("controller") + ":" + sensor
 				active[key] = true
 				s.notify(app, sc.tankTo, now, sc.id, key, "tank_low", "Tank low",
-					fmt.Sprintf("%s on %s is at %.0f%% (low threshold %.0f%%).", tankName(sensor), sc.name, v, sc.lowPct))
+					fmt.Sprintf("%s on %s is at %.0f%% (low threshold %.0f%%).", tankName(sensor), sc.name, v, sc.lowPct),
+					map[string]string{"tank": tankName(sensor), "site": sc.name, "pct": fmt.Sprintf("%.0f", v), "threshold": fmt.Sprintf("%.0f", sc.lowPct)})
 			} else if sc.highPct > 0 && v >= sc.highPct {
 				key := "tank_high:" + sc.id + ":" + d.GetString("controller") + ":" + sensor
 				active[key] = true
 				s.notify(app, sc.tankTo, now, sc.id, key, "tank_high", "Tank full",
-					fmt.Sprintf("%s on %s is at %.0f%% (high threshold %.0f%%).", tankName(sensor), sc.name, v, sc.highPct))
+					fmt.Sprintf("%s on %s is at %.0f%% (high threshold %.0f%%).", tankName(sensor), sc.name, v, sc.highPct),
+					map[string]string{"tank": tankName(sensor), "site": sc.name, "pct": fmt.Sprintf("%.0f", v), "threshold": fmt.Sprintf("%.0f", sc.highPct)})
 			}
 		}
 	}
@@ -484,7 +494,8 @@ func (s *sweeper) sweepFaults(app core.App, sc siteCtx, now time.Time, active ma
 		key := "fault:" + sc.id + ":" + rk
 		active[key] = true
 		s.notify(app, sc.faultTo, now, sc.id, key, "fault", "Fault",
-			fmt.Sprintf("%s on %s reported a fault: %s.", e.GetString("controller"), sc.name, reasonText(e.GetString("reason"))))
+			fmt.Sprintf("%s on %s reported a fault: %s.", e.GetString("controller"), sc.name, reasonText(e.GetString("reason"))),
+			map[string]string{"controller": e.GetString("controller"), "site": sc.name, "reason": reasonText(e.GetString("reason"))})
 	}
 }
 
@@ -507,7 +518,8 @@ func (s *sweeper) sweepTransitions(app core.App, sc siteCtx, now time.Time) {
 		if to == "RUNNING" && from != "RUNNING" {
 			key := "run_start:" + base
 			s.notify(app, sc.runStartTo, now, sc.id, key, "run_start", "Run started",
-				fmt.Sprintf("Route %s on %s at %s has started running.", routeLabel(route), sc.name, e.GetString("controller")))
+				fmt.Sprintf("Route %s on %s at %s has started running.", routeLabel(route), sc.name, e.GetString("controller")),
+				map[string]string{"route": routeLabel(route), "site": sc.name, "controller": e.GetString("controller")})
 			continue
 		}
 		// Run stopped: left RUNNING for IDLE or STOPPING. FAULT is handled by the
@@ -519,7 +531,8 @@ func (s *sweeper) sweepTransitions(app core.App, sc siteCtx, now time.Time) {
 				reason = strings.ToLower(to)
 			}
 			s.notify(app, sc.runStopTo, now, sc.id, key, "run_stop", "Run stopped",
-				fmt.Sprintf("Route %s on %s at %s stopped (%s).", routeLabel(route), sc.name, e.GetString("controller"), reason))
+				fmt.Sprintf("Route %s on %s at %s stopped (%s).", routeLabel(route), sc.name, e.GetString("controller"), reason),
+				map[string]string{"route": routeLabel(route), "site": sc.name, "controller": e.GetString("controller"), "reason": reason})
 		}
 	}
 }

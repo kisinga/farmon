@@ -1,6 +1,7 @@
 import { Routes } from '@angular/router';
 import { authGuard } from './core/guards/auth.guard';
 import { roleGuard } from './core/guards/role.guard';
+import { featureGuard } from './core/guards/feature.guard';
 
 const ADMIN = { roles: ['admin'] };
 const MANAGER = { roles: ['admin', 'partner'] };
@@ -21,6 +22,8 @@ export const routes: Routes = [
   {
     // Public pricing estimator + consent-gated lead capture.
     path: 'pricing',
+    canActivate: [featureGuard],
+    data: { feature: 'pricing_page' },
     loadComponent: () =>
       import('./pages/pricing/pricing.component').then((m) => m.PricingComponent),
   },

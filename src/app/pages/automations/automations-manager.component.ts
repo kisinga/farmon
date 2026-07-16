@@ -19,11 +19,50 @@ const DAY_LABELS = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
 // OVERRIDE_BITS in @core (shared with the dashboard run picker and pinned to the
 // firmware enum), so the editor never re-hardcodes the bit literals.
 
+/** Default timezone offset for the launch market (EAT = UTC+3). */
+const DEFAULT_TZ_OFFSET_MIN = 180;
+const DAY_MASK_ALL = 0x7F;
+
+/** Convert local wall-clock minutes to UTC minutes for storage. */
+function localToUtcMin(localMin: number, offsetMin: number): number {
+  return (((localMin - offsetMin) % 1440) + 1440) % 1440;
+}
+
+/** Convert UTC minutes to local wall-clock minutes for display. */
+function utcToLocalMin(utcMin: number, offsetMin: number): number {
+  return (((utcMin + offsetMin) % 1440) + 1440) % 1440;
+}
+
+/** Rotate the 7-bit weekday mask by `shift` days (+1 = forward: MON→TUE→…→SUN→MON). */
+function rotateDayMask(mask: number, shift: number): number {
+  const m = mask & DAY_MASK_ALL;
+  return (((m << shift) | (m >>> (7 - shift))) & DAY_MASK_ALL);
+}
+
+/** Convert a stored UTC day mask to local days for display/editing. */
+function utcToLocalDayMask(utcMask: number, utcMin: number, offsetMin: number): number {
+  return ((utcMin + offsetMin) % 1440) < utcMin ? rotateDayMask(utcMask, 1) : utcMask;
+}
+
+/** Convert a local day mask to UTC days for storage. */
+function localToUtcDayMask(localMask: number, localMin: number, offsetMin: number): number {
+  return (localMin - offsetMin) < 0 ? rotateDayMask(localMask, -1) : localMask;
+}
+
+/** Derive the current offset (minutes) for an IANA zone; null if unsupported. */
+function getIanaOffsetMinutes(zone: string): number | null {
+  try {
+    const utc = new Date(new Date().toLocaleString('en-US', { timeZone: 'UTC' }));
+    const local = new Date(new Date().toLocaleString('en-US', { timeZone: zone }));
+    return (local.getTime() - utc.getTime()) / 60000;
+  } catch { return null; }
+}
+
 /** A blank draft for a new automation (route stamped on save). */
 function blankDraft(): NewAutomationRow & { id?: string } {
   return {
     site: '', controller: '', name: '', route_key: '', route_index: 0, route_set_version: 0,
-    trigger_type: 'time', time_min: 6 * 60, days_mask: 0, level_threshold_pct: 50,
+    trigger_type: 'time', time_min: 3 * 60, days_mask: 0, level_threshold_pct: 50,
     override_mask: 0, ov_source_min_pct: 0, ov_dest_max_pct: 0,
     ov_max_runtime_min: 30, ov_target_duration_s: 1800, ov_target_volume_l: 500, enabled: true,
   };
@@ -126,10 +165,11 @@ function blankDraft(): NewAutomationRow & { id?: string } {
                     <input type="time" class="input input-sm input-bordered w-32" [value]="hhmm(d.time_min)" (input)="setTime($any($event.target).value)" />
                     <div class="flex flex-wrap gap-1">
                       @for (day of dayLabels; track day; let i = $index) {
-                        <button class="btn btn-xs btn-circle w-8 h-8 min-h-0 font-normal" [class.btn-primary]="dayOn(d.days_mask, i)" [class.btn-ghost]="!dayOn(d.days_mask, i)" (click)="toggleDay(i)" [title]="day">{{ day.charAt(0) }}</button>
+                        <button class="btn btn-xs btn-circle w-8 h-8 min-h-0 font-normal" [class.btn-primary]="dayOn(i)" [class.btn-ghost]="!dayOn(i)" (click)="toggleDay(i)" [title]="day">{{ day.charAt(0) }}</button>
                       }
                     </div>
                     @if (d.days_mask === 0) { <span class="text-[11px] text-base-content/40">every day</span> }
+                    <span class="text-[11px] text-base-content/40">({{ tzLabel() }})</span>
                   </div>
                 } @else {
                   <div class="flex items-center gap-2 text-sm pt-0.5">
@@ -268,6 +308,16 @@ export class AutomationsManagerComponent {
   private isOwner = signal(false);
   private started = false;
   private unsub?: UnsubscribeFunc;
+  /** Site timezone offset in minutes (for display conversion). Defaults to EAT. */
+  protected tzOffsetMin = signal(DEFAULT_TZ_OFFSET_MIN);
+  /** Human-readable timezone label for the UI. */
+  protected tzLabel = computed(() => {
+    const offset = this.tzOffsetMin();
+    if (offset === 180) return 'EAT';
+    const sign = offset >= 0 ? '+' : '-';
+    const abs = Math.abs(offset);
+    return `UTC${sign}${Math.floor(abs / 60)}:${String(abs % 60).padStart(2, '0')}`;
+  });
 
   protected canEdit = computed(() => this.isOwner() || this.auth.isManager());
   protected atCap = computed(() => this.rows().length >= MAX_AUTOMATIONS);
@@ -334,6 +384,9 @@ export class AutomationsManagerComponent {
       const { site, topology } = await this.backend.siteLoad(siteId);
       const me = this.auth.user()?.id;
       this.isOwner.set(!!me && (site.owners?.includes(me) ?? false));
+      // Use the site's display_timezone when present; default to EAT for the launch market.
+      const tz = site.display_timezone || 'Africa/Nairobi';
+      this.tzOffsetMin.set(getIanaOffsetMinutes(tz) ?? DEFAULT_TZ_OFFSET_MIN);
       if (topology) {
         this.topology = parseTopology(topology);
         this.routes.set(listAutomatableRoutes(this.topology));
@@ -379,16 +432,34 @@ export class AutomationsManagerComponent {
     this.draft.set(next);
   }
 
-  protected hhmm(min: number): string {
-    const h = Math.floor(min / 60), m = min % 60;
+  /** Display a stored UTC `time_min` as local HH:MM. */
+  protected hhmm(utcMin: number): string {
+    const localMin = utcToLocalMin(utcMin, this.tzOffsetMin());
+    const h = Math.floor(localMin / 60), m = localMin % 60;
     return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
   }
+  /** Convert a local HH:MM input to UTC minutes for storage. */
   protected setTime(v: string): void {
     const [h, m] = v.split(':').map((n) => parseInt(n, 10));
-    if (!Number.isNaN(h) && !Number.isNaN(m)) this.set('time_min', h * 60 + m);
+    if (!Number.isNaN(h) && !Number.isNaN(m)) {
+      const localMin = h * 60 + m;
+      this.set('time_min', localToUtcMin(localMin, this.tzOffsetMin()));
+    }
   }
-  protected dayOn(mask: number, i: number): boolean { return (mask & (1 << i)) !== 0; }
-  protected toggleDay(i: number): void { const d = this.draft(); if (d) this.set('days_mask', d.days_mask ^ (1 << i)); }
+  /** Whether local day index `i` (0=MON) is enabled for the current draft. */
+  protected dayOn(i: number): boolean {
+    const d = this.draft(); if (!d) return false;
+    const localMask = utcToLocalDayMask(d.days_mask, d.time_min, this.tzOffsetMin());
+    return (localMask & (1 << i)) !== 0;
+  }
+  /** Toggle the local day index `i` on/off, storing the corresponding UTC bit. */
+  protected toggleDay(i: number): void {
+    const d = this.draft(); if (!d) return;
+    const offset = this.tzOffsetMin();
+    const localMask = utcToLocalDayMask(d.days_mask, d.time_min, offset);
+    const newLocalMask = localMask ^ (1 << i);
+    this.set('days_mask', localToUtcDayMask(newLocalMask, d.time_min, offset));
+  }
   protected ovOn(mask: number, bit: number): boolean { return (mask & bit) !== 0; }
   protected toggleOverride(bit: number): void { const d = this.draft(); if (d) this.set('override_mask', d.override_mask ^ bit); }
 
@@ -453,7 +524,8 @@ export class AutomationsManagerComponent {
   }
   protected triggerSummary(a: AutomationRecord): string {
     if (a.trigger_type === 'level') return `when source > ${a.level_threshold_pct}%`;
-    const days = a.days_mask === 0 ? 'daily' : DAY_LABELS.filter((_, i) => a.days_mask & (1 << i)).join(' ');
+    const localMask = utcToLocalDayMask(a.days_mask, a.time_min, this.tzOffsetMin());
+    const days = localMask === 0 ? 'daily' : DAY_LABELS.filter((_, i) => localMask & (1 << i)).join(' ');
     return `${this.hhmm(a.time_min)} ${days}`;
   }
   protected overrideSummary(a: AutomationRecord): string {
