@@ -1,6 +1,7 @@
 package migrations
 
 import (
+	"encoding/json"
 	"errors"
 	"regexp"
 	"strings"
@@ -59,7 +60,18 @@ func init() {
 			userToOrg[u.Id] = org.Id
 		}
 
-		// 4. Replace users.partner with a relation to partners and write migrated values.
+		// 4. Clear existing partner values before changing the relation target.
+		// PocketBase validates existing rows when a relation target changes, and the
+		// old values are partner-user ids that won't exist in the new partners
+		// collection. Raw SQL bypasses validation and avoids per-record re-validation.
+		if _, err := app.DB().NewQuery("UPDATE users SET partner = ''").Execute(); err != nil {
+			return err
+		}
+		if _, err := app.DB().NewQuery("UPDATE sites SET partner = '[]'").Execute(); err != nil {
+			return err
+		}
+
+		// 5. Replace users.partner with a relation to partners.
 		users, err := app.FindCollectionByNameOrId("users")
 		if err != nil {
 			return err
@@ -70,6 +82,8 @@ func init() {
 		if err := app.Save(users); err != nil {
 			return err
 		}
+
+		// 6. Write migrated user partner values.
 		for _, u := range allUsers {
 			var newPartner string
 			if u.GetString("role") == "partner" {
@@ -77,26 +91,28 @@ func init() {
 			} else if old := userPartnerOld[u.Id]; old != "" {
 				newPartner = userToOrg[old]
 			}
-			u.Set("partner", newPartner)
-			if err := app.Save(u); err != nil {
+			if newPartner == "" {
+				continue
+			}
+			if _, err := app.DB().NewQuery("UPDATE users SET partner = {:p} WHERE id = {:id}").
+				Bind(dbx.Params{"p": newPartner, "id": u.Id}).Execute(); err != nil {
 				return err
 			}
 		}
 
-		// 5. Replace sites.partner with a relation to partners and write migrated values.
+		// 7. Replace sites.partner with a relation to partners (keep multi-select).
 		sites, err := app.FindCollectionByNameOrId("sites")
 		if err != nil {
 			return err
 		}
-		// Keep multi-select: a site normally has one partner org, but co-owners can
-		// theoretically span orgs, so preserve the existing shape rather than force
-		// data loss.
 		if err := replaceRelationField(sites, "partner", partners.Id, 50); err != nil {
 			return err
 		}
 		if err := app.Save(sites); err != nil {
 			return err
 		}
+
+		// 8. Write migrated site partner values.
 		for _, s := range allSites {
 			oldPartners := sitePartnersOld[s.Id]
 			if len(oldPartners) == 0 {
@@ -115,13 +131,20 @@ func init() {
 				seen[orgID] = struct{}{}
 				newPartners = append(newPartners, orgID)
 			}
-			s.Set("partner", newPartners)
-			if err := app.Save(s); err != nil {
+			if len(newPartners) == 0 {
+				continue
+			}
+			raw, err := json.Marshal(newPartners)
+			if err != nil {
+				return err
+			}
+			if _, err := app.DB().NewQuery("UPDATE sites SET partner = {:p} WHERE id = {:id}").
+				Bind(dbx.Params{"p": string(raw), "id": s.Id}).Execute(); err != nil {
 				return err
 			}
 		}
 
-		// 6. Rewrite collection rules to org-based partner scoping.
+		// 9. Rewrite collection rules to org-based partner scoping.
 		return rewritePartnerRules(app)
 	}, func(app core.App) error {
 		// Down is intentionally unsupported: reverting would require mapping org ids
