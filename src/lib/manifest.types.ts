@@ -1,4 +1,4 @@
-import type { SiteTopology, TopologyNode, NetworkConfig, UartBus, IoProviderDef } from './topology.types';
+import type { SiteTopology, TopologyNode, NetworkConfig, UartBus, IoProviderDef, ControllerLocal } from './topology.types';
 
 // ---------------------------------------------------------------------------
 // Manifest — internal intermediate representation
@@ -21,6 +21,7 @@ export type Device = {
   network?: NetworkConfig;
   uart_buses?: UartBus[];
   io_providers?: IoProviderDef[];
+  local?: ControllerLocal;
 };
 export type Timing = SiteTopology['timing'];
 

@@ -48,4 +48,13 @@ g++ $CXXFLAGS \
 "$OUT/automation_test"
 
 echo
+echo "== local UI framing =="
+g++ $CXXFLAGS \
+  -I firmware/components/maji_local_ui \
+  firmware/components/maji_local_ui/core.cpp \
+  firmware/test/local_ui_frame_test.cpp \
+  -o "$OUT/local_ui_frame_test"
+"$OUT/local_ui_frame_test"
+
+echo
 echo "All host tests passed."

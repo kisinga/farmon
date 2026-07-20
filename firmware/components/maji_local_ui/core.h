@@ -1,0 +1,56 @@
+#pragma once
+// Pure SSE/HTTP-chunk framing + per-client send bookkeeping for maji_local_ui — no
+// esphome, no id(), host-testable (firmware/test/local_ui_frame_test.cpp). The shell
+// (maji_local_ui.cpp) owns the sockets and the slot claim/release flags; this only
+// formats the bytes and tracks how far they got.
+#include <cstddef>
+#include <cstdint>
+#include <string>
+
+namespace maji_localui {
+
+// Frame one single-line SSE event as one HTTP/1.1 chunk (the esp-idf httpd response
+// for an event stream is chunked; each event rides one chunk so a partial send never
+// splits the SSE grammar):
+//
+//   "<hex payload len>\r\n" + "data: " + <message> + "\r\n\r\n" + "\r\n"
+//
+// The snapshot JSON never contains a raw newline (JSON escapes them), so one data:
+// line per event is correct here — there is deliberately no multi-line splitting.
+std::string sse_frame(const std::string &message);
+
+// One SSE client's unsent-frame bookkeeping — the coalesce / partial-send / stall
+// state machine as plain data. All access is main-loop only (the shell's slot flags
+// are the atomic part, not this).
+struct SseSlot {
+  std::string pending;   // framed event not yet fully sent (coalesced)
+  size_t sent{0};        // bytes of pending already written
+  uint16_t failures{0};  // consecutive would-block flushes
+  bool closing{false};   // stall close requested — waiting for httpd's free_ctx
+};
+
+// Coalesce a new snapshot onto the slot: an UNSENT pending frame is replaced (snapshots
+// are full-state re-assertions — only the newest is ever worth sending, and pending RAM
+// stays bounded at one frame per client). A partially-sent one finishes first: swapping
+// mid-chunk would corrupt the stream, and the next snapshot self-heals. A slot waiting
+// on close takes nothing new.
+void sse_offer(SseSlot &s, const std::string &message);
+
+// True while the slot has bytes left to write.
+bool sse_has_pending(const SseSlot &s);
+
+// How one non-blocking write attempt ended.
+enum class SseWrite { kProgress, kBlocked, kFailed };
+
+// What the shell must do after folding a write result in: keep writing this pass, stop
+// until the next loop pass, or close the stalled socket (httpd_sess_trigger_close —
+// the free_ctx callback then releases the slot, the shell never drops it itself).
+enum class SseFlush { kAgain, kWait, kClose };
+
+// Fold one write attempt into the slot (`wrote` is the byte count for kProgress). A
+// kProgress that finishes the frame resets the slot for the next offer. kBlocked past
+// max_failures marks the slot closing and returns kClose — after that the slot's only
+// exit is the destroy callback.
+SseFlush sse_flush_fold(SseSlot &s, SseWrite w, size_t wrote, uint16_t max_failures);
+
+}  // namespace maji_localui

@@ -450,7 +450,7 @@ export function composeEasyMode(input: EasyModeProfile, board?: BoardDef, boardM
 
   // --- assemble ---
   const topology: SiteTopology = {
-    schema: 18,
+    schema: 19,
     controllers: [controller],
     nodes: b.nodes,
     pipes: b.pipes,

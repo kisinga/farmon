@@ -6,6 +6,12 @@ import { featureGuard } from './core/guards/feature.guard';
 const ADMIN = { roles: ['admin'] };
 const MANAGER = { roles: ['admin', 'partner'] };
 
+/**
+ * Cloud routes. The `device` build configuration swaps this whole file for
+ * app.routes.device.ts (angular.json fileReplacements — the same mechanism as
+ * mode.providers.ts), so the cloud-only pages below never reach the device
+ * bundle; this file stays free of any runtime deviceMode branch.
+ */
 export const routes: Routes = [
   {
     // Public landing + tiers. Everything below is auth-guarded.

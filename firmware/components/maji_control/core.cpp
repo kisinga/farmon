@@ -430,16 +430,22 @@ WatchdogResult tick_2s(ControlState &cs, const Inputs &in) {
   return res;
 }
 
+void json_esc_to(char *dst, size_t cap, const char *s) {
+  if (cap == 0)
+    return;
+  size_t o = 0;
+  for (size_t i = 0; s != nullptr && s[i] != '\0' && o + 2 < cap; i++) {
+    char c = s[i];
+    if (c == '"' || c == '\\') { dst[o++] = '\\'; dst[o++] = c; }
+    else if (c >= 0 && c < 0x20) { /* drop control chars */ }
+    else dst[o++] = c;
+  }
+  dst[o] = '\0';
+}
+
 const char *json_esc(const char *s) {
   static char out[160];
-  int o = 0;
-  for (int i = 0; s && s[i] && o < (int) sizeof(out) - 2; i++) {
-    char c = s[i];
-    if (c == '"' || c == '\\') { out[o++] = '\\'; out[o++] = c; }
-    else if (c >= 0 && c < 0x20) { /* drop control chars */ }
-    else out[o++] = c;
-  }
-  out[o] = '\0';
+  json_esc_to(out, sizeof(out), s);
   return out;
 }
 

@@ -6,6 +6,10 @@ tick(), firing triggers through the maji_control engine so the route state machi
 still gates safety. The route_set_version (manifest-derived) is config — the device
 refuses any set authored against a different route table.
 
+The last-good set is persisted to NVS on every successful apply/clear and restored in
+setup() (before the first tick) through the same validation path, so schedules survive
+reboots and power cuts without a broker replay.
+
 Also the holder for the desired-config version round-trip: the server computes an
 opaque version for the retained /config message (runtime tunables + calibration); the
 generated config-apply lambda (mqtt.ts) applies each number and calls

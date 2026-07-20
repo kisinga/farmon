@@ -1,11 +1,25 @@
 #include "maji_automations.h"
 #include "esphome/core/log.h"
 #include <cmath>
+#include <cstring>
+#include <memory>
 
 namespace esphome {
 namespace maji_automations {
 
 static const char *const TAG = "auto";
+
+// --- Fixed POD on-flash form of the last-good automation set -------------------------
+// The raw validated wire blob, length-tagged. ESPHome's ESPPreferenceObject stores any
+// POD as a single NVS blob (same idiom as MeterBlob in maji_control), and ~1.2 KB is
+// comfortably inside NVS blob limits on ESP-IDF — so we use make_preference<POD>
+// instead of dropping to raw esp-idf nvs calls.
+static constexpr uint32_t AUTOS_BLOB_KEY = 0x41555453;  // "AUTS" — preferences hash
+struct AutosBlob {
+  uint32_t magic;
+  uint16_t len;
+  uint8_t data[maji_auto::MAX_AUTOMATION_SET_BYTES];
+};
 
 // Map an automation's sparse run-param override into the control engine's StopSpec.
 static maji_ctl::StopSpec automation_stopspec(const maji_auto::RuntimeAutomation &a) {
@@ -19,7 +33,9 @@ static maji_ctl::StopSpec automation_stopspec(const maji_auto::RuntimeAutomation
   return s;
 }
 
-void MajiAutomations::apply_set(const uint8_t *data, size_t len) {
+void MajiAutomations::apply_set(const uint8_t *data, size_t len) { this->apply_set_(data, len, true); }
+
+void MajiAutomations::apply_set_(const uint8_t *data, size_t len, bool persist) {
   maji_auto::ApplyResult r = maji_auto::apply_set(data, len, route_set_version_, autos_, ids_, count_);
   switch (r) {
     case maji_auto::APPLY_OK:
@@ -55,6 +71,56 @@ void MajiAutomations::apply_set(const uint8_t *data, size_t len) {
       ESP_LOGW(TAG, "Automation set truncated (%u bytes) — ignored", (unsigned) len);
       break;
   }
+  // Persist the new last-good blob on a config push (APPLY_OK / APPLY_CLEARED) — a rare
+  // event, never per-tick, so flash wear is a non-issue. Keep-last-good outcomes leave
+  // both the table and flash untouched. A restore passes persist=false: the blob just
+  // loaded IS the flash content, so rewriting it would only burn an erase cycle per boot.
+  if (persist && maji_auto::persist_needed(r))
+    this->persist_set_(data, len);
+}
+
+void MajiAutomations::setup() {
+  autos_pref_ = global_preferences->make_preference<AutosBlob>(AUTOS_BLOB_KEY);
+  // Runs before any tick(): ESPHome completes all component setup()s before loop()
+  // starts, and tick() is driven by the generated interval inside loop().
+  this->restore_set_();
+}
+
+void MajiAutomations::persist_set_(const uint8_t *data, size_t len) {
+  size_t used = maji_auto::consumed_blob_bytes(data, len);
+  if (used == 0)
+    return;  // defensive: persist_needed already gates this
+  // The broker replays its retained set on every boot and reconnect — skip the save
+  // (and the NVS erase cycle) when flash already holds exactly this blob.
+  if (persisted_blob_.size() == used && memcmp(persisted_blob_.data(), data, used) == 0) {
+    ESP_LOGD(TAG, "Automation set unchanged — skipping flash write");
+    return;
+  }
+  auto bp = std::unique_ptr<AutosBlob>(new AutosBlob());  // ~1.2 KB: heap, not the stack
+  AutosBlob &b = *bp;
+  b.magic = maji_auto::AUTOMATION_FLASH_MAGIC;
+  b.len = (uint16_t) used;
+  memcpy(b.data, data, used);
+  autos_pref_.save(&b);
+  persisted_blob_.assign((const char *) data, used);
+  ESP_LOGD(TAG, "Persisted automation set (%u bytes) to flash", (unsigned) used);
+}
+
+void MajiAutomations::restore_set_() {
+  auto bp = std::unique_ptr<AutosBlob>(new AutosBlob());  // ~1.2 KB: heap, not the stack
+  AutosBlob &b = *bp;
+  if (!autos_pref_.load(&b) || !maji_auto::persisted_blob_valid(b.magic, b.len)) {
+    ESP_LOGI(TAG, "No persisted automation set — empty until the broker replays");
+    return;
+  }
+  ESP_LOGI(TAG, "Restoring persisted automation set (%u bytes)", (unsigned) b.len);
+  // Stash the flash content so a broker replay of the same retained set doesn't trigger
+  // a redundant save (persist_set_ compares against this).
+  persisted_blob_.assign((const char *) b.data, b.len);
+  // Same validation path as an mqtt push: a stale route_set_version is refused and
+  // flagged stale, a good set is applied — the kernel logs the outcome. persist=false:
+  // the loaded blob is already the flash content.
+  this->apply_set_(b.data, b.len, false);
 }
 
 bool MajiAutomations::tick(ESPTime now, bool time_trusted) {

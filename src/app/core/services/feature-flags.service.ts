@@ -1,5 +1,6 @@
 import { Injectable, signal, inject } from '@angular/core';
 import { BackendService } from './backend.service';
+import { DEVICE_MODE } from '../tokens/device-mode';
 
 /**
  * Operator-flipped feature switches from the `feature_flags` collection.
@@ -22,7 +23,9 @@ export class FeatureFlagsService {
   readonly ready: Promise<void>;
 
   constructor() {
-    this.ready = this.load();
+    // Device mode: no PocketBase, no flags — skip the fetch entirely (it would
+    // 404 against the controller). Fail-open already means all-on.
+    this.ready = inject(DEVICE_MODE) ? Promise.resolve() : this.load();
   }
 
   private async load(): Promise<void> {

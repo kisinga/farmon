@@ -74,6 +74,35 @@
               ],
               "outputHashing": "all"
             },
+            "device": {
+              "budgets": [
+                {
+                  "type": "initial",
+                  "maximumWarning": "1MB",
+                  "maximumError": "1.25MB"
+                },
+                {
+                  "type": "anyComponentStyle",
+                  "maximumWarning": "8kB",
+                  "maximumError": "20kB"
+                }
+              ],
+              "outputHashing": "all",
+              "fileReplacements": [
+                {
+                  "replace": "src/environments/environment.ts",
+                  "with": "src/environments/environment.device.ts"
+                },
+                {
+                  "replace": "src/app/mode.providers.ts",
+                  "with": "src/app/mode.providers.device.ts"
+                },
+                {
+                  "replace": "src/app/app.routes.ts",
+                  "with": "src/app/app.routes.device.ts"
+                }
+              ]
+            },
             "development": {
               "optimization": false,
               "extractLicenses": false,
@@ -87,6 +116,9 @@
           "configurations": {
             "production": {
               "buildTarget": "app:build:production"
+            },
+            "device": {
+              "buildTarget": "app:build:device"
             },
             "development": {
               "buildTarget": "app:build:development"

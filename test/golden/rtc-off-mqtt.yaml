@@ -1,0 +1,326 @@
+# =============================================================================
+# MajiFlow — MQTT Runtime
+# =============================================================================
+# AUTO-GENERATED. Replaces Home Assistant as the runtime transport.
+#
+# Reliability model: the device re-asserts ONE state snapshot every interval — the
+# single source of truth. A dropped snapshot self-corrects on the next tick. No
+# one-shot message is load-bearing; the server derives everything else (history,
+# transition timeline, command outcomes) from the snapshot stream.
+#
+# - Snapshot: ONE JSON on majiflow/test-site/default/state every interval — readings
+#   (numbers), text channels, system state, per-route current run (state + origin +
+#   actor), and the recent command outcomes. The server projects it into the latest
+#   doc, batched numeric history (rollups), a derived transition timeline, and
+#   command reconciliation.
+# - Commands:  operator actions arrive as JSON on the command topic (QoS 1 over a
+#   persistent session, so the broker queues across a reconnect; stale ones gated
+#   by issued_at) and dispatch into the route/queue functions (routes.h / control);
+#   each handled command records an outcome that rides the next snapshot.
+# - Status:    retained birth/will on the status topic for online/offline; the
+#   retained identity (chip MAC) is the duplicate-firmware tripwire.
+#
+# Mode: managed. Broker: 127.0.0.1:1883.
+# =============================================================================
+
+mqtt:
+  id: mqtt_client
+  broker: "127.0.0.1"
+  port: 1883
+  username: "default"
+  password: !secret mqtt_token
+  discovery: false
+  # Persistent session (ESPHome's default, pinned here so it's load-bearing by
+  # intent, not by an upstream default): with the QoS 1 command subscription below,
+  # the broker keeps this device's session and queues commands across a reconnect
+  # instead of dropping them — that, plus the issued_at TTL gate, is what kills the
+  # "command lost until you retry" race.
+  clean_session: false
+  # Controller runs local control (routes, safety, UDP peer coordination)
+  # autonomously and is an island when the server is down. An unreachable or
+  # rejecting broker must never reboot it. 0s disables ESPHome's 15-min default.
+  reboot_timeout: 0s
+  # Publish from a dedicated MQTT task, not the main loop. ESPHome republishes
+  # every entity's state on connect; run synchronously on the main loop that
+  # burst can exceed the 5s task watchdog and reboot the controller (relays drop)
+  # — a weak link only widens the window. Async = the loop enqueues and the mqtt
+  # task sends; a stalled link drops messages instead of rebooting. esp-idf/esp32
+  # only, which this firmware targets exclusively (no arduino/esp8266 backend).
+  idf_send_async: true
+  # We publish our own snapshot/status on absolute topics (in the lambdas below).
+  # ESPHome still auto-publishes each entity's state under topic_prefix; we segregate
+  # those under .../esphome/* so they never collide with our scheme (the server's
+  # parsers key on the 4th segment: state / status / identity).
+  # An empty prefix is no longer accepted by ESPHome (cv.publish_topic).
+  topic_prefix: "majiflow/test-site/default/esphome"
+  # Raw log stream gated to WARN+. At DEBUG every log line publishes to .../debug,
+  # and a dropped publish logs an error that is itself published -> a feedback storm
+  # that exhausts heap and reboots. WARN+ keeps real problems on the wire; routine
+  # state rides the structured snapshot topic; UART keeps full detail.
+  log_topic:
+    topic: "majiflow/test-site/default/esphome/debug"
+    level: WARN
+  birth_message:
+    topic: "majiflow/test-site/default/status"
+    payload: "1"
+    retain: true
+  will_message:
+    topic: "majiflow/test-site/default/status"
+    payload: "0"
+    retain: true
+  on_connect:
+    # Retained facts published once per (re)connect:
+    #  - identity (chip base MAC): duplicate-firmware tripwire — the server binds the
+    #    controller to the first MAC it sees and flags a later board reporting a different
+    #    one (same baked identity flashed to two boards). get_mac_address() (not wifi_info)
+    #    so it works on ethernet boards too.
+    #  - reset_reason: why the device last rebooted (POWERON/SW = clean; PANIC/*_WDT =
+    #    firmware crash; BROWNOUT = power-supply fault). Read from the string shadow on the
+    #    dashboard to show the restart cause and who owns it.
+    #  - ip: current device IP, for the dashboard's deep-link to the on-device web log console.
+    - lambda: |-
+        id(mqtt_client).publish("majiflow/test-site/default/identity", get_mac_address(), 0, true);
+  on_json_message:
+    # QoS 1 over the (default) persistent session: the broker queues a command sent
+    # during the device's reconnect window or a brief drop and delivers it on
+    # reconnect, instead of losing it. The issued_at TTL gate (below) discards any
+    # that went stale. The server already publishes commands at QoS 1.
+    - topic: "majiflow/test-site/default/command"
+      qos: 1
+      then:
+        - lambda: |-
+            const char* action = x["action"] | "";
+            const char* command_id = x["command_id"] | "";
+            const char* actor = x["actor"] | "";
+
+            // TTL gate: once time is TRUSTED (a real SNTP sync, not the flash-seeded boot
+            // estimate), drop a command older than the window (e.g. one queued while the link
+            // was down) and report it as STALE. Untrusted clock → skip the gate (fail-open).
+            auto _t = id(sntp_time).now();
+            long long issued_at = x["issued_at"] | 0LL;
+            if (id(time_trusted) && issued_at > 0 && (long long)_t.timestamp - issued_at > 120) {
+              id(control).record_outcome(command_id, "REFUSED", "STALE");
+              return;
+            }
+
+            int route_id = x["route_id"] | -1;
+            if (strcmp(action, "route_start") == 0) {
+              static const char* RS_TO[] = {"", "QUEUED", "REFUSED", "REFUSED", "REFUSED"};
+              static const char* RS_REASON[] = {"", "", "REJECTED", "SOURCE_LOW", "TANK_FULL"};
+              maji_ctl::StopSpec spec{};
+              spec.override_mask = (uint8_t) (x["override_mask"] | 0);
+              spec.ov_source_min_pct = (uint8_t) (x["ov_source_min_pct"] | 0);
+              spec.ov_dest_max_pct = (uint8_t) (x["ov_dest_max_pct"] | 0);
+              spec.ov_max_runtime_min = (uint16_t) (x["ov_max_runtime_min"] | 0);
+              spec.ov_target_duration_s = (uint16_t) (x["ov_target_duration_s"] | 0);
+              spec.ov_target_volume_l = (uint32_t) (x["ov_target_volume_l"] | 0);
+              int rc = id(control).start_route(route_id, command_id, spec, maji_ctl::ORIGIN_MANUAL, actor);
+              id(control).record_outcome(command_id, rc == 0 ? "APPLIED" : RS_TO[rc], rc == 0 ? "" : RS_REASON[rc]);
+            } else if (strcmp(action, "route_stop") == 0) {
+              static const char* RST_REASON[] = {"", "NOT_ACTIVE", "NOT_RUNNING"};
+              int rc = id(control).stop_route(route_id, command_id, maji_ctl::ORIGIN_MANUAL, actor);
+              id(control).record_outcome(command_id, rc == 0 ? "APPLIED" : "REFUSED", rc == 0 ? "" : RST_REASON[rc]);
+            } else if (strcmp(action, "fault_reset") == 0) {
+              id(control).fault_reset(route_id); id(system_state) = id(control).system_state();
+              id(control).record_outcome(command_id, "APPLIED", "");
+            } else if (strcmp(action, "stop_all") == 0) {
+              id(btn_stop_all).press(); id(control).record_outcome(command_id, "APPLIED", "");
+            } else if (strcmp(action, "reset_faults") == 0) {
+              id(btn_reset_faults).press(); id(control).record_outcome(command_id, "APPLIED", "");
+            } else if (strcmp(action, "clear_queue") == 0) {
+              id(btn_clear_queue).press(); id(control).record_outcome(command_id, "APPLIED", "");
+            } else if (strcmp(action, "node_set") == 0) {
+              // Manual claim/release via the dead-man registry the reconciler honours. A pump
+              // claim is GUARDED (manual_pump_precheck: source-low / dry-run-unprotectable) and
+              // reports a NODE_SET outcome; a valve claim just opens it; release always applies.
+              static const char* NS_TO[] = {"APPLIED", "REFUSED", "REFUSED", "REJECTED"};
+              static const char* NS_REASON[] = {"", "SOURCE_LOW", "NO_FLOW", ""};
+              const char* node_id = x["node_id"] | "";
+              bool on = x["on"] | false;
+              if (node_id[0] == 0) {
+                // no node id — ignore
+              } else if (!on) {
+                int k = id(control).manual_slot(node_id);
+                id(claims).drop(node_id, "manual");
+                if (k >= 0) id(control).manual_clear_latch(k);
+                id(control).record_outcome(command_id, NS_TO[0], NS_REASON[0]);
+              } else {
+                int k = id(control).manual_slot(node_id);
+                if (k >= 0) {
+                  int rc = id(control).manual_precheck(k);   // 0 ok, 1 source-low, 2 no local flow sensor
+                  if (rc == 0) id(claims).extend(node_id, "manual");
+                  id(control).record_outcome(command_id, NS_TO[rc], NS_REASON[rc]);
+                } else if (id(claims).is_valve_node(node_id)) {
+                  id(claims).extend(node_id, "manual");
+                  id(control).record_outcome(command_id, NS_TO[0], NS_REASON[0]);
+                } else {
+                  id(control).record_outcome(command_id, NS_TO[3], NS_REASON[3]);  // no local actuator
+                }
+              }
+            } else if (strcmp(action, "safety_override") == 0) {
+              if (x["on"] | false) id(safety_override).turn_on(); else id(safety_override).turn_off();
+              id(control).record_outcome(command_id, "APPLIED", "");
+            } else if (strcmp(action, "firmware_update") == 0) {
+              // OTA pull: fetch + flash the image at `url`, verifying it against `md5` (which
+              // arrived over this cert-pinned, TTL-gated lane — the integrity anchor, so the
+              // download channel itself need not be trusted). Idempotent: if we already run the
+              // target version, ack without reflashing. The url/md5 hop through globals because
+              // ota.http_request.flash takes them at runtime via the do_ota_flash script.
+              const char* url = x["url"] | "";
+              const char* md5 = x["md5"] | "";
+              const char* version = x["version"] | "";
+              if (url[0] == 0 || md5[0] == 0) {
+                id(control).record_outcome(command_id, "REFUSED", "BAD_PARAMS");
+              } else if (strcmp(version, id(majiflow_generation_version).state.c_str()) == 0) {
+                id(control).record_outcome(command_id, "APPLIED", "ALREADY");
+              } else {
+                id(ota_url) = url;
+                id(ota_md5) = md5;
+                id(control).record_outcome(command_id, "APPLIED", "");  // ack before the flash reboots us
+                id(do_ota_flash).execute();
+              }
+            } else {
+              ESP_LOGW("cmd", "unknown action: %s", action);
+              return;  // nothing handled — no outcome to fast-path
+            }
+            // Fast-path hint: publish a snapshot now so the dashboard sees this command outcome
+            // + current state immediately, not on the next periodic interval. A dropped publish
+            // self-heals on the next interval (the snapshot stays the single source of truth).
+            id(publish_snapshot).execute();
+    # Retained desired-config (JSON). The server owns it (runtime tunables +
+    # calibration) and republishes it retained on a change; a (re)connecting device
+    # replays the current one. The device applies each enumerated number from the
+    # 'config' kv and stores the opaque 'version' to round-trip as config_version —
+    # it never hashes. QoS 1 so the change isn't lost across a brief drop.
+    - topic: "majiflow/test-site/default/config"
+      qos: 1
+      then:
+        - lambda: |-
+            // `x` is the parsed object; `cfg` is the nested desired-config kv. Each apply line
+            // only fires when the key is present and numeric (a partial config never zeroes a
+            // value), so it is safe even if `config` is absent (every is<float>() is then false).
+            auto cfg = x["config"];
+            if (cfg["flow_watchdog_s"].is<float>()) { id(flow_watchdog_s).make_call().set_value(cfg["flow_watchdog_s"].as<float>()).perform(); }
+            if (cfg["flow_confirm_s"].is<float>()) { id(flow_confirm_s).make_call().set_value(cfg["flow_confirm_s"].as<float>()).perform(); }
+            if (cfg["flow_threshold_l_min"].is<float>()) { id(flow_threshold_l_min).make_call().set_value(cfg["flow_threshold_l_min"].as<float>()).perform(); }
+            if (cfg["claim_lease_s"].is<float>()) { id(claim_lease_s).make_call().set_value(cfg["claim_lease_s"].as<float>()).perform(); }
+            if (cfg["route_0_max_runtime"].is<float>()) { id(route_0_max_runtime).make_call().set_value(cfg["route_0_max_runtime"].as<float>()).perform(); }
+            if (cfg["route_0_target_duration_s"].is<float>()) { id(route_0_target_duration_s).make_call().set_value(cfg["route_0_target_duration_s"].as<float>()).perform(); }
+            if (cfg["route_0_flow_stall_enable"].is<float>()) { id(route_0_flow_stall_enable).make_call().set_value(cfg["route_0_flow_stall_enable"].as<float>()).perform(); }
+            if (cfg["route_0_target_volume_l"].is<float>()) { id(route_0_target_volume_l).make_call().set_value(cfg["route_0_target_volume_l"].as<float>()).perform(); }
+            if (cfg["route_0_source_min_pct"].is<float>()) { id(route_0_source_min_pct).make_call().set_value(cfg["route_0_source_min_pct"].as<float>()).perform(); }
+            if (cfg["tank1_cal_empty"].is<float>()) { id(tank1_cal_empty).make_call().set_value(cfg["tank1_cal_empty"].as<float>()).perform(); }
+            if (cfg["tank1_cal_full"].is<float>()) { id(tank1_cal_full).make_call().set_value(cfg["tank1_cal_full"].as<float>()).perform(); }
+            if (cfg["valve1_travel_s"].is<float>()) { id(valve1_travel_s).make_call().set_value(cfg["valve1_travel_s"].as<float>()).perform(); }
+            const char* version = x["version"] | "";
+            id(autos).set_config_version(version);
+            // Fast-path hint: publish a snapshot now so the server confirms the applied
+            // config_version immediately, not on the next periodic interval (self-heals if dropped).
+            id(publish_snapshot).execute();
+  on_message:
+    # Retained automation set (packed binary). Delivered on connect (retained
+    # replay) and on every server-side change. The maji_automations component
+    # validates magic + route_set_version and memcpy's it into the runtime table.
+    - topic: "majiflow/test-site/default/automations"
+      qos: 1
+      then:
+        - lambda: |-
+            id(autos).apply_set((const uint8_t *) x.data(), x.size());
+    # Retained billing-run acknowledgement: "epoch:seq" high-water-mark. The device drops
+    # every confirmed run from its durable outbox. Delivered on connect (retained replay)
+    # and after each batch the server persists.
+    - topic: "majiflow/test-site/default/runs_ack"
+      qos: 1
+      then:
+        - lambda: |-
+            unsigned int e = 0, sq = 0;
+            if (sscanf(x.c_str(), "%u:%u", &e, &sq) == 2) id(control).meter_on_ack(e, sq);
+
+time:
+  - platform: sntp
+    id: sntp_time
+    on_time_sync:
+      - then:
+          - lambda: 'id(time_trusted) = true;'
+
+interval:
+  # Snapshot: publish the whole controller state every update interval while
+  # connected. Re-asserted (self-healing) — the single source of truth; the server
+  # projects it. No separate per-sensor or transition-event publishing.
+  - interval: ${update_interval}
+    then:
+      - script.execute: publish_snapshot
+
+# --- OTA pull (firmware_update command) --------------------------------------
+# The command handler stows the image url + md5 here, then runs do_ota_flash.
+# ota.http_request.flash takes the url/md5 at runtime, so the lambda can't pass
+# them inline — the global + script hop is ESPHome's idiom for a dynamic OTA.
+globals:
+  - id: ota_url
+    type: std::string
+  - id: ota_md5
+    type: std::string
+
+script:
+  # Build + publish the full state snapshot. Run on the periodic interval AND
+  # immediately after each handled command (fast-path hint). mode: single — the
+  # interval and a command never run concurrently (one main loop) and a dropped
+  # duplicate self-heals on the next interval.
+  - id: publish_snapshot
+    mode: single
+    then:
+      - lambda: |-
+          auto *mc = id(mqtt_client);
+          if (!mc->is_connected()) return;
+          auto &cs = id(control).state();  // slots / route attribution / outcomes
+          static const char* SYS_TOK[] = {"IDLE", "PREPARING", "RUNNING", "STOPPING", "FAULT"};
+          static const char* STOP_TOK[] = {"NONE", "MANUAL", "TANK_FULL", "NO_FLOW", "MAX_RUNTIME", "CONTROL_LOST", "SOURCE_LOW", "VOLUME_REACHED", "DURATION_REACHED", "FLOW_STALLED"};
+          static const char* FAULT_TOK[] = {"NONE", "NO_FLOW", "MAX_RUNTIME", "CONTROL_LOST"};
+          static const char* ORIGIN_TOK[] = {"SYSTEM", "MANUAL", "AUTOMATION"};
+          static const char* RR_TOK[] = {"UNKNOWN", "POWERON", "EXT", "SW", "PANIC", "INT_WDT", "TASK_WDT", "WDT", "DEEPSLEEP", "BROWNOUT", "SDIO"};
+          static char buf[3924];
+          int n = 0;
+          bool first = true;
+          auto sep = [&]() -> const char* { const char* s = first ? "" : ","; first = false; return s; };
+          auto put = [&](int w) { int rem = (int) sizeof(buf) - n; if (w < 0) w = 0; n += (w < rem) ? w : (rem > 0 ? rem - 1 : 0); };
+          long long ts = id(time_trusted) ? (long long) id(sntp_time).now().timestamp : 0;
+          put(snprintf(buf+n, sizeof(buf)-n, "{\"ts\":%lld,\"readings\":{", ts));
+          if (!std::isnan(id(tank1_level).state)) put(snprintf(buf+n, sizeof(buf)-n, "%s\"tank1_level\":%g", sep(), id(tank1_level).state));
+          if (!std::isnan(id(valve1).position)) put(snprintf(buf+n, sizeof(buf)-n, "%s\"valve1\":%g", sep(), id(valve1).position));
+          put(snprintf(buf+n, sizeof(buf)-n, "%s\"pump_relay\":%d", sep(), id(pump_relay).state ? 1 : 0));
+          if (!std::isnan(id(flow1).state)) put(snprintf(buf+n, sizeof(buf)-n, "%s\"flow1\":%g", sep(), id(flow1).state));
+          if (!std::isnan(id(flow1_total).state)) put(snprintf(buf+n, sizeof(buf)-n, "%s\"flow1_total\":%g", sep(), id(flow1_total).state));
+          put(snprintf(buf+n, sizeof(buf)-n, "%s\"heap_free\":%u", sep(), (unsigned) esp_get_free_heap_size()));
+          put(snprintf(buf+n, sizeof(buf)-n, "%s\"heap_min\":%u", sep(), (unsigned) esp_get_minimum_free_heap_size()));
+          put(snprintf(buf+n, sizeof(buf)-n, "%s\"heap_total\":%u", sep(), (unsigned) heap_caps_get_total_size(MALLOC_CAP_DEFAULT)));
+          if (!std::isnan(id(uptime_sec).state)) put(snprintf(buf+n, sizeof(buf)-n, "%s\"uptime\":%g", sep(), id(uptime_sec).state));
+          if (!std::isnan(id(esp_temp).state)) put(snprintf(buf+n, sizeof(buf)-n, "%s\"esp_temp\":%g", sep(), id(esp_temp).state));
+          put(snprintf(buf+n, sizeof(buf)-n, "},\"text\":{"));
+          first = true;
+          { static const char* TT[] = {"NONE", "MANUAL", "TANK_FULL", "NO_FLOW", "MAX_RUNTIME", "CONTROL_LOST", "SOURCE_LOW", "VOLUME_REACHED", "DURATION_REACHED", "FLOW_STALLED"}; int v = id(stop_reason); if (v >= 0 && v < 10) put(snprintf(buf+n, sizeof(buf)-n, "%s\"stop_reason\":\"%s\"", sep(), TT[v])); }
+          if (id(route_queue_text).state.length()) put(snprintf(buf+n, sizeof(buf)-n, "%s\"route_queue\":\"%s\"", sep(), maji_ctl::json_esc(id(route_queue_text).state.c_str())));
+          { int rr = (int) esp_reset_reason(); put(snprintf(buf+n, sizeof(buf)-n, "%s\"reset_reason\":\"%s\"", sep(), (rr >= 0 && rr < 11) ? RR_TOK[rr] : "UNKNOWN")); }
+          if (id(ip_addr).state.length()) put(snprintf(buf+n, sizeof(buf)-n, "%s\"ip\":\"%s\"", sep(), maji_ctl::json_esc(id(ip_addr).state.c_str())));
+          // Running firmware version (metadata sensor) — the server confirms an OTA release
+          // once the device re-reports the version it was told to flash (see reconcileFirmware).
+          if (id(majiflow_generation_version).state.length()) put(snprintf(buf+n, sizeof(buf)-n, "%s\"fw_version\":\"%s\"", sep(), maji_ctl::json_esc(id(majiflow_generation_version).state.c_str())));
+          // Applied desired-config version: the opaque string the server published on the
+          // config topic, round-tripped verbatim (the device never hashes). The server
+          // compares it against the version it currently publishes to reconcile desired vs
+          // applied config. Empty until the first retained /config message is applied.
+          if (id(autos).config_version().length()) put(snprintf(buf+n, sizeof(buf)-n, "%s\"config_version\":\"%s\"", sep(), maji_ctl::json_esc(id(autos).config_version().c_str())));
+          put(snprintf(buf+n, sizeof(buf)-n, "},\"system\":{\"state\":\"%s\",\"queue\":%d,\"safety\":%s},\"routes\":[", (id(system_state) >= 0 && id(system_state) < 5) ? SYS_TOK[id(system_state)] : "", (int) id(queue_depth).state, id(safety_override).state ? "true" : "false"));
+          first = true;
+          { int s = maji_ctl::find_slot_by_route(cs, 0); int st = (s >= 0) ? cs.slots[s].state : 0; const char* o = (cs.route_origin[0] < 3) ? ORIGIN_TOK[cs.route_origin[0]] : "SYSTEM"; const char* ac = cs.route_actor[0].c_str(); const char* rs = ""; if (s >= 0) { if (st == 4) { int f = cs.slots[s].fault_code; if (f >= 0 && f < 4) rs = FAULT_TOK[f]; } else if (st == 3 || st == 0) { int r = cs.slots[s].stop_reason; if (r >= 0 && r < 10) rs = STOP_TOK[r]; } } put(snprintf(buf+n, sizeof(buf)-n, "%s{\"id\":0,\"state\":\"%s\",\"origin\":\"%s\",\"actor\":\"%s\",\"reason\":\"%s\"", sep(), (st >= 0 && st < 5) ? SYS_TOK[st] : "", o, ac, rs)); if (st == 2) { auto lv = id(control).route_live(s); put(snprintf(buf+n, sizeof(buf)-n, ",\"live\":{\"del\":%d,\"dur\":%u,\"tv\":%u,\"td\":%u,\"tl\":%d}", (int) lv.delivered_l, (unsigned) lv.elapsed_s, (unsigned) lv.target_vol_l, (unsigned) lv.target_dur_s, (int) lv.target_lvl_pct)); } put(snprintf(buf+n, sizeof(buf)-n, "}")); }
+          put(snprintf(buf+n, sizeof(buf)-n, "],\"outcomes\":["));
+          first = true;
+          for (int k = 0; k < maji_ctl::MAX_OUTCOMES; k++) { if (!cs.outcomes[k].command_id.empty()) put(snprintf(buf+n, sizeof(buf)-n, "%s{\"command_id\":\"%s\",\"result\":\"%s\",\"reason\":\"%s\"}", sep(), cs.outcomes[k].command_id.c_str(), cs.outcomes[k].result.c_str(), cs.outcomes[k].reason.c_str())); }
+          put(snprintf(buf+n, sizeof(buf)-n, "],\"runs\":["));
+          put(id(control).meter_runs_json(buf + n, (int) sizeof(buf) - n));
+          put(snprintf(buf+n, sizeof(buf)-n, "]}"));
+          mc->publish("majiflow/test-site/default/state", buf);
+  - id: do_ota_flash
+    then:
+      - ota.http_request.flash:
+          url: !lambda 'return id(ota_url);'
+          md5: !lambda 'return id(ota_md5);'

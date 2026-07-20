@@ -4,6 +4,8 @@ import type { Manifest } from '@core';
 import { nodesWithFlag } from '@core';
 import type { CollectedCodegen } from "./collect";
 import type { GenerationMetadata } from "../backends/types";
+import { hasLocalInputs } from "../../local-buttons";
+import { hasRtcClock } from "./mqtt";
 
 /**
  * Generate the ESPHome device YAML from board definition + system manifest.
@@ -85,11 +87,14 @@ export function generateDeviceYaml(
 
   // Safe defaults (always). Slot init + boot valve-close now live in the maji_control
   // component's setup(); here we only seed the status globals + the persisted clock.
+  const rtc = hasRtcClock(m, board);
   const initVars = [
     "id(system_state) = 0;",
     "id(active_slot) = -1;",
     '// stop_reason intentionally NOT reset — survives reboot',
-    'seed_clock_from_persisted();  // restore wall clock from flash before SNTP (no RTC)',
+    rtc
+      ? 'seed_clock_from_persisted();  // flash estimate — the ds1307 boot read overrides it when the RTC answers'
+      : 'seed_clock_from_persisted();  // restore wall clock from flash before SNTP (no RTC)',
     'ESP_LOGI("ctrl", "Boot complete — IDLE");',
   ].join("\n");
 
@@ -103,6 +108,18 @@ export function generateDeviceYaml(
     priority: -100,
     then: bootActions,
   });
+
+  // Optional DS3231 RTC (local.rtc): restore the wall clock from the chip. Runs AFTER
+  // the persisted-clock seed above (on_boot runs higher priorities first), so the
+  // seed's estimate never clobbers real RTC time. A dead/absent chip fails the I2C
+  // read (component already marked failed at setup) — this logs and moves on;
+  // time_trusted stays false until SNTP syncs.
+  if (hasRtcClock(m, board)) {
+    bootSteps.push({
+      priority: -200,
+      then: [{ "ds1307.read_time": "rtc_time" }],
+    });
+  }
 
   // --- OLED display (only if board has one) ---
   const displayBlock = hasOled
@@ -150,6 +167,18 @@ export function generateDeviceYaml(
   lines.push("  coordination: !include packages/coordination.yaml");
   lines.push("  time_sync: !include packages/time-sync.yaml");
   lines.push("  automation_engine: !include packages/automation-engine.yaml");
+  // Panel buttons ride the board's input expanders — only on boards that have them.
+  // Cheap predicate: generate.ts renders the block itself when this is true.
+  if (hasLocalInputs(m, board)) {
+    lines.push("  local_inputs: !include packages/local-inputs.yaml");
+  }
+  // On-device operator dashboard (maji_local_ui) — replaces the stock web_server
+  // page when the topology's local.ui flag is on (networking.ts emits the shared
+  // web_server_base it binds to).
+  const localUi = m.device.local?.ui === true;
+  if (localUi) {
+    lines.push("  local_ui: !include packages/local-ui.yaml");
+  }
   if (metadata) {
     lines.push("  metadata: !include packages/metadata.yaml");
   }
@@ -205,8 +234,16 @@ export function generateDeviceYaml(
   // Route state machine + watchdog run in the maji_control external component (config in
   // packages/route-engine.yaml); the runtime automation engine in maji_automations
   // (config in packages/automation-engine.yaml). Both are vendored external_components.
-  // Persisted-clock boot seed (no-RTC time across reboots) is the one remaining header.
+  // Persisted-clock boot seed (wall-clock estimate across reboots; an optional DS3231
+  // RTC — local.rtc — overrides it, see the ds1307 block in mqtt.ts) is the one
+  // remaining header.
   lines.push("    - packages/time-sync.h");
+  // local-ui-assets.h (gzipped app bundle) is included here but WIRED by the on_boot
+  // glue in packages/local-ui.yaml (id(local_ui).set_index_asset) — the component
+  // itself never includes generated headers.
+  if (localUi) {
+    lines.push("    - packages/local-ui-assets.h");
+  }
   lines.push("  on_boot:");
   for (const step of bootSteps) {
     const s = step as { priority: number; then: unknown[] };

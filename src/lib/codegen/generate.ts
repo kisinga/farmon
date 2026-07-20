@@ -10,6 +10,8 @@ import { generateMqtt } from "./generators/mqtt";
 import { generateAutomationEngineConfig } from "./generators/automation-engine";
 import { generateCoordination } from "./generators/coordination";
 import { generateTimeSync, generateTimeSyncHeader } from "./generators/time-sync";
+import { generateLocalInputs } from "./generators/local-inputs";
+import { generateLocalUiYaml, generateLocalUiAssetsHeader } from "./generators/local-ui";
 
 import { collectEntityCodegen } from "./generators/collect";
 import { LOGO_SVG, FIRMWARE_COMPONENT_FILES } from '@core';
@@ -237,12 +239,18 @@ export function generateEsphome(
   const dir = m.device.directory ?? m.device.name;
   const deviceDir = `${siteRoot(siteId)}/esphome/${dir}`;
   const collected = collectEntityCodegen(m, board, expansionBoards, metadata);
+  // Panel buttons — null on boards without input expanders; the device YAML
+  // gates its package include on the matching hasLocalInputs predicate.
+  const localInputs = generateLocalInputs(m, board);
+  // On-device operator dashboard (maji_local_ui) — swaps web_server v3 for a bare
+  // web_server_base the component serves on, and adds the package + app bundle below.
+  const localUi = m.device.local?.ui === true;
 
   const files: GeneratedFile[] = [
     {
       relativePath: `${deviceDir}/common/board.yaml`,
       description: `${board.label} board package (buses, battery, LED, diagnostics)`,
-      content: internalizeEntities(generateBoardPackage(board, m.device.network)),
+      content: internalizeEntities(generateBoardPackage(board, m.device.network, localUi)),
     },
     {
       relativePath: `${deviceDir}/common/images/logo.svg`,
@@ -267,8 +275,17 @@ export function generateEsphome(
     {
       relativePath: `${deviceDir}/packages/mqtt.yaml`,
       description: "MQTT runtime: telemetry publish, command subscribe, status",
-      content: generateMqtt(m, metadata, board),
+      content: generateMqtt(m, metadata, board, localUi),
     },
+    ...(localUi ? [{
+      relativePath: `${deviceDir}/packages/local-ui.yaml`,
+      description: "On-device operator dashboard (maji_local_ui endpoints + handler glue)",
+      content: generateLocalUiYaml(m),
+    }, {
+      relativePath: `${deviceDir}/packages/local-ui-assets.h`,
+      description: "Gzipped local-UI app bundle served at GET / (placeholder page)",
+      content: generateLocalUiAssetsHeader(m),
+    }] : []),
     {
       relativePath: `${deviceDir}/packages/route-engine.yaml`,
       description: "Route control engine config (route table + entity bindings for maji_control)",
@@ -286,7 +303,7 @@ export function generateEsphome(
     },
     {
       relativePath: `${deviceDir}/packages/time-sync.h`,
-      description: "C++ persisted-clock boot seed (no-RTC time across reboots)",
+      description: "C++ persisted-clock boot seed (wall-clock estimate across reboots; RTC overrides when fitted)",
       content: generateTimeSyncHeader(metadata),
     },
     {
@@ -299,6 +316,11 @@ export function generateEsphome(
       description: "Pump relay, valve switches + covers",
       content: internalizeEntities(generateHardware(m, collected)),
     },
+    ...(localInputs ? [{
+      relativePath: `${deviceDir}/packages/local-inputs.yaml`,
+      description: "Panel buttons on the board's digital inputs (route start / stop all)",
+      content: internalizeEntities(localInputs),
+    }] : []),
     {
       relativePath: `${deviceDir}/packages/sensors.yaml`,
       description: "Flow sensors, tank levels, calibration, state text",

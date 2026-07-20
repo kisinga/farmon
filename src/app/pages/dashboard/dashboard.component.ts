@@ -16,6 +16,7 @@ import { ControllerHealthComponent } from './widgets/controller-health.component
 import { HealthHistoryComponent } from './widgets/health-history.component';
 import { LiveMapComponent } from './canvas/live-map.component';
 import { CONTROLLER_PALETTE } from '../../core/util/site-colors';
+import { DEVICE_MODE } from '../../core/tokens/device-mode';
 import type { SiteTopology } from '../../core/models/topology.model';
 import type { RouteControl, StopSpecOverride } from '@core';
 
@@ -59,21 +60,25 @@ interface DashSection { id: string; label: string; widgets: DashboardWidget[] }
           <span class="badge badge-sm gap-1 shrink-0" [class]="controlEnabled() ? 'badge-warning' : 'badge-info'">{{ controlEnabled() ? 'Controlling' : 'Read-only' }}</span>
         }
         <app-controller-health />
-        <!-- Automations + Setup: quiet icon actions slotted in beside Docs (they
-             render with display:contents, so they sit directly in this flex row). -->
-        @if (siteId) {
-          <app-site-controls [siteId]="siteId" [canControl]="canControl()" />
-        }
-        <button class="btn btn-sm btn-ghost gap-1.5 shrink-0" (click)="openDocs()" [disabled]="docBusy()"
-                title="Open this site's documentation" aria-label="Open documentation">
-          @if (docBusy()) { <span class="loading loading-spinner loading-xs"></span> }
-          @else {
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
-            </svg>
+        <!-- Automations + Setup + Docs are cloud-backed (PocketBase collections /
+             doc builder) — hidden in the device build. -->
+        @if (!deviceMode) {
+          <!-- Automations + Setup: quiet icon actions slotted in beside Docs (they
+               render with display:contents, so they sit directly in this flex row). -->
+          @if (siteId) {
+            <app-site-controls [siteId]="siteId" [canControl]="canControl()" />
           }
-          <span class="hidden sm:inline">Docs</span>
-        </button>
+          <button class="btn btn-sm btn-ghost gap-1.5 shrink-0" (click)="openDocs()" [disabled]="docBusy()"
+                  title="Open this site's documentation" aria-label="Open documentation">
+            @if (docBusy()) { <span class="loading loading-spinner loading-xs"></span> }
+            @else {
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+              </svg>
+            }
+            <span class="hidden sm:inline">Docs</span>
+          </button>
+        }
         </div>
       </div>
 
@@ -348,8 +353,9 @@ interface DashSection { id: string; label: string; widgets: DashboardWidget[] }
           <ng-container [ngTemplateOutlet]="cardSection" [ngTemplateOutletContext]="{ $implicit: section }" />
         }
 
-        <!-- Reporting zone: usage summary above the activity detail log. -->
-        @if (hasRoutes()) {
+        <!-- Reporting zone: usage summary above the activity detail log. Cloud-only
+             (the /usage facade + the audit feeds have no device endpoint). -->
+        @if (hasRoutes() && !deviceMode) {
           <section class="mb-6">
             <h2 class="section-label mb-3">Water usage</h2>
             <app-usage-totals [spec]="store.spec()" />
@@ -362,7 +368,9 @@ interface DashSection { id: string; label: string; widgets: DashboardWidget[] }
         <!-- Device health history — diagnostic, so it sits at the foot of the
              Reporting zone, collapsed by default (same idiom as the flow charts /
              monitor routes). WiFi / RAM / temp / uptime read the same telemetry tiers
-             as the trend charts; the panel lazy-loads on first open. -->
+             as the trend charts; the panel lazy-loads on first open. Cloud-only:
+             the device keeps no telemetry tiers. -->
+        @if (!deviceMode) {
         <section class="mb-6">
           <button type="button"
             class="flex items-center gap-2 mb-3 w-full text-left group"
@@ -378,6 +386,7 @@ interface DashSection { id: string; label: string; widgets: DashboardWidget[] }
             <app-health-history class="dash-reveal" [siteId]="siteId" />
           }
         </section>
+        }
       }
     </div>
   `,
@@ -389,6 +398,12 @@ export class DashboardComponent {
   protected store = inject(DashboardStore);
   protected telemetry = inject(TelemetryStore);
   protected lifecycle = inject(CommandLifecycleStore);
+
+  /** Device-mode build (served from the controller's flash): the cloud-only
+   *  surfaces — history charts, water usage, activity feed, health history,
+   *  automations/setup, docs — are hidden; routes, tank levels, the live map and
+   *  command tracking stay. */
+  protected deviceMode = inject(DEVICE_MODE);
 
   protected siteId = '';
   protected siteName = signal('');
@@ -423,15 +438,19 @@ export class DashboardComponent {
    *  usage totals (it's a look-back log, not a live trend). Without a topology there's
    *  no System view, so the absorbed sections fall through here (activity still does not). */
   protected layout = computed<DashSection[]>(() => {
+    // Device mode renders no history charts (flow/pressure read the telemetry
+    // tiers, which don't exist on the device) — echarts never loads.
+    if (this.deviceMode) return [];
     const secs = this.sections().filter((s) => s.id !== 'activity');
     if (!this.topology()) return secs;
     return secs.filter((section) => !DashboardComponent.MAP_ABSORBS.has(section.id));
   });
 
   /** The activity log section(s), rendered at the bottom of the Reporting zone
-   *  (below the usage totals: summary above detail). */
+   *  (below the usage totals: summary above detail). Cloud-only: the device keeps
+   *  no transition/command/config audit log. */
   protected activitySections = computed<DashSection[]>(() =>
-    this.sections().filter((s) => s.id === 'activity'));
+    this.deviceMode ? [] : this.sections().filter((s) => s.id === 'activity'));
 
   /** Building/opening the site documentation. */
   protected docBusy = signal(false);
@@ -720,8 +739,11 @@ export class DashboardComponent {
     await this.store.init(this.siteId, spec, { update_interval: topo.timing.update_interval }, site.owners ?? [], site.people ?? []);
     // Backfill history for the charted widgets (line + flow rate). Each uses its
     // own remembered span (telemetry.load defaults to the widget's stored span).
-    for (const w of spec.widgets) {
-      if (w.kind === 'line' || w.kind === 'flow') void this.telemetry.load(this.siteId, w);
+    // Device mode has no history endpoint — nothing to backfill.
+    if (!this.deviceMode) {
+      for (const w of spec.widgets) {
+        if (w.kind === 'line' || w.kind === 'flow') void this.telemetry.load(this.siteId, w);
+      }
     }
   }
 

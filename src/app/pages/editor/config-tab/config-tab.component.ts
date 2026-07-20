@@ -5,7 +5,8 @@ import { BoardService } from '../../../core/services/board.service';
 import { peripheralIconPath, peripheralLabel, peripheralDescription } from '../../../core/models/peripheral-icons';
 import { BoardSvgComponent } from '../../../shared/board-svg/board-svg.component';
 import { NODE_REGISTRY, TimingSchema, DeviceSchema, IoProviderDefSchema, COMPONENT_ID_POLICY } from '@core';
-import type { UartBus, IoProviderInstanceConfig } from '@core';
+import { boardInputPins, resolveButtonAssignments, topologyToManifestForController } from '@core';
+import type { UartBus, IoProviderInstanceConfig, LocalButton } from '@core';
 import { ZodInputComponent } from '../../../shared/zod-input/zod-input.component';
 import { SectionHeaderComponent } from '../shared/section-header.component';
 
@@ -275,6 +276,50 @@ const TIMING_FIELDS: TimingField[] = [
           </div>
         </div>
 
+        <!-- Panel Buttons (only on boards with digital-input expanders) -->
+        @if (inputPins().length > 0) {
+          <div class="card surface">
+            <div class="card-body gap-4">
+              <div class="flex items-center justify-between">
+                <h2 class="card-title text-base">Panel Buttons</h2>
+                @if (customButtonMapping()) {
+                  <button class="btn btn-ghost btn-xs" (click)="resetButtonMapping()">Reset to automatic</button>
+                }
+              </div>
+              <p class="text-sm text-base-content/50">
+                Physical buttons on the board's digital inputs. Route buttons toggle start/stop.
+                {{ customButtonMapping() ? 'Custom mapping — it overrides the automatic assignment.' : 'Automatic: Stop All on the first input, routes in order after it.' }}
+              </p>
+              <div class="divide-y divide-base-300/30">
+                <div class="flex items-center gap-4 py-2">
+                  <span class="flex-1 text-sm font-medium">Stop All</span>
+                  <select class="select select-xs select-bordered font-mono w-24"
+                    [ngModel]="buttonInputForStopAll()"
+                    (ngModelChange)="setButtonInput('stop_all', null, $event)">
+                    <option value="">—</option>
+                    @for (p of inputPins(); track p) {
+                      <option [value]="p">{{ p }}</option>
+                    }
+                  </select>
+                </div>
+                @for (r of panelRoutes(); track r.key; let i = $index) {
+                  <div class="flex items-center gap-4 py-2">
+                    <span class="flex-1 text-sm">Start / stop {{ r.name }}</span>
+                    <select class="select select-xs select-bordered font-mono w-24"
+                      [ngModel]="buttonInputForRoute(i)"
+                      (ngModelChange)="setButtonInput('route_start', r.key, $event)">
+                      <option value="">—</option>
+                      @for (p of inputPins(); track p) {
+                        <option [value]="p">{{ p }}</option>
+                      }
+                    </select>
+                  </div>
+                }
+              </div>
+            </div>
+          </div>
+        }
+
         <!-- Timing & Safety Constants -->
         <div>
           <h2 class="text-lg font-semibold">Timing & Safety Constants</h2>
@@ -437,6 +482,74 @@ export class ConfigTabComponent {
   updateTiming(key: string, value: number) {
     this.editor.updateTopology((t) => {
       (t.timing as Record<string, number>)[key] = value;
+    });
+  }
+
+  // --- Panel buttons (route→button mapping on the board's digital inputs) ---
+
+  /** Board digital-input pins ('IN1'…) — [] when the board has no input expanders. */
+  protected inputPins = computed(() => {
+    const board = this.editor.board();
+    return board ? boardInputPins(board) : [];
+  });
+
+  /** Routes of the active controller in manifest order (== firmware route ids). */
+  protected panelRoutes = computed(() => {
+    const t = this.editor.topology();
+    const cid = this.editor.controllerId();
+    if (!t || !cid) return [];
+    try {
+      return topologyToManifestForController(t, cid).routes.map(r => ({ key: r.key, name: r.name }));
+    } catch {
+      return [];
+    }
+  });
+
+  /** Effective mapping (explicit local.buttons, else the default auto-assign). */
+  protected buttonAssignments = computed(() =>
+    resolveButtonAssignments(this.panelRoutes(), this.inputPins(), this.editor.activeController()?.local),
+  );
+
+  protected customButtonMapping = computed(() => !!this.editor.activeController()?.local?.buttons?.length);
+
+  protected buttonInputForStopAll(): string {
+    return this.buttonAssignments().find(a => a.action === 'stop_all')?.input ?? '';
+  }
+
+  protected buttonInputForRoute(routeIndex: number): string {
+    return this.buttonAssignments().find(a => a.routeIndex === routeIndex)?.input ?? '';
+  }
+
+  /**
+   * Write the current row state as an explicit local.buttons mapping. Editing
+   * any row forks the automatic mapping into an explicit one; clearing every
+   * row returns to automatic (an empty mapping IS the auto-assign).
+   */
+  protected setButtonInput(action: 'route_start' | 'stop_all', routeKey: string | null, input: string) {
+    const rows = [
+      { action: 'stop_all' as const, route: undefined as string | undefined, input: this.buttonInputForStopAll() },
+      ...this.panelRoutes().map((r, i) => ({ action: 'route_start' as const, route: r.key, input: this.buttonInputForRoute(i) })),
+    ];
+    const target = action === 'stop_all' ? rows[0] : rows.find(r => r.route === routeKey);
+    if (target) target.input = input;
+    // First row wins on a duplicate input (mirrors resolveButtonAssignments).
+    const seen = new Set<string>();
+    const buttons: LocalButton[] = [];
+    for (const r of rows) {
+      if (!r.input || seen.has(r.input)) continue;
+      seen.add(r.input);
+      buttons.push(r.action === 'stop_all'
+        ? { input: r.input, action: 'stop_all' }
+        : { input: r.input, action: 'route_start', route: r.route });
+    }
+    this.editor.updateActiveController(ctrl => {
+      ctrl.local = { ...ctrl.local, buttons: buttons.length ? buttons : undefined };
+    });
+  }
+
+  protected resetButtonMapping() {
+    this.editor.updateActiveController(ctrl => {
+      if (ctrl.local) ctrl.local.buttons = undefined;
     });
   }
 

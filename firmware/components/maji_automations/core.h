@@ -57,6 +57,34 @@ enum ApplyResult {
   APPLY_TRUNCATED,        // header count exceeds the bytes present
 };
 
+// --- Persisted set (flash round-trip) --------------------------------------------
+// The shell persists the raw validated wire blob to NVS so schedules survive reboots
+// and power cuts; on boot it feeds the blob back through apply_set, reusing the
+// keep-last-good / version-refused semantics. These helpers keep every persist/restore
+// DECISION pure (host-testable); only the NVS read/write lives in the shell.
+static constexpr uint32_t AUTOMATION_FLASH_MAGIC = 0x41555431;  // "AUT1" — on-flash format tag
+
+// Largest wire blob worth persisting: header + full table + the optional trailing id block.
+static constexpr size_t MAX_AUTOMATION_SET_BYTES =
+    AUTOMATION_HEADER_BYTES + MAX_AUTOMATIONS * (AUTOMATION_RECORD_BYTES + AUTOMATION_ID_BYTES);
+
+// True exactly for the outcomes that write/clear the table (APPLY_OK / APPLY_CLEARED) —
+// the new wire blob must then replace the persisted one. Keep-last-good outcomes
+// (bad magic, version refused, truncated, too small) never touch flash.
+bool persist_needed(ApplyResult r);
+
+// Bytes of the wire blob apply_set actually consumes for a good set: header +
+// count*record + the trailing id block when present (0 records for a cleared set →
+// header only). Returns 0 for a blob apply_set would refuse on structure (the caller
+// already gates on persist_needed, which also covers the version gate). The shell
+// persists exactly this slice, so a sender appending junk can't bloat the flash record.
+size_t consumed_blob_bytes(const uint8_t *data, size_t len);
+
+// Sanity-check an envelope loaded from flash before feeding it back to apply_set:
+// right format tag and a plausible length. apply_set then re-validates the payload
+// itself (magic / version / truncation) — this only rejects garbage flash records.
+bool persisted_blob_valid(uint32_t magic, size_t len);
+
 // Per-automation edge state, owned by the shell and passed in/out of should_fire:
 //   armed     — level trigger re-arm latch (fire on rising edge above threshold)
 //   last_yday — day-of-year of the last time fire (fire once per matching day-minute)

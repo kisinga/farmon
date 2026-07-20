@@ -6,6 +6,32 @@ namespace maji_auto {
 
 int dow_to_bit(int dow) { return (dow == 1) ? 6 : (dow - 2); }
 
+bool persist_needed(ApplyResult r) { return r == APPLY_OK || r == APPLY_CLEARED; }
+
+size_t consumed_blob_bytes(const uint8_t *data, size_t len) {
+  if (data == nullptr || len < (size_t) AUTOMATION_HEADER_BYTES)
+    return 0;
+  AutomationSetHeader hdr;
+  memcpy(&hdr, data, sizeof(hdr));
+  if (hdr.magic_version != AUTOMATION_WIRE_MAGIC)
+    return 0;
+  uint8_t c = hdr.count;
+  if (c > MAX_AUTOMATIONS)
+    c = MAX_AUTOMATIONS;
+  size_t need = (size_t) AUTOMATION_HEADER_BYTES + (size_t) c * AUTOMATION_RECORD_BYTES;
+  if (len < need)
+    return 0;
+  // Trailing id block is optional (same rule as apply_set).
+  if (c > 0 && len >= need + (size_t) c * AUTOMATION_ID_BYTES)
+    need += (size_t) c * AUTOMATION_ID_BYTES;
+  return need;
+}
+
+bool persisted_blob_valid(uint32_t magic, size_t len) {
+  return magic == AUTOMATION_FLASH_MAGIC && len >= (size_t) AUTOMATION_HEADER_BYTES &&
+         len <= MAX_AUTOMATION_SET_BYTES;
+}
+
 ApplyResult apply_set(const uint8_t *data, size_t len, uint16_t baked, RuntimeAutomation *table,
                       char ids[][AUTOMATION_ID_BYTES], uint8_t &count) {
   if (data == nullptr || len < (size_t) AUTOMATION_HEADER_BYTES)

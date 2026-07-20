@@ -27,78 +27,31 @@ const indent = (lines: string[], n: number) =>
   lines.map(l => (l === '' ? '' : ' '.repeat(n) + l)).join('\n');
 
 /**
- * Generate the MQTT runtime package: broker connection, explicit telemetry
- * publishing on our topic scheme, an operator command subscriber that dispatches
- * into the existing route/queue C++ functions, and an edge-triggered transition
- * log on the event topic.
- *
- * State rides as human-readable tokens (the same words the firmware shows on its
- * OLED): system_state / stop_reason publish their token via an index→token map
- * (the wire value is self-describing — the dashboard adds the friendly label).
- *
- * Broker host/port and the controller identity are baked from generation
- * metadata; the MQTT token is the only secret (verified server-side against
- * controllers.token_hash). The MQTT username is the controller id — the same
- * value used as the `{ctrl}` topic segment and as the device_id the broker
- * authenticates and confines by ACL.
+ * Action names the command dispatch below handles, in dispatch order. Shared with
+ * the local-UI command glue (local-ui.ts) so its synchronous unknown-action gate
+ * can never drift from the dispatch. allowOta=false drops firmware_update: the
+ * local HTTP endpoint is unauthenticated LAN, while the MQTT lane is cert-pinned +
+ * ACL'd — an OTA pull trigger must not ride it.
  */
-export function generateMqtt(m: Manifest, metadata: GenerationMetadata, board: BoardDef): string {
-  const site = metadata.siteId;
-  const ctrl = metadata.controllerId;
-  // wifi_signal exists on-device only on the wifi transport (ethernet link is
-  // binary; board-package.ts emits no wifi_dbm sensor there), so gate its publish
-  // to avoid referencing an id that wasn't generated.
-  const hasWifi = effectiveTransport(m.device.network, boardSupportedTransports(board)) === 'wifi';
-  // ESPHome's auto-publish prefix, segregated from our scheme.
-  // Single-sourced so topic_prefix and the raw log topic below can't desync.
-  const topicPrefix = `${MQTT_ROOT}/${site}/${ctrl}/esphome`;
-  const NS = SYSTEM_STATE_TOKENS.length;
-  const NF = FAULT_TOKENS.length;
-  const NR = STOP_REASON_TOKENS.length;
+export function commandActionNames(opts?: { allowOta?: boolean }): string[] {
+  const base = [
+    'route_start', 'route_stop', 'fault_reset', 'stop_all',
+    'reset_faults', 'clear_queue', 'node_set', 'safety_override',
+  ];
+  return (opts?.allowOta ?? true) ? [...base, 'firmware_update'] : base;
+}
 
-  // The shared channel enumeration (system-wide channels, then per-node) — the
-  // same list the dashboard chart spec builds widgets from, so what the firmware
-  // publishes and what the UI reads can never drift.
-  const channels = collectTelemetryChannels(m);
-  // The enumerated runtime tunables (level setpoints, route max-runtime, controller
-  // safety timings, pressure calibration). These are no longer set by an operator
-  // command — the server owns the desired config and delivers it RETAINED on the
-  // config topic; the device applies each number from the message's kv (see the
-  // config-apply lambda below). The allow-list is enumerated because ESPHome can't
-  // id() a number by a runtime string. The applied value re-publishes in the snapshot.
-  const tunables = collectTunableNumbers(m);
-  // Per-tunable apply line: pull the desired value from the config kv (absent ⇒ leave
-  // the number at its current/default — a partial config never zeroes an unlisted key)
-  // and drive the entity. No restore_value on these numbers; the retained /config
-  // message is the single source of truth and re-applies on every (re)connect.
-  const configApplyLines = tunables.map((t) =>
-    `if (cfg["${t.key}"].is<float>()) { id(${t.key}).make_call().set_value(cfg["${t.key}"].as<float>()).perform(); }`);
-
-  // SNTP wall clock — the single `time: sntp` (id: sntp_time) on every device.
-  // Drives the command-TTL gate and the runtime automation engine's time triggers
-  // (both gate on time_trusted, set by on_time_sync). Always emitted now that the
-  // baked schedule (which used to declare it) is gone.
-  const timeBlock = '\ntime:\n  - platform: sntp\n    id: sntp_time\n    on_time_sync:\n      - then:\n          - lambda: \'id(time_trusted) = true;\'\n';
-
-  // Device-facing TLS. ESPHome's mqtt: speaks plain TCP unless `certificate_authority`
-  // is present, so emit the pinned cert only when the baked endpoint is TLS (8883).
-  // The broker serves a SINGLE self-signed cert and the device pins THAT exact cert as
-  // its trust anchor: esp-idf mbedTLS rejects a two-tier self-signed CA chain
-  // (NOT_TRUSTED → -0x2700) but trusts a self-signed cert it finds byte-identical in
-  // its store. skip_cert_cn_check: hostname matching is redundant under exact-cert
-  // pinning (only this one cert is trusted) and dodges an mbedTLS CN-match edge case.
-  // No client cert: the broker authenticates the device by username + mqtt_token.
-  const tlsBlock = metadata.brokerTls
-    ? `\n  certificate_authority: |-\n${indent(metadata.brokerCa.trimEnd().split('\n'), 4)}\n  skip_cert_cn_check: true`
-    : '';
-
-  // --- Operator command handler (JSON on the command topic) ------------------
-  // Each handled command calls record_outcome (routes.h), which rides re-asserted
-  // in the snapshot — the server reconciles the `commands` record and the dashboard
-  // reads the reason. A manual command is tagged origin=MANUAL + the issuing user id
-  // (`actor`) so the run is attributed on the snapshot. A stale command (older than
-  // the TTL window) is refused outright.
-  const cmdBody = [
+/**
+ * The operator-command dispatch body (C++ lines, `x` is the parsed JsonObject),
+ * shared verbatim by the MQTT on_json_message lambda and the local-UI command glue
+ * — one emitter, so the two lanes can never dispatch differently. Each handled
+ * command calls record_outcome (rides the next snapshot) and the body ends with the
+ * publish_snapshot fast-path. Early `return;` exits work in any enclosing void
+ * lambda (the local glue wraps it in one).
+ */
+export function commandDispatchLines(opts?: { allowOta?: boolean }): string[] {
+  const allowOta = opts?.allowOta ?? true;
+  return [
     'const char* action = x["action"] | "";',
     'const char* command_id = x["command_id"] | "";',
     'const char* actor = x["actor"] | "";',
@@ -170,25 +123,30 @@ export function generateMqtt(m: Manifest, metadata: GenerationMetadata, board: B
     '} else if (strcmp(action, "safety_override") == 0) {',
     '  if (x["on"] | false) id(safety_override).turn_on(); else id(safety_override).turn_off();',
     '  id(control).record_outcome(command_id, "APPLIED", "");',
-    '} else if (strcmp(action, "firmware_update") == 0) {',
-    '  // OTA pull: fetch + flash the image at `url`, verifying it against `md5` (which',
-    '  // arrived over this cert-pinned, TTL-gated lane — the integrity anchor, so the',
-    '  // download channel itself need not be trusted). Idempotent: if we already run the',
-    '  // target version, ack without reflashing. The url/md5 hop through globals because',
-    '  // ota.http_request.flash takes them at runtime via the do_ota_flash script.',
-    '  const char* url = x["url"] | "";',
-    '  const char* md5 = x["md5"] | "";',
-    '  const char* version = x["version"] | "";',
-    '  if (url[0] == 0 || md5[0] == 0) {',
-    '    id(control).record_outcome(command_id, "REFUSED", "BAD_PARAMS");',
-    '  } else if (strcmp(version, id(majiflow_generation_version).state.c_str()) == 0) {',
-    '    id(control).record_outcome(command_id, "APPLIED", "ALREADY");',
-    '  } else {',
-    '    id(ota_url) = url;',
-    '    id(ota_md5) = md5;',
-    '    id(control).record_outcome(command_id, "APPLIED", "");  // ack before the flash reboots us',
-    '    id(do_ota_flash).execute();',
-    '  }',
+    // firmware_update stays MQTT-only (allowOta): the local HTTP endpoint is
+    // unauthenticated LAN, so an OTA pull trigger must not ride it (see
+    // commandActionNames). With allowOta=false the branch falls to unknown-action.
+    ...(allowOta ? [
+      '} else if (strcmp(action, "firmware_update") == 0) {',
+      '  // OTA pull: fetch + flash the image at `url`, verifying it against `md5` (which',
+      '  // arrived over this cert-pinned, TTL-gated lane — the integrity anchor, so the',
+      '  // download channel itself need not be trusted). Idempotent: if we already run the',
+      '  // target version, ack without reflashing. The url/md5 hop through globals because',
+      '  // ota.http_request.flash takes them at runtime via the do_ota_flash script.',
+      '  const char* url = x["url"] | "";',
+      '  const char* md5 = x["md5"] | "";',
+      '  const char* version = x["version"] | "";',
+      '  if (url[0] == 0 || md5[0] == 0) {',
+      '    id(control).record_outcome(command_id, "REFUSED", "BAD_PARAMS");',
+      '  } else if (strcmp(version, id(majiflow_generation_version).state.c_str()) == 0) {',
+      '    id(control).record_outcome(command_id, "APPLIED", "ALREADY");',
+      '  } else {',
+      '    id(ota_url) = url;',
+      '    id(ota_md5) = md5;',
+      '    id(control).record_outcome(command_id, "APPLIED", "");  // ack before the flash reboots us',
+      '    id(do_ota_flash).execute();',
+      '  }',
+    ] : []),
     '} else {',
     '  ESP_LOGW("cmd", "unknown action: %s", action);',
     '  return;  // nothing handled — no outcome to fast-path',
@@ -198,6 +156,101 @@ export function generateMqtt(m: Manifest, metadata: GenerationMetadata, board: B
     '// self-heals on the next interval (the snapshot stays the single source of truth).',
     'id(publish_snapshot).execute();',
   ];
+}
+
+/**
+ * Optional DS3231 RTC gate: the topology flag `local.rtc` plus a board i2c bus to
+ * hang it on (the chip rides the same bus as the i/o expanders, address 0x68,
+ * DS1307 protocol). A board without i2c silently ignores the flag — SNTP + the
+ * persisted-clock fallback stay the only time sources there.
+ */
+export function hasRtcClock(m: Manifest, board: BoardDef): boolean {
+  return m.device.local?.rtc === true && !!board.buses?.['i2c'];
+}
+
+/**
+ * Generate the MQTT runtime package: broker connection, explicit telemetry
+ * publishing on our topic scheme, an operator command subscriber that dispatches
+ * into the existing route/queue C++ functions, and an edge-triggered transition
+ * log on the event topic.
+ *
+ * State rides as human-readable tokens (the same words the firmware shows on its
+ * OLED): system_state / stop_reason publish their token via an index→token map
+ * (the wire value is self-describing — the dashboard adds the friendly label).
+ *
+ * Broker host/port and the controller identity are baked from generation
+ * metadata; the MQTT token is the only secret (verified server-side against
+ * controllers.token_hash). The MQTT username is the controller id — the same
+ * value used as the `{ctrl}` topic segment and as the device_id the broker
+ * authenticates and confines by ACL.
+ */
+export function generateMqtt(m: Manifest, metadata: GenerationMetadata, board: BoardDef, localUi = false): string {
+  const site = metadata.siteId;
+  const ctrl = metadata.controllerId;
+  // wifi_signal exists on-device only on the wifi transport (ethernet link is
+  // binary; board-package.ts emits no wifi_dbm sensor there), so gate its publish
+  // to avoid referencing an id that wasn't generated.
+  const hasWifi = effectiveTransport(m.device.network, boardSupportedTransports(board)) === 'wifi';
+  // ESPHome's auto-publish prefix, segregated from our scheme.
+  // Single-sourced so topic_prefix and the raw log topic below can't desync.
+  const topicPrefix = `${MQTT_ROOT}/${site}/${ctrl}/esphome`;
+  const NS = SYSTEM_STATE_TOKENS.length;
+  const NF = FAULT_TOKENS.length;
+  const NR = STOP_REASON_TOKENS.length;
+
+  // The shared channel enumeration (system-wide channels, then per-node) — the
+  // same list the dashboard chart spec builds widgets from, so what the firmware
+  // publishes and what the UI reads can never drift.
+  const channels = collectTelemetryChannels(m);
+  // The enumerated runtime tunables (level setpoints, route max-runtime, controller
+  // safety timings, pressure calibration). These are no longer set by an operator
+  // command — the server owns the desired config and delivers it RETAINED on the
+  // config topic; the device applies each number from the message's kv (see the
+  // config-apply lambda below). The allow-list is enumerated because ESPHome can't
+  // id() a number by a runtime string. The applied value re-publishes in the snapshot.
+  const tunables = collectTunableNumbers(m);
+  // Per-tunable apply line: pull the desired value from the config kv (absent ⇒ leave
+  // the number at its current/default — a partial config never zeroes an unlisted key)
+  // and drive the entity. No restore_value on these numbers; the retained /config
+  // message is the single source of truth and re-applies on every (re)connect.
+  const configApplyLines = tunables.map((t) =>
+    `if (cfg["${t.key}"].is<float>()) { id(${t.key}).make_call().set_value(cfg["${t.key}"].as<float>()).perform(); }`);
+
+  // SNTP wall clock — the single `time: sntp` (id: sntp_time) on every device.
+  // Drives the command-TTL gate and the runtime automation engine's time triggers
+  // (both gate on time_trusted, set by on_time_sync). Always emitted now that the
+  // baked schedule (which used to declare it) is gone.
+  //
+  // Optional DS3231 RTC (local.rtc): a ds1307-platform clock rides the board's i2c
+  // bus. sntp_time stays the ONE consumer clock — synchronize_epoch_ sets the system
+  // time, so id(sntp_time).now() reflects whichever source synced last; no consumer
+  // changes. time_trusted is earned from EITHER source: a real SNTP sync (which also
+  // writes the RTC) or a valid RTC read (boot restore — device-yaml.ts on_boot — and
+  // the 15-min poll). A dead/absent chip marks the ds1307 component failed at setup;
+  // boot proceeds and the SNTP-only semantics apply unchanged.
+  const timeBlock = hasRtcClock(m, board)
+    ? '\ntime:\n  - platform: sntp\n    id: sntp_time\n    on_time_sync:\n      - then:\n          - lambda: \'id(time_trusted) = true;\'\n          - ds1307.write_time:\n              id: rtc_time\n  - platform: ds1307\n    id: rtc_time\n    i2c_id: i2c_bus\n    on_time_sync:\n      - then:\n          - lambda: \'id(time_trusted) = true;\'\n'
+    : '\ntime:\n  - platform: sntp\n    id: sntp_time\n    on_time_sync:\n      - then:\n          - lambda: \'id(time_trusted) = true;\'\n';
+
+  // Device-facing TLS. ESPHome's mqtt: speaks plain TCP unless `certificate_authority`
+  // is present, so emit the pinned cert only when the baked endpoint is TLS (8883).
+  // The broker serves a SINGLE self-signed cert and the device pins THAT exact cert as
+  // its trust anchor: esp-idf mbedTLS rejects a two-tier self-signed CA chain
+  // (NOT_TRUSTED → -0x2700) but trusts a self-signed cert it finds byte-identical in
+  // its store. skip_cert_cn_check: hostname matching is redundant under exact-cert
+  // pinning (only this one cert is trusted) and dodges an mbedTLS CN-match edge case.
+  // No client cert: the broker authenticates the device by username + mqtt_token.
+  const tlsBlock = metadata.brokerTls
+    ? `\n  certificate_authority: |-\n${indent(metadata.brokerCa.trimEnd().split('\n'), 4)}\n  skip_cert_cn_check: true`
+    : '';
+
+  // --- Operator command handler (JSON on the command topic) ------------------
+  // Each handled command calls record_outcome (routes.h), which rides re-asserted
+  // in the snapshot — the server reconciles the `commands` record and the dashboard
+  // reads the reason. A manual command is tagged origin=MANUAL + the issuing user id
+  // (`actor`) so the run is attributed on the snapshot. A stale command (older than
+  // the TTL window) is refused outright.
+  const cmdBody = commandDispatchLines();
 
   // --- Desired-config handler (retained JSON on the config topic) ------------
   // The server owns the "desired controller config" (runtime tunables + calibration)
@@ -274,7 +327,10 @@ export function generateMqtt(m: Manifest, metadata: GenerationMetadata, board: B
 
   const snapshotBody = [
     'auto *mc = id(mqtt_client);',
-    'if (!mc->is_connected()) return;',
+    // local.ui on: build the snapshot even with the broker DOWN — the local SSE stream
+    // (push_snapshot at the end) is the no-server path the operator dashboard runs on.
+    // The MQTT publish itself stays connection-gated. Off: early return, as before.
+    ...(localUi ? [] : ['if (!mc->is_connected()) return;']),
     'auto &cs = id(control).state();  // slots / route attribution / outcomes',
     cppTokenArray('SYS_TOK', SYSTEM_STATE_TOKENS),
     cppTokenArray('STOP_TOK', STOP_REASON_TOKENS),
@@ -330,7 +386,12 @@ export function generateMqtt(m: Manifest, metadata: GenerationMetadata, board: B
     'put(snprintf(buf+n, sizeof(buf)-n, "],\\"runs\\":["));',
     'put(id(control).meter_runs_json(buf + n, (int) sizeof(buf) - n));',
     'put(snprintf(buf+n, sizeof(buf)-n, "]}"));',
-    `mc->publish("${snapshotTopic(site, ctrl)}", buf);`,
+    ...(localUi
+      ? [// Feed the on-device SSE stream (maji_local_ui) the same bytes — the local
+         // dashboard and the server see one identical snapshot stream.
+         'id(local_ui).push_snapshot(buf);',
+         `if (mc->is_connected()) mc->publish("${snapshotTopic(site, ctrl)}", buf);`]
+      : [`mc->publish("${snapshotTopic(site, ctrl)}", buf);`]),
   ];
 
   // --- On-connect retained facts ---------------------------------------------

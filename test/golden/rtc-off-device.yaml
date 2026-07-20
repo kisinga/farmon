@@ -1,0 +1,68 @@
+# =============================================================================
+# KC868 Controller — ESPHome Device
+# =============================================================================
+# AUTO-GENERATED from board definition + system manifest.
+# Board: Kincony KC868-A16
+# Manifest: library/kc868-controller.yaml
+#
+# State machine: IDLE -> PREPARING -> RUNNING -> STOPPING -> IDLE
+#                          '-------> FAULT <-------'
+#
+# Routes: 1 routes, 2 concurrent slots — engine in the maji_control component
+# API: route_start(route_id)  route_stop(route_id)  stop_all  fault_reset(route_id)  fault_reset_all  queue_clear
+# =============================================================================
+
+substitutions:
+  device_name: kc868-controller
+  friendly_name: KC868 Controller
+  update_interval: 5s
+  flow_cal_flow1: "450"
+  valve_travel_time: 15s
+  flow_watchdog: "30"
+  flow_confirm: "15"
+  udp_key: !secret udp_key
+
+packages:
+  board: !include common/board.yaml
+  hardware: !include packages/hardware.yaml
+  sensors: !include packages/sensors.yaml
+  route_engine: !include packages/route-engine.yaml
+  control: !include packages/control.yaml
+  mqtt: !include packages/mqtt.yaml
+  coordination: !include packages/coordination.yaml
+  time_sync: !include packages/time-sync.yaml
+  automation_engine: !include packages/automation-engine.yaml
+  local_inputs: !include packages/local-inputs.yaml
+  metadata: !include packages/metadata.yaml
+
+external_components:
+  - source:
+      type: local
+      path: external_components
+
+uart:
+  - id: uart_modbus
+    tx_pin: GPIO13
+    rx_pin: GPIO16
+    baud_rate: 9600
+
+modbus:
+  - id: uart_modbus_modbus
+    uart_id: uart_modbus
+
+esphome:
+  name: ${device_name}
+  friendly_name: ${friendly_name}
+  includes:
+    - packages/time-sync.h
+  on_boot:
+    - priority: -100
+      then:
+        - switch.turn_off: pump_relay
+        - lambda: |-
+            id(system_state) = 0;
+            id(active_slot) = -1;
+            // stop_reason intentionally NOT reset — survives reboot
+            seed_clock_from_persisted();  // restore wall clock from flash before SNTP (no RTC)
+            ESP_LOGI("ctrl", "Boot complete — IDLE");
+

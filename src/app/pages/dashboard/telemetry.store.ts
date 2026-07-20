@@ -1,6 +1,7 @@
 import { Injectable, inject, signal } from '@angular/core';
 import type { DashboardWidget } from '@core';
 import { RealtimeService } from '../../core/services/realtime.service';
+import { DEVICE_MODE } from '../../core/tokens/device-mode';
 import type { TelemetryPoint } from '../../core/models/runtime';
 
 /** How far back from now the live edge is served from the high-resolution
@@ -42,6 +43,7 @@ const spanKey = (widgetId: string) => `mf:span:${widgetId}`;
 @Injectable()
 export class TelemetryStore {
   private realtime = inject(RealtimeService);
+  private deviceMode = inject(DEVICE_MODE);
   private series = signal<Map<string, TelemetryPoint[]>>(new Map());
   private spans = signal<Map<string, number>>(new Map());
   /** Widget ids whose history fetch has completed at least once — lets a chart
@@ -84,6 +86,12 @@ export class TelemetryStore {
    *  has since started (see `reqSeq`). */
   async load(siteId: string, widget: DashboardWidget, hours = this.spanFor(widget)): Promise<void> {
     if (!widget.sensor) return;
+    // Device mode: the controller has no history endpoint. Mark the widget loaded
+    // with no series so a chart opens to its honest empty state, not a spinner.
+    if (this.deviceMode) {
+      this.loaded.update((s) => new Set(s).add(widget.id));
+      return;
+    }
     const token = (this.reqSeq.get(widget.id) ?? 0) + 1;
     this.reqSeq.set(widget.id, token);
     const to = new Date();

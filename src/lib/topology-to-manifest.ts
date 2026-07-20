@@ -207,6 +207,7 @@ export function topologyToManifestForController(
       network: controller?.network,
       uart_buses: controller?.uart_buses,
       io_providers: controller?.io_providers,
+      local: controller?.local,
     },
     nodes: localNodes,
     imports: importedNodes,

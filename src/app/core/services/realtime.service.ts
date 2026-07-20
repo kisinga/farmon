@@ -359,8 +359,10 @@ function parseSnap(v: unknown): ControllerSnapshot | null {
 }
 
 /** Explode one controller snapshot into the per-channel ShadowRows the widgets read
- *  (keyed `${controller}/${sensor}`), so the collapsed doc keeps the same read API. */
-function explodeSnapshot(controller: string, snap: ControllerSnapshot, ts: string): ShadowRow[] {
+ *  (keyed `${controller}/${sensor}`), so the collapsed doc keeps the same read API.
+ *  Exported for the device-mode realtime service, whose `/local/state` SSE events
+ *  carry the exact same ControllerSnapshot shape. */
+export function explodeSnapshot(controller: string, snap: ControllerSnapshot, ts: string): ShadowRow[] {
   const rows: ShadowRow[] = [];
   const num = (sensor: string, reported: number) => rows.push({ controller, sensor, reported, reported_text: '', ts });
   const txt = (sensor: string, reported_text: string) => rows.push({ controller, sensor, reported: 0, reported_text, ts });
@@ -379,7 +381,7 @@ function explodeSnapshot(controller: string, snap: ControllerSnapshot, ts: strin
 
 /** Pull a snapshot's re-asserted command outcomes into per-controller rows (the
  *  reliable "did my command land" channel — see {@link CommandOutcomeRow}). */
-function snapOutcomes(controller: string, snap: ControllerSnapshot): CommandOutcomeRow[] {
+export function snapOutcomes(controller: string, snap: ControllerSnapshot): CommandOutcomeRow[] {
   return (snap.outcomes ?? []).map((o) => ({
     controller,
     command_id: o.command_id,

@@ -1,7 +1,8 @@
 import type { GenerationMetadata } from '../backends/types';
 
 /**
- * Persisted wall clock + time-trust flag — keeps time without an RTC chip.
+ * Persisted wall clock + time-trust flag — the no-RTC fallback that every device
+ * gets, RTC or not.
  *
  * The ESP32's on-SoC clock is lost on power-loss and SNTP needs the network, so a
  * device that cold-boots offline has no time until the link returns. Two pieces:
@@ -9,17 +10,21 @@ import type { GenerationMetadata } from '../backends/types';
  *   - `persisted_epoch` (flash) — refreshed every few minutes while time is trusted,
  *     and used to SEED the system clock on boot so `now()` is plausible (for logs /
  *     OLED / event timestamps). Bounded error = downtime; SNTP corrects on reconnect.
- *   - `time_trusted` (RAM, re-earned each boot) — true ONLY after a real SNTP sync.
- *     The seed makes the system clock "valid" off an estimate, so anything that needs
- *     CORRECT time (schedules, the command-TTL gate) gates on `time_trusted`, never on
- *     `is_valid()`. The estimate is for display, never for decisions.
+ *   - `time_trusted` (RAM, re-earned each boot) — true ONLY after a trusted source
+ *     syncs: a real SNTP sync, or (when local.rtc fits a DS3231 on the board's i2c
+ *     bus) a valid RTC read. The seed makes the system clock "valid" off an estimate,
+ *     so anything that needs CORRECT time (schedules, the command-TTL gate) gates on
+ *     `time_trusted`, never on `is_valid()`. The estimate is for display, never for
+ *     decisions.
  *
  * Emitted on every device:
  *   - time-sync.h    — `seed_clock_from_persisted()` (sanity-bounded), called on_boot.
  *   - time-sync.yaml — the `persisted_epoch` + `time_trusted` globals + the refresh.
  *
- * `time_trusted` is SET by the `on_time_sync` trigger on `sntp_time`, which lives with
- * the sntp definition (schedule.yaml when there are time schedules, else mqtt.yaml).
+ * `time_trusted` is SET by the `on_time_sync` triggers on the time platforms, which
+ * live with the sntp definition in mqtt.yaml (`sntp_time`, plus `rtc_time` when the
+ * DS3231 RTC is enabled). With an RTC the boot restore (ds1307.read_time on_boot)
+ * overrides this seed shortly after it runs.
  */
 
 /** Refresh cadence for the persisted epoch. On ESP32 this lands in wear-leveled NVS,

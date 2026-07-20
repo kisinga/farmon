@@ -1,6 +1,7 @@
 import { Component, computed, inject } from '@angular/core';
 import { controllerHealth, worstHealth, describeState, SYSTEM_STATE_MEANINGS, STOP_REASON_MEANINGS, SYSTEM_STATE_SENSOR, STOP_REASON_SENSOR, HEAP_FREE_SENSOR, HEAP_MIN_SENSOR, HEAP_TOTAL_SENSOR, HEAP_WARN_BYTES, WIFI_SIGNAL_SENSOR, UPTIME_SENSOR, TEMP_SENSOR, wifiBand, tempBand, type HealthLevel, type StateKind, type StateMeaning } from '@core';
 import { DashboardStore } from '../dashboard.store';
+import { DEVICE_MODE } from '../../../core/tokens/device-mode';
 
 /** `reset_reason` tokens (esp_reset_reason) that mean a firmware fault — the controller
  *  crashed. BROWNOUT is deliberately excluded: it's a power-supply fault (a different
@@ -192,6 +193,7 @@ const STATE_CHIP: Record<StateKind, { dot: string; chip: string }> = {
 })
 export class ControllerHealthComponent {
   protected store = inject(DashboardStore);
+  private deviceMode = inject(DEVICE_MODE);
 
   // --- Device presence + health -------------------------------------------
   /** Last-known free / min-free heap (bytes), null if the controller never reported it. */
@@ -378,8 +380,11 @@ export class ControllerHealthComponent {
     return this.store.row(controller, 'reset_reason')?.reported_text ?? '';
   }
 
-  /** The controller's built-in web log console URL (local network only), '' when no IP. */
+  /** The controller's built-in web log console URL (local network only), '' when no IP.
+   *  Hidden in the device build: the app itself IS the device's local page, so a
+   *  "Logs" link would just point at the dashboard the operator is already on. */
   protected deviceConsoleUrl(controller: string): string {
+    if (this.deviceMode) return '';
     const ip = this.store.row(controller, 'ip')?.reported_text;
     return ip ? `http://${ip}/` : '';
   }

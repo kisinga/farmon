@@ -99,6 +99,16 @@ function emitWebServer(): Record<string, unknown> {
   return { web_server: { port: 80, version: 3, include_internal: true } };
 }
 
+function emitWebServerBase(): Record<string, unknown> {
+  // local.ui on: the maji_local_ui component (packages/local-ui.yaml) serves the
+  // operator dashboard on the SHARED web_server_base instead of the stock web_server
+  // v3 page. web_server_base takes no YAML options — the consumer owns the port
+  // (maji_local_ui pins 80, so the AP fallback keeps an HTTP listener on
+  // 192.168.4.1:80 exactly as with web_server). captive_portal depends only on
+  // web_server_base, so the setup page is unaffected by the swap.
+  return { web_server_base: null };
+}
+
 /**
  * All transport-coupled `text_sensor:` entries in one block:
  *  - `transport_supported` (template): comma-separated list of capabilities — board introspection.
@@ -147,7 +157,9 @@ function emitTransportTextSensors(
 /**
  * Emit every networking-coupled YAML section in one place:
  *  - the chosen transport block (`ethernet:` XOR `wifi:` + `captive_portal:`)
- *  - the always-on `web_server:` dashboard
+ *  - the on-device HTTP surface: the stock `web_server:` v3 dashboard, or — when the
+ *    topology's local.ui flag is on — a bare `web_server_base:` that maji_local_ui
+ *    serves the operator dashboard on instead
  *  - all transport-coupled `text_sensor:` entries (introspection + IP info)
  *
  * The active transport is governed by `effectiveTransport(network, supported)` —
@@ -156,6 +168,7 @@ function emitTransportTextSensors(
 export function emitConnectionProfile(
   board: BoardDef,
   network?: NetworkConfig,
+  localUi = false,
 ): Record<string, unknown>[] {
   const supported = boardSupportedTransports(board);
   const transport = effectiveTransport(network, supported);
@@ -164,7 +177,7 @@ export function emitConnectionProfile(
     transport === 'ethernet'
       ? [emitEthernet(board.peripherals.ethernet!, manualIp)]
       : [...emitWifi(manualIp), ...emitImprov()];
-  sections.push(emitWebServer());
+  sections.push(localUi ? emitWebServerBase() : emitWebServer());
   sections.push(emitTransportTextSensors(supported, transport));
   return sections;
 }

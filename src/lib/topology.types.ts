@@ -125,6 +125,24 @@ export function effectiveTransport(
   return network?.transport ?? 'ethernet';
 }
 
+/** A physical panel button on a controller's digital input, bound to an action. */
+export interface LocalButton {
+  /** Board input pin, e.g. 'IN1'. */
+  input: string;
+  action: 'route_start' | 'stop_all';
+  /** Route key (graph Route.key) — required for route_start. */
+  route?: string;
+}
+
+export interface ControllerLocal {
+  /** Explicit button mapping. Overrides the default auto-assign entirely when set. */
+  buttons?: LocalButton[];
+  /** On-device operator dashboard: maji_local_ui replaces the stock web_server page. */
+  ui?: boolean;
+  /** Optional DS3231 RTC on the board i2c bus — time schedules run fully offline. */
+  rtc?: boolean;
+}
+
 export interface Controller {
   id: string;
   board: string;
@@ -133,6 +151,7 @@ export interface Controller {
   network?: NetworkConfig;
   uart_buses?: UartBus[];
   io_providers?: IoProviderDef[];
+  local?: ControllerLocal;
 }
 
 export interface RemoteImport {
@@ -141,7 +160,7 @@ export interface RemoteImport {
 }
 
 export interface SiteTopology {
-  schema: 18;
+  schema: 19;
   controllers: Controller[];
   nodes: TopologyNode[];
   pipes: PipeSegment[];
@@ -165,7 +184,7 @@ export interface SiteTopology {
 
 export function createEmptySiteTopology(): SiteTopology {
   return {
-    schema: 18,
+    schema: 19,
     controllers: [],
     nodes: [],
     pipes: [],

@@ -85,10 +85,30 @@ export const ControllerSchema = z.object({
     type: z.string().min(1),
     config: z.object({ bus: z.string().min(1), address: z.number().int() }),
   })).optional(),
+  local: z.object({
+    buttons: z.array(z.object({
+      input: z.string().min(1),
+      action: z.enum(['route_start', 'stop_all']),
+      route: z.string().optional(),
+    }).superRefine((b, ctx) => {
+      // route_start without a route would validate here then be silently
+      // dropped by resolveButtonAssignments — reject it up front instead.
+      // (stop_all carrying a stray route stays valid: the resolver ignores it.)
+      if (b.action === 'route_start' && !b.route) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['route'],
+          message: 'route is required when action is route_start',
+        });
+      }
+    })).optional(),
+    ui: z.boolean().optional(),
+    rtc: z.boolean().optional(),
+  }).optional(),
 });
 
 export const TopologySchema = z.object({
-  schema: z.literal(17).or(z.literal(18)),
+  schema: z.literal(17).or(z.literal(18)).or(z.literal(19)),
   controllers: z.array(ControllerSchema),
   // Empty topology is valid for a newly created site before any controller is added.
   nodes: z.array(TopologyNodeSchema),
@@ -193,7 +213,7 @@ function migrateLegacyTopology(data: unknown): unknown {
 // Schema-version migration chain
 // ---------------------------------------------------------------------------
 
-export const CURRENT_SCHEMA_VERSION = 18;
+export const CURRENT_SCHEMA_VERSION = 19;
 
 type SchemaMigration = (data: Record<string, unknown>) => Record<string, unknown>;
 
@@ -548,6 +568,7 @@ const SCHEMA_MIGRATIONS: Record<number, SchemaMigration> = {
     data['nodes'] = nodes.filter(n => !nodesToDelete.has(n['id'] as string));
     return data;
   },
+  18: (data) => { data['schema'] = 19; return data; },
 };
 
 /**

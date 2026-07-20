@@ -17,6 +17,8 @@ import { getNodesByKind } from '../topology.types';
 import type { BoardDef } from '../board.types';
 import { buildGraph } from '../graph/topology-graph';
 import { deriveRoutes } from '../graph/routes';
+import { topologyToManifestForController } from '../topology-to-manifest';
+import { boardInputPins, resolveButtonAssignments } from '../local-buttons';
 import { collectPins } from '../pin-collect';
 import { escXml } from '../schemas';
 import { LOGO_SVG_SMALL } from '../static/logo';
@@ -203,6 +205,32 @@ export async function assembleSiteDoc(input: SiteDocInput): Promise<string> {
         '<h3>Pin Connections</h3><table><thead><tr><th>Pin</th><th>Entity</th><th>Type</th><th>Field</th><th>Polarity</th></tr></thead>'
         + `<tbody>${rows}</tbody></table>`,
       );
+    }
+
+    // Panel buttons — the physical inputs an operator can press, resolved with
+    // the same rule the firmware codegen uses (explicit local.buttons, else the
+    // default auto-assign). Only on boards with input expanders.
+    if (board) {
+      const inputPins = boardInputPins(board);
+      if (inputPins.length) {
+        const manifest = topologyToManifestForController(topo, c.id);
+        const assignments = resolveButtonAssignments(manifest.routes, inputPins, c.local);
+        if (assignments.length) {
+          // Row order follows the physical inputs (IN1, IN2, ...) — "Button N"
+          // must match the panel layout, not the mapping's declaration order.
+          const inputOrder = new Map(inputPins.map((p, i) => [p, i]));
+          const sorted = [...assignments]
+            .sort((a, b) => (inputOrder.get(a.input) ?? 0) - (inputOrder.get(b.input) ?? 0));
+          const rows = sorted.map((a, i) => {
+            const action = a.action === 'stop_all' ? 'Stop All' : `Start / stop ${escXml(a.routeName)}`;
+            return `<tr><td>Button ${i + 1}</td><td><code>${escXml(a.input)}</code></td><td>${action}</td></tr>`;
+          }).join('');
+          parts.push(
+            '<h3>Panel Buttons</h3><table><thead><tr><th>Button</th><th>Input</th><th>Action</th></tr></thead>'
+            + `<tbody>${rows}</tbody></table>`,
+          );
+        }
+      }
     }
 
     if (board?.documentation?.length) {

@@ -4,11 +4,18 @@
 // binary set), and a generated 5s interval calls tick(). The shell is the only place
 // touching id()/SNTP/the control engine — all decision logic lives in core.{h,cpp}.
 //
+// The last-good set is also persisted to NVS (raw validated wire blob) on every
+// APPLY_OK / APPLY_CLEARED, and restored in setup() through the same validation path,
+// so schedules survive reboots and power cuts without a broker replay. A save is
+// skipped when the blob already matches flash (the broker's retained set is replayed
+// on every boot/reconnect — rewriting it would burn an erase cycle per flap).
+//
 // One-directional dependency on maji_control: a fired trigger goes through
 // control_->start_route, so the SAME route state machine still gates safety.
 #include "core.h"
 #include "../maji_control/maji_control.h"
 #include "esphome/core/component.h"
+#include "esphome/core/preferences.h"
 #include "esphome/core/time.h"
 #include <cstddef>
 #include <cstdint>
@@ -24,8 +31,15 @@ class MajiAutomations : public Component {
 
   void dump_config() override;
 
+  // Restore the persisted automation set from NVS before the first tick(). ESPHome runs
+  // every component's setup() before the loop starts, and tick() is driven by the
+  // generated interval inside loop() — so a set restored here is already live for the
+  // first evaluation, no ordering race.
+  void setup() override;
+
   // Fill the table from a retained binary message (mqtt on_message). Validates magic +
   // route_set_version + length; on mismatch keeps the last-good set and flags stale.
+  // A successful apply/clear also persists the raw wire blob to NVS.
   void apply_set(const uint8_t *data, size_t len);
 
   // Desired-config version round-trip. The server computes an opaque version string for
@@ -43,6 +57,10 @@ class MajiAutomations : public Component {
   bool tick(ESPTime now, bool time_trusted);
 
  protected:
+  void apply_set_(const uint8_t *data, size_t len, bool persist);  // apply + persist gate
+  void persist_set_(const uint8_t *data, size_t len);  // write the consumed wire blob to NVS
+  void restore_set_();  // load the NVS blob and replay it through apply_set (setup only)
+
   maji_control::MajiControl *control_{nullptr};
   uint16_t route_set_version_{0};
 
@@ -55,6 +73,10 @@ class MajiAutomations : public Component {
   uint16_t applied_route_set_version_{0};
   bool stale_{false};  // last set refused (version mismatch)
   std::string config_version_;  // opaque desired-config version last applied (round-tripped, never hashed)
+  ESPPreferenceObject autos_pref_;  // NVS handle for the persisted automation set
+  // Copy of the blob currently in flash (stashed at restore and after each save) so a
+  // replayed retained set that changes nothing doesn't cost an NVS erase cycle.
+  std::string persisted_blob_;
 };
 
 }  // namespace maji_automations

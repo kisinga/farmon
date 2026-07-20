@@ -15,6 +15,8 @@ export type {
   Port, Position, Controller, RemoteImport,
 } from './topology.types';
 export { createEmptySiteTopology, effectiveTransport } from './topology.types';
+export type { ControllerLocal, LocalButton } from './topology.types';
+export { boardInputPins, resolveButtonAssignments, type ButtonAssignment } from './local-buttons';
 export type { Manifest, ManifestNode, LocalManifestNode, ImportedManifestNode, Device, Timing } from './manifest.types';
 export { type Route as ManifestRoute } from './manifest.types';
 export type { BoardDef, DocSection, PinDef, PinCap, ExpanderDef, EthernetDef, ExpansionBoardDef, ExpansionBoardChannelDef, ExpansionBoardCatalog } from './board.types';

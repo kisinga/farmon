@@ -34,7 +34,7 @@ const ESP32S3_STRAPPING_PINS = new Set(['GPIO0', 'GPIO3', 'GPIO45', 'GPIO46']);
  * This replaces the hand-written heltec_board.yaml — every section is
  * driven by the board's declared peripherals and buses.
  */
-export function generateBoardPackage(board: BoardDef, network?: NetworkConfig): string {
+export function generateBoardPackage(board: BoardDef, network?: NetworkConfig, localUi = false): string {
   const sections: Record<string, unknown>[] = [];
 
   // --- MCU ---
@@ -87,7 +87,7 @@ export function generateBoardPackage(board: BoardDef, network?: NetworkConfig): 
   // Compute transport once and reuse for diagnostic sensors so they always
   // match the active transport (ethernet_info / wifi_info / wifi_signal).
   const transport = effectiveTransport(network, boardSupportedTransports(board));
-  sections.push(...emitConnectionProfile(board, network));
+  sections.push(...emitConnectionProfile(board, network, localUi));
 
   // OTA: the esphome platform stays for bench flashing (push from a workstation);
   // http_request adds server-driven pull OTA — the device fetches + flashes an image

@@ -1,14 +1,14 @@
 import { Component, computed, inject, signal, type WritableSignal } from '@angular/core';
-import type { SiteTopology, EasyModeProfile } from '@core';
+import type { EasyModeProfile, SiteTopology } from '@core';
 import { BackendService } from '../../core/services/backend.service';
 import { TrackingService } from '../../core/services/tracking.service';
-import { KIT_TIERS, ADDON_SERVICES, CLOUD_FEATURES, estimate, kes, type EstimateInput, type Segment } from './pricing.model';
-import { applyPageSeo } from '../../shared/seo';
-import { MarketingNavComponent } from '../../shared/marketing/marketing-nav.component';
-import { MarketingFooterComponent } from '../../shared/marketing/marketing-footer.component';
-import { MktHeroComponent, MktPlanLevelsComponent, MktFeatureListComponent, MktAddonGridComponent } from '../../shared/marketing/ui';
-import { SystemEstimatorComponent, type SizedEstimate } from './system-estimator.component';
 import { MARKETING_WHATSAPP_HREF, MARKETING_WHATSAPP_NUMBER } from '../../shared/marketing/marketing-contact';
+import { MarketingFooterComponent } from '../../shared/marketing/marketing-footer.component';
+import { MarketingNavComponent } from '../../shared/marketing/marketing-nav.component';
+import { MktAddonGridComponent, MktFeatureListComponent, MktHeroComponent, MktPlanLevelsComponent } from '../../shared/marketing/ui';
+import { applyPageSeo } from '../../shared/seo';
+import { ADDON_SERVICES, CLOUD_FEATURES, estimate, kes, KIT_TIERS, type EstimateInput, type Segment } from './pricing.model';
+import { SystemEstimatorComponent, type SizedEstimate } from './system-estimator.component';
 
 type SubmitState = 'idle' | 'sending' | 'done' | 'error';
 type Kit = 'lite' | 'pro' | 'enterprise';
@@ -84,6 +84,18 @@ type Kit = 'lite' | 'pro' | 'enterprise';
           </div>
           <div class="mt-6 max-w-3xl mx-auto">
             <mkt-feature-list [items]="cloudFeatures" />
+          </div>
+
+          <!-- The honest split: the local tier is complete; the sub is the cloud's reach. -->
+          <div class="mt-6 max-w-2xl mx-auto text-center border-t border-slate-200 pt-5">
+            <h4 class="text-sm font-bold tracking-tight">What the subscription adds</h4>
+            <p class="mt-1.5 text-xs text-slate-600 leading-relaxed">
+              The controller itself is complete: panel buttons at the wall, an on-device dashboard on your
+              site network, schedules that survive reboots and power cuts, and safety that never waits on the
+              internet. None of that stops if you never subscribe. The managed platform adds only what the
+              cloud uniquely gives you: reach from anywhere, alerts on your phone, usage history and trends,
+              and every site on one dashboard.
+            </p>
           </div>
         </div>
 

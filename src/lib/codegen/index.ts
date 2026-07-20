@@ -19,6 +19,8 @@ export { type GeneratorId, type SecretsMap, type GenerationMetadata } from './ba
 
 export { generateBoardPackage } from './generators/board-package';
 export { generateMajiControlConfig } from './generators/routes';
+export { generateLocalInputs } from './generators/local-inputs';
+export { generateLocalUiYaml, generateLocalUiAssetsHeader } from './generators/local-ui';
 export { collectEntityCodegen } from './generators/collect';
 
 export { generateSelfTest, activeProbes } from './self-test';

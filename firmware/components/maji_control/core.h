@@ -8,6 +8,7 @@
 //
 // This header is a faithful port of the structures and helpers in routes.h. Field
 // layout and semantics match 1:1 so behaviour is unchanged.
+#include <cstddef>
 #include <cstdint>
 #include <map>
 #include <string>
@@ -171,8 +172,14 @@ bool is_duplicate_command(ControlState &cs, const std::string &command_id, uint3
 void record_outcome(ControlState &cs, const std::string &command_id, const std::string &result,
                     const std::string &reason);
 
-// Escape a string for a JSON value (quotes/backslashes, drop control chars). Returns a
-// pointer into a single static buffer — consume it immediately (one field at a time).
+// Escape a string for a JSON value (quotes/backslashes, drop control chars) into the
+// caller's buffer. Reentrant — use this anywhere that can run off the main loop (e.g.
+// the local-UI command handler on the httpd task, where the snapshot builder could
+// concurrently be mid-escape on the static buffer below).
+void json_esc_to(char *dst, size_t cap, const char *s);
+
+// Same escape into a single shared static buffer — main loop only, and consume it
+// immediately (one field at a time).
 const char *json_esc(const char *s);
 
 // Fault / stop-reason codes (mirror routes.h).
