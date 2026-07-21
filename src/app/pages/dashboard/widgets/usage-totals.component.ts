@@ -7,6 +7,7 @@ import { SPAN_PRESETS } from '../telemetry.store';
 import { DashboardStore, USAGE_SPAN_DEFAULT_HOURS } from '../dashboard.store';
 import { CHART } from '../../../core/util/chart-theme';
 import { CONTROLLER_PALETTE } from '../../../core/util/site-colors';
+import { DEVICE_MODE } from '../../../core/tokens/device-mode';
 import type { UsageRun } from '../../../core/models/runtime';
 
 /** Distinct route series before the tail folds into one "Other" bar (palette size). */
@@ -151,13 +152,17 @@ function runGroup(
           </p>
         }
 
-        <div echarts [options]="chart()" [autoResize]="true" class="mt-2 h-52 w-full"></div>
+        @if (!deviceMode) {
+          <div echarts [options]="chart()" [autoResize]="true" class="mt-2 h-52 w-full"></div>
+        }
       }
     </div>
   `,
 })
 export class UsageTotalsComponent implements OnInit {
   private store = inject(DashboardStore);
+  /** Device build ships no echarts — the bar chart is skipped (totals stay). */
+  protected deviceMode = inject(DEVICE_MODE);
 
   /** Completed runs for the currently-loaded window; the store fetches them lazily
    *  (default window when this widget mounts, widened by {@link onSpan}). */

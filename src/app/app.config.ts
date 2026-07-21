@@ -2,8 +2,6 @@ import { ApplicationConfig, isDevMode, provideBrowserGlobalErrorListeners, provi
 import { provideRouter } from '@angular/router';
 import { provideHttpClient } from '@angular/common/http';
 import { provideServiceWorker } from '@angular/service-worker';
-import { provideEchartsCore } from 'ngx-echarts';
-
 import { routes } from './app.routes';
 import { modeProviders } from './mode.providers';
 import { environment } from '../environments/environment';
@@ -17,12 +15,10 @@ export const appConfig: ApplicationConfig = {
     provideZonelessChangeDetection(),
     provideRouter(routes),
     provideHttpClient(),
-    // ECharts is lazy-loaded the first time a chart widget renders (device mode
-    // renders no charts, so it never loads there).
-    provideEchartsCore({ echarts: () => import('echarts') }),
     // Device mode: swap the dashboard's two network surfaces (realtime reads +
     // command writes) for the controller's own /local/* endpoints. The cloud
-    // build's modeProviders is an empty array (see mode.providers.ts).
+    // build's modeProviders also installs ECharts core (the lazy echarts chunk);
+    // the device build's swap drops it (see mode.providers.ts).
     ...modeProviders,
     // PWA shell. The ngsw worker is only emitted by the production build, so it
     // stays disabled in dev — and off entirely in device mode (no service worker

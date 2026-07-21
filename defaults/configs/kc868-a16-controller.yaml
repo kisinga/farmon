@@ -4,6 +4,8 @@ controllers:
     directory: kc868-controller
     board: kc868-a16
     friendlyName: KC868 Controller
+    local:
+      ui: true
 nodes:
   - kind: tank
     id: tank1

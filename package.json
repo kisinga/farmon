@@ -6,7 +6,7 @@
     "ng": "ng",
     "start": "ng serve",
     "build": "ng build",
-    "build:device": "node scripts/emit-device-topology.mjs && ng build --configuration device && mv dist/app/browser/index.csr.html dist/app/browser/index.html",
+    "build:device": "node scripts/build-device.mjs",
     "gen:firmware-components": "node scripts/gen-firmware-components.mjs",
     "test": "npx tsx test/run-all.ts",
     "test:codegen": "npx tsx test/codegen.test.ts",

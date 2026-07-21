@@ -3,11 +3,18 @@
 // web_server v3 page when the topology's local.ui flag is on. Registers one
 // AsyncWebHandler on the shared web_server_base (port 80) and serves:
 //
-//   GET  /                   — the gzipped single-page app from flash (the PROGMEM blob
-//                              in the generated local-ui-assets.h, wired via set_index_asset).
-//                              Any other GET that looks like app navigation (not under
-//                              /local/, no file extension in the path) gets the same index,
-//                              so SPA deep-links and client-route refreshes load the app.
+//   GET  <asset path>       — the device-mode app, embedded as a flat table of gzipped
+//                             files in the generated local-ui-assets.h (wired via
+//                             set_assets). Exact path match → that file
+//                             (Content-Encoding: gzip, the table's Content-Type);
+//                             "/", "/index.html", and any other extension-less GET
+//                             outside /local/ → the index entry (SPA client-route
+//                             fallback, so deep-links and refreshes load the app).
+//                             Content-hashed assets (immutable=true) get
+//                             "Cache-Control: max-age=31536000, immutable"; everything
+//                             else "no-cache". "/local" itself and unknown /local/*
+//                             stay strict 404s. The routing rules live in the pure
+//                             core (core.h).
 //   GET  /local/state        — SSE stream of the ControllerSnapshot JSON: the same bytes
 //                              publish_snapshot builds for the MQTT state topic. The script
 //                              calls push_snapshot() every time it builds one, so the SSE
@@ -19,7 +26,8 @@
 //                              (validated first; the generated glue installs automations_handler_).
 //
 // Threading: HTTP handlers run on the esp-idf httpd task. They only parse + gate
-// (read-only); every mutation is marshalled to the main loop with defer() — the route
+// (read-only); every mutation is marshalled to the main loop with defer_to_loop() —
+// the route
 // engine, claims registry, and automation table are loop-thread only (see the no-lock
 // note in maji_automations.h). SSE sends happen on the main loop too (push_snapshot is
 // called from the publish_snapshot script).
@@ -50,8 +58,12 @@ class MajiLocalUi : public AsyncWebHandler, public Component {
   void set_automations(maji_automations::MajiAutomations *a) { autos_ = a; }
   void set_port(uint16_t port) { port_ = port; }
 
-  // Gzipped app bundle (PROGMEM in main.cpp via the generated local-ui-assets.h).
-  void set_index_asset(const uint8_t *data, size_t len) { index_gz_ = data; index_gz_len_ = len; }
+  // The embedded app files — the generated local-ui-assets.h table (PROGMEM in
+  // main.cpp). Points into flash rodata; never freed, never copied.
+  void set_assets(const maji_localui::LocalUiAsset *assets, size_t count) {
+    assets_ = assets;
+    assets_count_ = count;
+  }
 
   // Generated glue (local-ui.yaml on_boot) installs both handlers. The command handler
   // parses + TTL-gates the envelope, defers the MQTT-identical dispatch to the main
@@ -61,6 +73,12 @@ class MajiLocalUi : public AsyncWebHandler, public Component {
   using AutomationsHandler = std::function<uint16_t(const uint8_t *data, size_t len)>;
   void set_command_handler(CommandHandler f) { command_handler_ = std::move(f); }
   void set_automations_handler(AutomationsHandler f) { automations_handler_ = std::move(f); }
+
+  // Marshal a mutation onto the main loop. Public wrapper: Component::defer() is
+  // protected, and the generated handler glue calls this from free lambdas (the
+  // httpd task), not from within the class. The route engine, claims registry,
+  // and automation table are loop-thread-only — never mutate them on the httpd task.
+  void defer_to_loop(std::function<void()> &&f) { defer(std::move(f)); }
 
   // Snapshot fan-out — called from the publish_snapshot script (main loop) with the
   // same ControllerSnapshot JSON that goes to the MQTT state topic. Stored so a freshly
@@ -102,7 +120,7 @@ class MajiLocalUi : public AsyncWebHandler, public Component {
     maji_localui::SseSlot slot;  // coalesce / partial-send / stall bookkeeping (core.h)
   };
 
-  void handle_index_(AsyncWebServerRequest *request);
+  void handle_asset_(AsyncWebServerRequest *request);
   void handle_state_(AsyncWebServerRequest *request);
   void handle_command_(AsyncWebServerRequest *request);
   void handle_automations_(AsyncWebServerRequest *request);
@@ -122,8 +140,8 @@ class MajiLocalUi : public AsyncWebHandler, public Component {
   maji_automations::MajiAutomations *autos_{nullptr};
   uint16_t port_{80};
 
-  const uint8_t *index_gz_{nullptr};
-  size_t index_gz_len_{0};
+  const maji_localui::LocalUiAsset *assets_{nullptr};
+  size_t assets_count_{0};
 
   CommandHandler command_handler_{};
   AutomationsHandler automations_handler_{};

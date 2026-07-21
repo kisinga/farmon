@@ -297,6 +297,13 @@ export class WorkspaceService {
     if (!controller) return;
     controller.board = board.model;
 
+    // The RTC chip rides the board's i2c bus — clear a stale local.rtc when the
+    // new board has none, since the config-tab toggle is hidden there.
+    if (!board.buses?.['i2c'] && controller.local?.rtc) {
+      controller.local.rtc = undefined;
+      if (!controller.local.buttons?.length && !controller.local.ui) controller.local = undefined;
+    }
+
     const boards = new Map(this._boards());
     boards.set(cid, board);
 

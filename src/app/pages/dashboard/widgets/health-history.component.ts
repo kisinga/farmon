@@ -8,6 +8,7 @@ import {
   type DashboardWidget, type VitalBand, type VitalLevel,
 } from '@core';
 import type { TelemetryPoint } from '../../../core/models/runtime';
+import { DEVICE_MODE } from '../../../core/tokens/device-mode';
 import {
   vitalsConnectivityOption,
   type MultiAxisSeries, type MultiAxisDef, type ConnectivityBand,
@@ -189,7 +190,7 @@ function buildBand(pts: { t: number; v: number | null }[]): ConnectivityBand {
           <div class="h-72 flex items-center justify-center gap-2 text-base-content/30">
             <span class="loading loading-spinner loading-sm"></span><span class="text-xs">Loading…</span>
           </div>
-        } @else if (chartHasData(c.controller)) {
+        } @else if (!deviceMode && chartHasData(c.controller)) {
           <div echarts [options]="chartOptions().get(c.controller)!" [autoResize]="true" class="h-72"></div>
           <!-- Band legend + summary (the band itself has no axis legend). -->
           <div class="flex items-center gap-x-3 gap-y-1 flex-wrap mt-1.5 text-[11px] text-base-content/45">
@@ -209,6 +210,9 @@ function buildBand(pts: { t: number; v: number | null }[]): ConnectivityBand {
 export class HealthHistoryComponent {
   protected store = inject(DashboardStore);
   protected telemetry = inject(TelemetryStore);
+  /** Device build ships no echarts — never mount the chart (the page hides this
+   *  section there too; this keeps the widget safe if reused). */
+  protected deviceMode = inject(DEVICE_MODE);
 
   readonly siteId = input.required<string>();
 

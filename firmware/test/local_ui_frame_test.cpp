@@ -7,6 +7,10 @@
 //      sse_send_/sse_flush_, including the stall-drop lifecycle: claim → offer →
 //      blocked flushes → kClose (the shell triggers httpd close) → closing slot takes
 //      nothing new → destroy/reap → a fresh claim is unaffected by the old state.
+//   3. Asset routing — the generated-table lookup behind canHandle/handle_asset_:
+//      exact hits, "/" → index, SPA navigation fallback, the strict /local
+//      namespace and missing-file 404s, .map never served, and the
+//      extension→MIME mapping the codegen stamps into the table.
 // No esphome needed.
 //
 //   bash firmware/test/run-host-tests.sh
@@ -15,9 +19,13 @@
 #include <cstring>
 #include <string>
 
+using maji_localui::LocalUiAsset;
 using maji_localui::SseFlush;
 using maji_localui::SseSlot;
 using maji_localui::SseWrite;
+using maji_localui::content_type_for;
+using maji_localui::find_asset;
+using maji_localui::resolve_get;
 using maji_localui::sse_flush_fold;
 using maji_localui::sse_frame;
 using maji_localui::sse_has_pending;
@@ -115,10 +123,72 @@ static void test_stall_drop_lifecycle() {
   check(!e.closing, "send error does not trigger a stall close");
 }
 
+// --- Asset routing -------------------------------------------------------------
+
+// A table shaped like the generated one: the index, hashed JS/CSS (immutable), and
+// one nested unhashed file. .map files never appear (the codegen excludes them).
+static const uint8_t GZ[4] = {0x1f, 0x8b, 0x00, 0x00};
+static const LocalUiAsset ASSETS[] = {
+    {"/", GZ, sizeof(GZ), "text/html", false},
+    {"/main-ABC123XY.js", GZ, sizeof(GZ), "text/javascript", true},
+    {"/styles-FHXOZC2R.css", GZ, sizeof(GZ), "text/css", true},
+    {"/icons/icon-192.png", GZ, sizeof(GZ), "image/png", false},
+};
+static const size_t ASSETS_COUNT = sizeof(ASSETS) / sizeof(ASSETS[0]);
+
+static void test_asset_routing() {
+  const LocalUiAsset *a = resolve_get(ASSETS, ASSETS_COUNT, "/main-ABC123XY.js");
+  check(a == &ASSETS[1], "exact match serves the file");
+  check(a != nullptr && strcmp(a->content_type, "text/javascript") == 0, "exact match: js content-type");
+  check(a != nullptr && a->immutable, "exact match: hashed bundle is immutable");
+
+  check(resolve_get(ASSETS, ASSETS_COUNT, "/") == &ASSETS[0], "/ serves the index");
+  check(resolve_get(ASSETS, ASSETS_COUNT, "/index.html") == &ASSETS[0], "/index.html serves the index");
+  check(resolve_get(ASSETS, ASSETS_COUNT, "/site/local/dashboard") == &ASSETS[0],
+        "extension-less app route falls back to the index (SPA deep-link)");
+  const LocalUiAsset *icon = resolve_get(ASSETS, ASSETS_COUNT, "/icons/icon-192.png");
+  check(icon == &ASSETS[3], "nested path serves by full path");
+  check(icon != nullptr && !icon->immutable, "unhashed asset is not immutable");
+
+  check(resolve_get(ASSETS, ASSETS_COUNT, "/local") == nullptr, "/local itself is NOT handled (strict 404)");
+  check(resolve_get(ASSETS, ASSETS_COUNT, "/local/") == nullptr, "/local/ is NOT handled (strict 404)");
+  check(resolve_get(ASSETS, ASSETS_COUNT, "/local/nope") == nullptr, "/local/* miss is NOT handled (strict 404)");
+  check(resolve_get(ASSETS, ASSETS_COUNT, "/local/state") == nullptr,
+        "/local/state is never an asset (the shell exact-matches the endpoint before this)");
+  check(resolve_get(ASSETS, ASSETS_COUNT, "/missing.js") == nullptr,
+        "missing asset WITH an extension is NOT handled (404)");
+  check(resolve_get(ASSETS, ASSETS_COUNT, "/main-ABC123XY.js.map") == nullptr, ".map is never served");
+
+  check(find_asset(ASSETS, ASSETS_COUNT, "/styles-FHXOZC2R.css") == &ASSETS[2], "find_asset exact hit");
+  check(find_asset(ASSETS, ASSETS_COUNT, "/nope") == nullptr, "find_asset miss");
+
+  // An empty table routes nothing (canHandle 404s everything outside /local/state).
+  check(resolve_get(ASSETS, 0, "/") == nullptr, "empty table: no index, no fallback");
+}
+
+static void test_content_types() {
+  // Pin the strings the codegen stamps into the table — both sides must agree.
+  check(strcmp(content_type_for("/index.html"), "text/html") == 0, "html → text/html");
+  check(strcmp(content_type_for("/main-ABC123XY.js"), "text/javascript") == 0, "js → text/javascript");
+  check(strcmp(content_type_for("/styles-FHXOZC2R.css"), "text/css") == 0, "css → text/css");
+  check(strcmp(content_type_for("/manifest.webmanifest"), "application/manifest+json") == 0,
+        "webmanifest → application/manifest+json");
+  check(strcmp(content_type_for("/icons/icon-192.png"), "image/png") == 0, "png → image/png");
+  check(strcmp(content_type_for("/fonts/inter-latin-400-normal.woff2"), "font/woff2") == 0, "woff2 → font/woff2");
+  check(strcmp(content_type_for("/favicon.ico"), "image/x-icon") == 0, "ico → image/x-icon");
+  check(strcmp(content_type_for("/marketing/controller.avif"), "image/avif") == 0, "avif → image/avif");
+  check(strcmp(content_type_for("/robots.txt"), "text/plain") == 0, "txt → text/plain");
+  check(strcmp(content_type_for("/sitemap.xml"), "application/xml") == 0, "xml → application/xml");
+  check(strcmp(content_type_for("/data.bin"), "application/octet-stream") == 0, "unknown → octet-stream");
+  check(strcmp(content_type_for("/noextension"), "application/octet-stream") == 0, "no extension → octet-stream");
+}
+
 int main() {
   test_framing();
   test_coalesce_and_partial_send();
   test_stall_drop_lifecycle();
+  test_asset_routing();
+  test_content_types();
   printf("%s (%d/%d)\n", fail ? "FAILED" : "PASSED", pass, pass + fail);
   return fail ? 1 : 0;
 }

@@ -7,18 +7,23 @@
  * accepts). Per-site codegen will later replace this step, emitting one file
  * per site before the device build runs.
  *
- * Usage: node scripts/emit-device-topology.mjs [config.yaml]
+ * Usage: node scripts/emit-device-topology.mjs <config.yaml>  (config required)
  *
- * Runs automatically as the first step of `npm run build:device` so the baked
- * topology can never go stale against the bundle (positional route ids in the
- * dashboard must match the firmware built from the same config). Pass a config
- * path to bake a different site: `node scripts/emit-device-topology.mjs path/to/site.yaml`.
+ * Runs automatically as the first step of `npm run build:device` (via
+ * scripts/build-device.mjs) so the baked topology can never go stale against the
+ * bundle (positional route ids in the dashboard must match the firmware built
+ * from the same config). Pick the site with
+ * `npm run build:device -- path/to/site.yaml` or DEVICE_UI_CONFIG=path/to/site.yaml.
  */
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { parse } from 'yaml';
 
-const SRC = process.argv[2] ?? 'defaults/configs/pump-controller.yaml';
+const SRC = process.argv[2];
+if (!SRC) {
+  console.error('usage: node scripts/emit-device-topology.mjs <config.yaml>');
+  process.exit(1);
+}
 const OUT = 'src/app/device/device-topology.json';
 
 const topology = parse(readFileSync(SRC, 'utf8'));

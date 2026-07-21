@@ -320,6 +320,36 @@ const TIMING_FIELDS: TimingField[] = [
           </div>
         }
 
+        <!-- On-device features -->
+        <div class="card surface">
+          <div class="card-body gap-4">
+            <h2 class="card-title text-base">On-Device Features</h2>
+            <p class="text-sm text-base-content/50">
+              The controller runs these by itself — they keep working even if the internet or this app is down.
+            </p>
+            <label class="flex items-start gap-3 cursor-pointer">
+              <input type="checkbox" class="toggle toggle-sm toggle-primary mt-0.5 shrink-0"
+                [ngModel]="localUi()"
+                (ngModelChange)="setLocalFlag('ui', $event)" />
+              <span>
+                <span class="text-sm font-medium block">On-device dashboard</span>
+                <span class="text-xs text-base-content/60">The controller serves the full dashboard on your local network — no cloud needed.</span>
+              </span>
+            </label>
+            @if (boardHasI2c()) {
+              <label class="flex items-start gap-3 cursor-pointer">
+                <input type="checkbox" class="toggle toggle-sm toggle-primary mt-0.5 shrink-0"
+                  [ngModel]="localRtc()"
+                  (ngModelChange)="setLocalFlag('rtc', $event)" />
+                <span>
+                  <span class="text-sm font-medium block">RTC clock chip (DS3231)</span>
+                  <span class="text-xs text-base-content/60">With the clock chip fitted, time-based schedules run with no internet at all.</span>
+                </span>
+              </label>
+            }
+          </div>
+        </div>
+
         <!-- Timing & Safety Constants -->
         <div>
           <h2 class="text-lg font-semibold">Timing & Safety Constants</h2>
@@ -550,6 +580,22 @@ export class ConfigTabComponent {
   protected resetButtonMapping() {
     this.editor.updateActiveController(ctrl => {
       if (ctrl.local) ctrl.local.buttons = undefined;
+    });
+  }
+
+  // --- On-device features (local.ui / local.rtc) ---
+
+  protected localUi = computed(() => this.editor.activeController()?.local?.ui === true);
+  protected localRtc = computed(() => this.editor.activeController()?.local?.rtc === true);
+
+  /** The RTC chip rides the board's i2c bus — only offer the toggle when the board has one. */
+  protected boardHasI2c = computed(() => !!this.editor.board()?.buses?.['i2c']);
+
+  protected setLocalFlag(key: 'ui' | 'rtc', enabled: boolean) {
+    this.editor.updateActiveController(ctrl => {
+      const local = { ...ctrl.local, [key]: enabled || undefined };
+      // Back to defaults everywhere — drop `local` entirely.
+      ctrl.local = local.buttons?.length || local.ui || local.rtc ? local : undefined;
     });
   }
 

@@ -4,343 +4,439 @@
     "name": "This device"
   },
   "topology": {
-    "schema": 18,
     "controllers": [
       {
-        "id": "pump-ctrl",
+        "board": "kc868_a16",
         "directory": "pump-controller",
-        "board": "heltec-v3",
-        "friendlyName": "Pump-ctrl"
+        "friendlyName": "WATER-CTRL",
+        "id": "pump-controller-copy",
+        "io_providers": [],
+        "local": {
+          "ui": true
+        },
+        "network": {
+          "mode": "dhcp",
+          "transport": "wifi"
+        },
+        "uart_buses": []
       }
     ],
+    "layout": {
+      "controllers": {
+        "kc868-a16-controller": {
+          "x": 320,
+          "y": 630
+        },
+        "pump-controller-copy": {
+          "x": 450,
+          "y": 160
+        }
+      }
+    },
     "nodes": [
       {
-        "kind": "tank",
+        "anchorId": "pump-controller-copy",
+        "capacity_l": 10000,
+        "float_valve": false,
+        "height_m": 2.1,
         "id": "tank1",
-        "name": "Rain Tank",
-        "level_monitored": true,
-        "pressure_pin": "GPIO19",
-        "pressure_sensor_max_psi": 15,
-        "anchorId": "pump-ctrl",
-        "ports": [
-          {
-            "id": "inlet",
-            "label": "Inlet",
-            "direction": "inlet"
-          },
-          {
-            "id": "outlet",
-            "label": "Outlet",
-            "direction": "outlet"
-          }
-        ],
-        "position": {
-          "x": 100,
-          "y": 250
-        }
-      },
-      {
         "kind": "tank",
-        "id": "tank2",
-        "name": "Storage Tank",
         "level_monitored": true,
-        "pressure_pin": "GPIO20",
-        "pressure_sensor_max_psi": 15,
-        "anchorId": "pump-ctrl",
+        "name": "Rain Tank",
         "ports": [
           {
+            "direction": "inlet",
             "id": "inlet",
-            "label": "Inlet",
-            "direction": "inlet"
+            "label": "Inlet"
           },
           {
+            "direction": "outlet",
             "id": "outlet",
-            "label": "Outlet",
-            "direction": "outlet"
+            "label": "Outlet"
           }
         ],
         "position": {
-          "x": 800,
-          "y": 150
-        }
+          "x": 60,
+          "y": 347
+        },
+        "pressure_elevation_m": 0.2,
+        "pressure_pin": "GPIO36",
+        "pressure_pump_rated": false,
+        "pressure_sensor_max_psi": 5
       },
       {
-        "kind": "pump",
+        "anchorId": "pump-controller-copy",
+        "capacity_l": 20000,
+        "disabled": false,
+        "float_valve": false,
+        "height_m": 2.1,
+        "id": "tank2",
+        "kind": "tank",
+        "level_monitored": true,
+        "name": "Storage Tank",
+        "ports": [
+          {
+            "direction": "inlet",
+            "id": "inlet",
+            "label": "Inlet"
+          },
+          {
+            "direction": "outlet",
+            "id": "outlet",
+            "label": "Outlet"
+          }
+        ],
+        "position": {
+          "x": 760,
+          "y": 70
+        },
+        "pressure_elevation_m": 3.1,
+        "pressure_pin": "GPIO34",
+        "pressure_pump_rated": false,
+        "pressure_sensor_max_psi": 15
+      },
+      {
+        "anchorId": "pump-controller-copy",
+        "disabled": false,
         "id": "pump",
-        "name": "Main Pump",
-        "pin": "GPIO42",
-        "anchorId": "pump-ctrl",
+        "kind": "pump",
+        "name": "Pump",
+        "pin": "OUT9",
         "ports": [
           {
+            "direction": "inlet",
             "id": "in",
-            "label": "Inlet",
-            "direction": "inlet"
+            "label": "Inlet"
           },
           {
+            "direction": "outlet",
             "id": "out",
-            "label": "Outlet",
-            "direction": "outlet"
+            "label": "Outlet"
           }
         ],
         "position": {
-          "x": 400,
-          "y": 300
-        }
+          "x": 410,
+          "y": 316
+        },
+        "relay_polarity": "active_high"
       },
       {
-        "kind": "endpoint",
+        "anchorId": "pump-controller-copy",
+        "disabled": false,
         "id": "h2",
+        "kind": "endpoint",
         "name": "House 2",
-        "anchorId": "pump-ctrl",
         "ports": [
           {
+            "direction": "inlet",
             "id": "inlet",
-            "label": "Inlet",
-            "direction": "inlet"
+            "label": "Inlet"
           }
         ],
         "position": {
-          "x": 800,
-          "y": 500
+          "x": 780,
+          "y": 490
         }
       },
       {
-        "kind": "valve",
+        "anchorId": "pump-controller-copy",
+        "close_pin": "OUT2",
+        "coil_polarity": "active_high",
         "id": "valve1",
+        "kind": "valve",
         "name": "Tank 1 Outlet",
-        "open_pin": "GPIO4",
-        "close_pin": "GPIO5",
-        "anchorId": "pump-ctrl",
+        "open_pin": "OUT1",
         "ports": [
           {
+            "direction": "inlet",
             "id": "inlet",
-            "label": "Inlet",
-            "direction": "inlet"
+            "label": "Inlet"
           },
           {
+            "direction": "outlet",
             "id": "outlet",
-            "label": "Outlet",
-            "direction": "outlet"
+            "label": "Outlet"
           }
         ],
         "position": {
           "x": 250,
-          "y": 280
-        }
+          "y": 381
+        },
+        "travel_time": 15
       },
       {
-        "kind": "valve",
+        "anchorId": "pump-controller-copy",
+        "close_pin": "OUT4",
+        "coil_polarity": "active_high",
+        "disabled": false,
         "id": "valve2",
+        "kind": "valve",
         "name": "Tank 2 Outlet",
-        "open_pin": "GPIO6",
-        "close_pin": "GPIO7",
-        "anchorId": "pump-ctrl",
+        "open_pin": "OUT3",
         "ports": [
           {
+            "direction": "inlet",
             "id": "inlet",
-            "label": "Inlet",
-            "direction": "inlet"
+            "label": "Inlet"
           },
           {
+            "direction": "outlet",
             "id": "outlet",
-            "label": "Outlet",
-            "direction": "outlet"
+            "label": "Outlet"
           }
         ],
         "position": {
-          "x": 250,
-          "y": 370
-        }
+          "x": 270,
+          "y": 280
+        },
+        "travel_time": 15
       },
       {
-        "kind": "valve",
+        "anchorId": "pump-controller-copy",
+        "close_pin": "OUT6",
+        "coil_polarity": "active_high",
+        "disabled": false,
         "id": "valve3",
+        "kind": "valve",
         "name": "Pump to Tank 2",
-        "open_pin": "GPIO2",
-        "close_pin": "GPIO3",
-        "anchorId": "pump-ctrl",
+        "open_pin": "OUT5",
         "ports": [
           {
+            "direction": "inlet",
             "id": "inlet",
-            "label": "Inlet",
-            "direction": "inlet"
+            "label": "Inlet"
           },
           {
+            "direction": "outlet",
             "id": "outlet",
-            "label": "Outlet",
-            "direction": "outlet"
+            "label": "Outlet"
           }
         ],
         "position": {
-          "x": 550,
-          "y": 200
-        }
+          "x": 560,
+          "y": 280
+        },
+        "travel_time": 15
       },
       {
-        "kind": "valve",
+        "anchorId": "pump-controller-copy",
+        "close_pin": "OUT8",
+        "coil_polarity": "active_high",
+        "disabled": false,
         "id": "valve4",
+        "kind": "valve",
         "name": "Pump to House 2",
-        "open_pin": "GPIO39",
-        "close_pin": "GPIO40",
-        "anchorId": "pump-ctrl",
+        "open_pin": "OUT7",
         "ports": [
           {
+            "direction": "inlet",
             "id": "inlet",
-            "label": "Inlet",
-            "direction": "inlet"
+            "label": "Inlet"
           },
           {
+            "direction": "outlet",
             "id": "outlet",
-            "label": "Outlet",
-            "direction": "outlet"
+            "label": "Outlet"
           }
         ],
         "position": {
-          "x": 550,
+          "x": 560,
+          "y": 390
+        },
+        "travel_time": 15
+      },
+      {
+        "anchorId": "pump-controller-copy",
+        "disabled": false,
+        "flow_cal": 450,
+        "id": "flow3",
+        "kind": "flow_sensor",
+        "max_flow": 100,
+        "name": "Refill Line Flow",
+        "pin": "GPIO32",
+        "ports": [
+          {
+            "direction": "inlet",
+            "id": "inlet",
+            "label": "Inlet"
+          },
+          {
+            "direction": "outlet",
+            "id": "outlet",
+            "label": "Outlet"
+          }
+        ],
+        "position": {
+          "x": 670,
+          "y": 280
+        },
+        "signal_type": "pulse"
+      },
+      {
+        "anchorId": "pump-controller-copy",
+        "disabled": false,
+        "flow_cal": 450,
+        "id": "flow2",
+        "kind": "flow_sensor",
+        "max_flow": 100,
+        "name": "House 2 Water Flow",
+        "pin": "GPIO33",
+        "ports": [
+          {
+            "direction": "inlet",
+            "id": "inlet",
+            "label": "Inlet"
+          },
+          {
+            "direction": "outlet",
+            "id": "outlet",
+            "label": "Outlet"
+          }
+        ],
+        "position": {
+          "x": 670,
+          "y": 390
+        },
+        "signal_type": "pulse"
+      },
+      {
+        "anchorId": "pump-controller-copy",
+        "disabled": true,
+        "id": "endpoint2",
+        "kind": "endpoint",
+        "name": "House 1",
+        "ports": [
+          {
+            "direction": "inlet",
+            "id": "inlet",
+            "label": "Inlet"
+          }
+        ],
+        "position": {
+          "x": 1080,
           "y": 400
         }
       },
       {
-        "kind": "flow_sensor",
-        "id": "flow3",
-        "name": "Refill Line Flow",
-        "pin": "GPIO47",
+        "anchorId": "pump-controller-copy",
+        "disabled": true,
         "flow_cal": 450,
-        "anchorId": "pump-ctrl",
+        "id": "flow_sensor3",
+        "kind": "flow_sensor",
+        "max_flow": 100,
+        "name": "Flow 3",
+        "pin": "GPIO14",
         "ports": [
           {
+            "direction": "inlet",
             "id": "inlet",
-            "label": "Inlet",
-            "direction": "inlet"
+            "label": "Inlet"
           },
           {
+            "direction": "outlet",
             "id": "outlet",
-            "label": "Outlet",
-            "direction": "outlet"
+            "label": "Outlet"
           }
         ],
         "position": {
-          "x": 680,
-          "y": 200
-        }
-      },
-      {
-        "kind": "flow_sensor",
-        "id": "flow2",
-        "name": "House 2 Water Flow",
-        "pin": "GPIO46",
-        "flow_cal": 450,
-        "anchorId": "pump-ctrl",
-        "ports": [
-          {
-            "id": "inlet",
-            "label": "Inlet",
-            "direction": "inlet"
-          },
-          {
-            "id": "outlet",
-            "label": "Outlet",
-            "direction": "outlet"
-          }
-        ],
-        "position": {
-          "x": 680,
-          "y": 450
-        }
+          "x": 970,
+          "y": 332
+        },
+        "signal_type": "pulse"
       }
     ],
     "pipes": [
       {
-        "id": "pipe1",
-        "from": "tank1:outlet",
-        "to": "valve1:inlet"
-      },
-      {
-        "id": "pipe2",
         "from": "valve1:outlet",
+        "id": "pipe2",
         "to": "pump:in"
       },
       {
-        "id": "pipe3",
-        "from": "tank2:outlet",
-        "to": "valve2:inlet"
-      },
-      {
-        "id": "pipe4",
         "from": "valve2:outlet",
+        "id": "pipe4",
         "to": "pump:in"
       },
       {
-        "id": "pipe10",
         "from": "pump:out",
+        "id": "pipe5",
         "to": "valve3:inlet"
       },
       {
-        "id": "pipe5",
         "from": "valve3:outlet",
+        "id": "pipe6",
         "to": "flow3:inlet"
       },
       {
-        "id": "pipe6",
         "from": "flow3:outlet",
+        "id": "pipe7",
         "to": "tank2:inlet"
       },
       {
-        "id": "pipe7",
         "from": "pump:out",
+        "id": "pipe8",
         "to": "valve4:inlet"
       },
       {
-        "id": "pipe8",
         "from": "valve4:outlet",
+        "id": "pipe9",
         "to": "flow2:inlet"
       },
       {
-        "id": "pipe9",
         "from": "flow2:outlet",
+        "id": "pipe10",
         "to": "h2:inlet"
+      },
+      {
+        "from": "tank2:outlet",
+        "id": "pipe11",
+        "to": "flow_sensor3:inlet"
+      },
+      {
+        "from": "flow_sensor3:outlet",
+        "id": "pipe12",
+        "to": "endpoint2:inlet"
+      },
+      {
+        "from": "tank1:outlet",
+        "id": "pipe19",
+        "to": "valve1:inlet"
+      },
+      {
+        "from": "tank2:outlet",
+        "id": "pipe20",
+        "to": "valve2:inlet"
+      }
+    ],
+    "remoteImports": [
+      {
+        "controllerId": "pump-controller-copy",
+        "nodeId": "pump2"
       }
     ],
     "route_overrides": {
-      "tank1>tank2#valve1+valve3": {
+      "tank1>h2": {
+        "max_runtime_seconds": 1800
+      },
+      "tank1>tank2": {
         "max_runtime_seconds": 600,
-        "source_min_level": 20,
-        "dest_max_level": 90
+        "source_min_level": 5
       },
-      "tank1>h2#valve1+valve4": {
-        "max_runtime_seconds": 1800
+      "tank1>tank2#valve1+valve3": {
+        "dest_max_level": 90,
+        "source_min_level": 80
       },
-      "tank2>h2#valve2+valve4": {
-        "max_runtime_seconds": 1800
+      "tank2>h2": {
+        "max_runtime_seconds": 1800,
+        "source_min_level": 5
       }
     },
+    "schema": 19,
     "timing": {
-      "valve_travel_time": 15,
-      "flow_watchdog": 30,
       "flow_confirm": 15,
       "flow_threshold": 0.5,
-      "update_interval": 5
-    },
-    "automations": [
-      {
-        "id": "daily_refill",
-        "name": "Daily Refill",
-        "route": "tank1>tank2#valve1+valve3",
-        "trigger": {
-          "type": "time",
-          "at": "06:00"
-        },
-        "days_of_week": [
-          "MON",
-          "TUE",
-          "WED",
-          "THU",
-          "FRI",
-          "SAT",
-          "SUN"
-        ],
-        "enabled": true
-      }
-    ]
+      "flow_watchdog": 30,
+      "update_interval": 5,
+      "valve_travel_time": 15
+    }
   }
 }

@@ -283,7 +283,7 @@ export function generateEsphome(
       content: generateLocalUiYaml(m),
     }, {
       relativePath: `${deviceDir}/packages/local-ui-assets.h`,
-      description: "Gzipped local-UI app bundle served at GET / (placeholder page)",
+      description: "Device-mode app assets (gzipped PROGMEM table; placeholder page when the dist is absent)",
       content: generateLocalUiAssetsHeader(m),
     }] : []),
     {

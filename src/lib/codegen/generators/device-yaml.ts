@@ -238,8 +238,8 @@ export function generateDeviceYaml(
   // RTC — local.rtc — overrides it, see the ds1307 block in mqtt.ts) is the one
   // remaining header.
   lines.push("    - packages/time-sync.h");
-  // local-ui-assets.h (gzipped app bundle) is included here but WIRED by the on_boot
-  // glue in packages/local-ui.yaml (id(local_ui).set_index_asset) — the component
+  // local-ui-assets.h (gzipped app asset table) is included here but WIRED by the on_boot
+  // glue in packages/local-ui.yaml (id(local_ui).set_assets) — the component
   // itself never includes generated headers.
   if (localUi) {
     lines.push("    - packages/local-ui-assets.h");

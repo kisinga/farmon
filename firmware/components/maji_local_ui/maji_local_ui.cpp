@@ -42,12 +42,13 @@ bool MajiLocalUi::canHandle(AsyncWebServerRequest *request) const {
   char url_buf[AsyncWebServerRequest::URL_BUF_SIZE];
   StringRef url = request->url_to(url_buf);
   if (request->method() == HTTP_GET) {
-    if (url == "/" || url == "/index.html" || url == "/local/state")
+    if (url == "/local/state")
       return true;
-    // SPA client routes: a deep-link or refresh asks the server for the app's own path.
-    // Treat any other GET outside /local/ with no dot (no file extension) as navigation
-    // and serve the index; /local/* misses stay strict 404s.
-    return url.find("/local/") != 0 && url.find('.') == std::string::npos;
+    // Exact asset hit, or the SPA navigation fallback (extension-less GET outside
+    // /local/ → the index). "/local" itself, /local/* misses, and missing files
+    // WITH an extension stay strict 404s; .map files are never in the table.
+    // Rules live in the core.
+    return maji_localui::resolve_get(assets_, assets_count_, url.str()) != nullptr;
   }
   if (request->method() == HTTP_POST)
     return url == "/local/command" || url == "/local/automations";
@@ -60,24 +61,29 @@ void MajiLocalUi::handleRequest(AsyncWebServerRequest *request) {
   if (request->method() == HTTP_GET) {
     if (url == "/local/state")
       return this->handle_state_(request);
-    return this->handle_index_(request);  // "/", "/index.html", and SPA client routes
+    return this->handle_asset_(request);  // table hit, "/", or SPA client route
   }
   if (url == "/local/command")
     return this->handle_command_(request);
   return this->handle_automations_(request);  // "/local/automations"
 }
 
-// --- GET / — the gzipped single-page app --------------------------------------
+// --- GET <asset> — the gzipped app files ---------------------------------------
 
-void MajiLocalUi::handle_index_(AsyncWebServerRequest *request) {
-  if (index_gz_ == nullptr) {
-    send_json_(request, 503, "{\"error\":\"no_asset\"}");
+void MajiLocalUi::handle_asset_(AsyncWebServerRequest *request) {
+  char url_buf[AsyncWebServerRequest::URL_BUF_SIZE];
+  const auto *asset = maji_localui::resolve_get(assets_, assets_count_, request->url_to(url_buf).str());
+  if (asset == nullptr) {  // canHandle already guaranteed a hit — belt and braces
+    send_json_(request, 404, "{\"error\":\"not_found\"}");
     return;
   }
   // Served straight from flash (PROGMEM is a no-op on esp-idf) — no copy, no chunking
   // needed: the response is one contiguous rodata range.
-  auto *res = request->beginResponse(200, "text/html", index_gz_, index_gz_len_);
+  auto *res = request->beginResponse(200, asset->content_type, asset->data, asset->len);
   res->addHeader("Content-Encoding", "gzip");
+  // Content-hashed filenames can be cached forever; the index (and anything else
+  // unhashed) must revalidate so an OTA app update is picked up immediately.
+  res->addHeader("Cache-Control", asset->immutable ? "max-age=31536000, immutable" : "no-cache");
   request->send(res);
 }
 
@@ -244,8 +250,11 @@ void MajiLocalUi::handle_automations_(AsyncWebServerRequest *request) {
 }
 
 void MajiLocalUi::dump_config() {
-  ESP_LOGCONFIG(TAG, "MajiLocalUi: port=%u, app=%u B gz, command handler %s, automations handler %s", port_,
-                (unsigned) index_gz_len_, command_handler_ ? "installed" : "MISSING",
+  size_t total = 0;
+  for (size_t i = 0; i < assets_count_; i++)
+    total += assets_[i].len;
+  ESP_LOGCONFIG(TAG, "MajiLocalUi: port=%u, assets=%u (%u B gz), command handler %s, automations handler %s", port_,
+                (unsigned) assets_count_, (unsigned) total, command_handler_ ? "installed" : "MISSING",
                 automations_handler_ ? "installed" : "MISSING");
 }
 

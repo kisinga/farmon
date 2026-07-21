@@ -75,6 +75,7 @@
               "outputHashing": "all"
             },
             "device": {
+              "outputPath": "dist/device",
               "budgets": [
                 {
                   "type": "initial",

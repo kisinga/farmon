@@ -1,8 +1,9 @@
-import { Component, computed, input, output } from '@angular/core';
+import { Component, computed, inject, input, output } from '@angular/core';
 import { NgxEchartsDirective } from 'ngx-echarts';
 import type { EChartsOption } from 'echarts';
 import { TankCardComponent } from './tank-card.component';
 import { SpanSelectorComponent } from './span-selector.component';
+import { DEVICE_MODE } from '../../../core/tokens/device-mode';
 import {
   describeState,
   SYSTEM_STATE_MEANINGS, STOP_REASON_MEANINGS, FAULT_MEANINGS, OUTCOME_MEANINGS,
@@ -86,7 +87,16 @@ function fmt(n: number): string {
 
       @switch (widget().kind) {
         @case ('gauge') {
-          <div echarts [options]="gaugeOption()" [autoResize]="true" class="flex-1 min-h-[120px]"></div>
+          <!-- Device mode ships no echarts (no provideEchartsCore) — the gauge
+               degrades to the plain stat readout instead of a chart. -->
+          @if (deviceMode) {
+            <div class="flex-1 flex items-center">
+              <span class="text-3xl font-semibold tabular-nums">{{ statText() }}</span>
+              @if (widget().unit) { <span class="ml-1 text-sm text-base-content/40">{{ widget().unit }}</span> }
+            </div>
+          } @else {
+            <div echarts [options]="gaugeOption()" [autoResize]="true" class="flex-1 min-h-[120px]"></div>
+          }
         }
         @case ('tank') {
           <app-tank-card
@@ -99,7 +109,7 @@ function fmt(n: number): string {
             (spanChange)="spanChange.emit($event)" />
         }
         @case ('line') {
-          @if (series().length > 0) {
+          @if (!deviceMode && series().length > 0) {
             <div echarts [options]="lineOption()" [autoResize]="true" class="flex-1 min-h-[120px]"></div>
           } @else if (!historyLoaded()) {
             <div class="flex-1 min-h-[120px] skeleton rounded-lg opacity-40"></div>
@@ -112,7 +122,7 @@ function fmt(n: number): string {
         }
         @case ('flow') {
           <div class="flex-1 flex flex-col">
-            @if (series().length > 0) {
+            @if (!deviceMode && series().length > 0) {
               <div echarts [options]="lineOption()" [autoResize]="true" class="flex-1 min-h-[110px]"></div>
             } @else if (!historyLoaded()) {
               <div class="flex-1 min-h-[110px] skeleton rounded-lg opacity-40"></div>
@@ -237,6 +247,9 @@ function fmt(n: number): string {
   `,
 })
 export class DashboardCardComponent {
+  /** Device build ships no echarts — chart cases render a stat/empty state instead. */
+  protected deviceMode = inject(DEVICE_MODE);
+
   readonly widget = input.required<DashboardWidget>();
   readonly row = input<ShadowRow | undefined>(undefined);
   /** Canonical node state from the shared projection (`store.nodeRuntime`), when

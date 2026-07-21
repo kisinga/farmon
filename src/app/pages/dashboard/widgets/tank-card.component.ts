@@ -1,8 +1,9 @@
-import { Component, computed, input, output, signal } from '@angular/core';
+import { Component, computed, inject, input, output, signal } from '@angular/core';
 import { NgxEchartsDirective } from 'ngx-echarts';
 import type { EChartsOption } from 'echarts';
 import type { DashboardWidget } from '@core';
 import type { ShadowRow, TelemetryPoint } from '../../../core/models/runtime';
+import { DEVICE_MODE } from '../../../core/tokens/device-mode';
 import { SPAN_PRESETS } from '../telemetry.store';
 import { SpanSelectorComponent } from './span-selector.component';
 import { historyLineOption } from '../../../core/util/chart-theme';
@@ -86,7 +87,7 @@ let uidSeq = 0;
             <div class="h-48 flex items-center justify-center gap-2 text-base-content/30">
               <span class="loading loading-spinner loading-sm"></span><span class="text-xs">Loading history…</span>
             </div>
-          } @else if (series().length > 0) {
+          } @else if (!deviceMode && series().length > 0) {
             <div echarts [options]="chartOption()" [autoResize]="true" class="h-48"></div>
             <p class="text-[10px] text-base-content/30 text-center mt-1">Drag the slider or scroll the chart to zoom</p>
           } @else {
@@ -98,6 +99,9 @@ let uidSeq = 0;
   `,
 })
 export class TankCardComponent {
+  /** Device build ships no echarts — the history chart is skipped (live fill stays). */
+  protected deviceMode = inject(DEVICE_MODE);
+
   readonly widget = input.required<DashboardWidget>();
   readonly row = input<ShadowRow | undefined>(undefined);
   readonly series = input<TelemetryPoint[]>([]);

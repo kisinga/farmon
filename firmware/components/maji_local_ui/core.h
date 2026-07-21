@@ -53,4 +53,36 @@ enum class SseFlush { kAgain, kWait, kClose };
 // exit is the destroy callback.
 SseFlush sse_flush_fold(SseSlot &s, SseWrite w, size_t wrote, uint16_t max_failures);
 
+// --- Static app assets ---------------------------------------------------------
+// The generated local-ui-assets.h embeds the device-mode app as a flat table of
+// gzipped files; the shell (canHandle/handleRequest) routes GETs through these.
+
+// One embedded file. data is gzipped and lives in flash (PROGMEM); path is the
+// served URL path, "/" being the index (the SPA entry point).
+struct LocalUiAsset {
+  const char *path;
+  const uint8_t *data;
+  size_t len;
+  const char *content_type;
+  bool immutable;  // content-hashed filename — safe to cache forever
+};
+
+// Exact path lookup, nullptr on a miss.
+const LocalUiAsset *find_asset(const LocalUiAsset *assets, size_t count, const std::string &path);
+
+// Which asset a GET is served, or nullptr for a strict 404:
+//   - "/local" itself and anything under /local/ (the API namespace) never fall
+//     back — always 404 here (the shell exact-matches the registered endpoints
+//     like /local/state before this is consulted);
+//   - an exact table match wins;
+//   - "/", "/index.html", and any other extension-less path serve the index —
+//     SPA client-route fallback, so deep-links and refreshes load the app;
+//   - anything else (a missing file WITH an extension) is a 404.
+// .map files are never in the table (the codegen excludes them), so they 404.
+const LocalUiAsset *resolve_get(const LocalUiAsset *assets, size_t count, const std::string &url);
+
+// MIME type by file extension — the same mapping the codegen stamps into the
+// table, kept here so the host tests pin both sides to identical strings.
+const char *content_type_for(const std::string &path);
+
 }  // namespace maji_localui

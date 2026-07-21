@@ -105,7 +105,7 @@ All existing projects are either single-tank or put all logic in HA/Node-RED (no
 
 | System | Internet down | WiFi down | Cloud dies | On-device safety |
 |--------|--------------|-----------|------------|-----------------|
-| **MajiFlow** | Safety runs. HA overlay lost. | Safety runs. OLED shows status. | No impact. | Full state machine. |
+| **MajiFlow** | Safety + schedules run. On-device dashboard and panel buttons work over the LAN. | Safety + schedules run. Panel buttons and OLED keep working. | No impact. | Full state machine. |
 | Tuya stack | Schedules stop. LocalTuya works. | Stuck in last state. | Brick without pre-extracted keys. | None. |
 | Farmbot/Farmo | No control. | N/A (cellular) | No control. | None. |
 | HA-only DIY | No remote. Local automations run. | Pump uncontrolled. | N/A. | None — logic is server-side. |
@@ -113,6 +113,8 @@ All existing projects are either single-tank or put all logic in HA/Node-RED (no
 | Chinese PLC | Runs forever. | N/A. | N/A. | Full (if programmed). |
 
 Tuya automations run on Tuya's cloud servers. If internet drops, schedules stop. The device retains last state but has no autonomous logic. This is a disqualifying weakness for safety-critical water infrastructure.
+
+> **Local tier note (2026-07):** the MajiFlow row above reflects the completed local tier — automation sets persist to flash (schedules survive reboots and power cuts with no server reachable), physical panel buttons are mapped automatically (Button 1 = Stop All, later buttons toggle routes), and `local.ui` serves the full operator dashboard from the device itself over the site LAN. An optional DS3231 RTC (`local.rtc`) makes time-based schedules fully offline; without it they need NTP reachability. The cloud subscription now adds only remote reach, alerts, history and multi-site coordination — it is off the critical path for daily operation.
 
 ## Remote Access Without Cloud
 
