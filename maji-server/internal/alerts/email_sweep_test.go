@@ -369,6 +369,66 @@ func TestOfflineAndOnlineNotifications(t *testing.T) {
 	}
 }
 
+// A failed recovery delivery must leave the incident active so the next sweep
+// retries — resolving it silently was how back-online notifications vanished on
+// any transient WhatsApp/SMTP error.
+func TestOnlineDeliveryFailureRetries(t *testing.T) {
+	app, _, _ := setupAlertSite(t)
+	defer app.Cleanup()
+
+	prefs, _ := app.FindFirstRecordByFilter("notification_prefs", "user != ''", dbx.Params{})
+	if prefs != nil {
+		prefs.Set("alert_tank", false)
+		prefs.Set("alert_device_offline", true)
+		prefs.Set("alert_device_online", true)
+		saveRec(t, app, prefs)
+	}
+
+	ctrl, _ := app.FindRecordById("controllers", "ctrl1")
+	now := time.Date(2026, 7, 6, 9, 0, 0, 0, time.UTC)
+
+	ctrl.Set("last_seen", now.Add(-5*time.Minute))
+	saveRec(t, app, ctrl)
+
+	wa := &fakeWhatsApp{}
+	s := &sweeper{openwa: wa}
+	if err := s.run(app, now); err != nil {
+		t.Fatal(err)
+	}
+	if got := len(wa.sent); got != 1 {
+		t.Fatalf("expected one offline notification, got %d", got)
+	}
+
+	// Controller recovers while the WhatsApp lane is down: no send, and the
+	// incident must stay active.
+	wa.err = errors.New("network down")
+	ctrl.Set("last_seen", now.Add(time.Minute))
+	saveRec(t, app, ctrl)
+	if err := s.run(app, now.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if got := len(wa.sent); got != 1 {
+		t.Fatalf("failed recovery should not record a send, got %d", got)
+	}
+	inc, _ := app.FindFirstRecordByFilter("notification_incidents",
+		"kind = 'device_offline' && status = 'active'", dbx.Params{})
+	if inc == nil {
+		t.Fatal("failed recovery delivery must leave the offline incident active for retry")
+	}
+
+	// Lane back up: the next sweep delivers the recovery and resolves.
+	wa.err = nil
+	if err := s.run(app, now.Add(2*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if got := len(wa.sent); got != 2 {
+		t.Fatalf("expected retried recovery notification, got %d sends", got)
+	}
+	if !strings.Contains(wa.sent[1], "Controller back online") {
+		t.Fatalf("expected online subject, got %q", wa.sent[1])
+	}
+}
+
 func setupAlertSite(t *testing.T) (*tests.TestApp, *core.Record, *core.Record) {
 	t.Helper()
 	app, err := tests.NewTestApp()

@@ -1,11 +1,12 @@
 package migrations_test
 
 import (
+	"fmt"
 	"os"
 	"strings"
 	"testing"
 
-	_ "github.com/kisinga/majiflow/migrations" // register the Go migrations
+	"github.com/kisinga/majiflow/migrations" // register the Go migrations
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tests"
 )
@@ -94,6 +95,70 @@ func TestMigrationsApplyCleanly(t *testing.T) {
 		if incidents.Fields.GetByName(f) == nil {
 			t.Errorf("notification_incidents.%s should exist (migration 41)", f)
 		}
+	}
+}
+
+// Migration 56 backfills alert_device_online for existing offline-alert
+// subscribers: 47 added the toggle opt-in (default false) without a backfill,
+// so their back-online notifications silently never went out.
+func TestBackfillDeviceOnline(t *testing.T) {
+	app, err := tests.NewTestApp()
+	if err != nil {
+		t.Fatalf("migrations did not apply on a fresh database: %v", err)
+	}
+	defer app.Cleanup()
+
+	users, err := app.FindCollectionByNameOrId("users")
+	if err != nil {
+		t.Fatal(err)
+	}
+	prefsColl, err := app.FindCollectionByNameOrId("notification_prefs")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	i := 0
+	mk := func(offline, online bool) *core.Record {
+		i++
+		user := core.NewRecord(users)
+		user.Set("email", fmt.Sprintf("owner%d@example.com", i))
+		user.Set("password", "password123")
+		if err := app.Save(user); err != nil {
+			t.Fatal(err)
+		}
+		r := core.NewRecord(prefsColl)
+		r.Set("user", user.Id)
+		r.Set("alert_device_offline", offline)
+		r.Set("alert_device_online", online)
+		if err := app.Save(r); err != nil {
+			t.Fatal(err)
+		}
+		return r
+	}
+	legacy := mk(true, false)  // offline subscriber predating the toggle — the gap
+	paired := mk(true, true)   // already opted into both
+	other := mk(false, false)  // not an offline subscriber
+
+	if err := migrations.BackfillDeviceOnline(app); err != nil {
+		t.Fatal(err)
+	}
+
+	got := func(id string) (offline, online bool) {
+		r, err := app.FindRecordById("notification_prefs", id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return r.GetBool("alert_device_offline"), r.GetBool("alert_device_online")
+	}
+
+	if _, on := got(legacy.Id); !on {
+		t.Error("legacy offline subscriber should be backfilled to alert_device_online = true")
+	}
+	if _, on := got(paired.Id); !on {
+		t.Error("already-paired subscriber should keep alert_device_online = true")
+	}
+	if _, on := got(other.Id); on {
+		t.Error("non-offline subscriber must not gain alert_device_online")
 	}
 }
 

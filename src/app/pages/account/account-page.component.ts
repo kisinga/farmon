@@ -283,7 +283,15 @@ export class AccountPageComponent implements OnInit {
     return this.flags()[key] ?? true;
   }
   protected set(key: string, v: boolean): void {
-    this.flags.update((f) => ({ ...f, [key]: v }));
+    this.flags.update((f) => {
+      const next = { ...f, [key]: v };
+      // Recovery is the other half of the offline subscription: enabling
+      // "Controller offline" implies wanting "back online" too (the user can
+      // still uncheck it). Opting into offline without recovery is how the
+      // "never got the back-online notification" gap kept recurring.
+      if (key === 'alert_device_offline' && v) next['alert_device_online'] = true;
+      return next;
+    });
     this.saved.set(false); // edits invalidate the "Saved" confirmation
   }
   protected setChannelEmail(v: boolean): void {

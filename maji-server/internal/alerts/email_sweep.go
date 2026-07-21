@@ -379,7 +379,7 @@ func (s *sweeper) sweepOffline(app core.App, sc siteCtx, now time.Time, active m
 		} else {
 			// Controller is fresh: resolve any active offline incident and notify
 			// owners who opted into recovery messages.
-			s.notifyOnline(app, sc, now, c.Id)
+			s.notifyOnline(app, sc, now, c.Id, active)
 		}
 	}
 }
@@ -387,8 +387,9 @@ func (s *sweeper) sweepOffline(app core.App, sc siteCtx, now time.Time, active m
 // notifyOnline resolves an active device_offline incident and sends a recovery
 // notification to owners who opted in. The duration is taken from the incident's
 // offline_since timestamp so it reflects the actual outage length. A failed delivery
-// leaves the incident active so the next sweep retries.
-func (s *sweeper) notifyOnline(app core.App, sc siteCtx, now time.Time, controllerID string) {
+// leaves the incident active so the next sweep retries: it re-adds the incident key
+// to the active set so resolveInactiveIncidents doesn't close it in this same sweep.
+func (s *sweeper) notifyOnline(app core.App, sc siteCtx, now time.Time, controllerID string, active map[string]bool) {
 	key := "device_offline:" + sc.id + ":" + controllerID
 	rec, err := app.FindFirstRecordByFilter("notification_incidents",
 		"site = {:s} && incident_key = {:k} && status = 'active'", dbx.Params{"s": sc.id, "k": key})
@@ -426,9 +427,14 @@ func (s *sweeper) notifyOnline(app core.App, sc siteCtx, now time.Time, controll
 				delivered = true
 			}
 		}
-		if delivered {
-			rec.Set("last_sent", iso(now))
+		if !delivered {
+			// Leave the incident active: the next sweep re-enters this branch and
+			// retries the recovery. Resolving here would permanently drop the
+			// back-online notification on any transient send failure.
+			active[key] = true
+			return
 		}
+		rec.Set("last_sent", iso(now))
 	}
 
 	rec.Set("status", "resolved")
