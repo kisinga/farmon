@@ -7,10 +7,12 @@ import type { SiteFullPayload } from '../core/models/backend-api';
  * and the app fetches it here. Nothing is baked into the bundle, so one device
  * build serves every site.
  *
- * The fetched envelope keeps the raw stored shape (the same JSON the `sites`
- * record's `draft_topology` carries); the dashboard runs it through
- * parseTopology exactly as it does the PocketBase payload. The envelope is
- * cached on first load — the identity helpers below read the cache.
+ * The served JSON is the RAW stored topology (the same shape the `sites`
+ * record's `draft_topology` carries: `{schema, controllers, nodes, ...}`); the
+ * dashboard runs it through parseTopology exactly as it does the PocketBase
+ * payload. An `{site, topology}` envelope is also accepted for backwards
+ * compatibility with early bundles. The result is normalized to the envelope
+ * and cached on first load — the identity helpers below read the cache.
  */
 interface DeviceTopologyEnvelope {
   site: { id: string; name: string };
@@ -19,12 +21,24 @@ interface DeviceTopologyEnvelope {
 
 let cache: DeviceTopologyEnvelope | null = null;
 
+export function normalizeTopology(json: unknown): DeviceTopologyEnvelope {
+  const j = json as Partial<DeviceTopologyEnvelope> & SiteFullPayload['topology'];
+  if (j && typeof j === 'object' && 'topology' in j && j.topology) return j as DeviceTopologyEnvelope;
+  // Raw topology (what codegen injects): synthesize the site identity from the
+  // single controller the device serves.
+  const ctrl = j?.controllers?.[0] as { id?: string; friendlyName?: string } | undefined;
+  return {
+    site: { id: 'local', name: ctrl?.friendlyName ?? 'Controller' },
+    topology: j,
+  };
+}
+
 /** The siteLoad payload the dashboard bootstraps from: GET /topology.json. */
 export async function deviceSitePayload(): Promise<SiteFullPayload> {
   if (!cache) {
     const res = await fetch('/topology.json');
     if (!res.ok) throw new Error(`Device topology unavailable (${res.status}).`);
-    cache = (await res.json()) as DeviceTopologyEnvelope;
+    cache = normalizeTopology(await res.json());
   }
   // The one site the device serves (the device-mode router lands on
   // `/site/local/dashboard` and siteLoad ignores the route param).
