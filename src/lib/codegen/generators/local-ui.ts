@@ -1,4 +1,4 @@
-import { gzipSync } from 'fflate';
+import { gunzipSync, gzipSync } from 'fflate';
 import type { Manifest } from '@core';
 import { routeSetVersion } from '@core';
 import { commandActionNames, commandDispatchLines } from './mqtt';
@@ -387,6 +387,28 @@ const kb = (n: number) => `${(n / 1024).toFixed(1)}KB`;
  * /topology.json when the topology is available), so codegen never requires an
  * Angular build.
  */
+/**
+ * Consistency guard: every script/style the index references must be in the
+ * asset set. A bundle whose index points at assets that were never embedded
+ * boots to a blank page on the device (the browser can't fetch the main
+ * bundle) — that is what a mixed-build dist does (stale cache, mid-deploy).
+ * Hard-fail here instead of shipping a dead UI. Only covers eager refs
+ * (main/styles/preloaded chunks); lazy chunks are runtime-fetched by main.
+ */
+function assertIndexReferencesResolve(assets: EmbeddedAsset[]): void {
+  const index = assets.find(a => a.servePath === '/');
+  if (!index) return;
+  const html = new TextDecoder().decode(gunzipSync(index.gz));
+  const refs = new Set(html.match(/(?:main|styles|chunk)-[A-Z0-9]+\.(?:js|css)/g) ?? []);
+  const have = new Set(assets.map(a => a.servePath.slice(1)));
+  const missing = [...refs].filter(r => !have.has(r));
+  if (missing.length > 0)
+    throw new Error(
+      `local.ui: index.html references ${missing.join(', ')} — not in the device-ui manifest ` +
+        '(mixed app builds; rebuild with npm run build:device or hard-refresh and retry)',
+    );
+}
+
 export async function generateLocalUiAssetsHeader(m: Manifest, topologyJson?: string): Promise<string> {
   const dist = await readDeviceUiAssets();
   let assets: EmbeddedAsset[];
@@ -396,6 +418,8 @@ export async function generateLocalUiAssetsHeader(m: Manifest, topologyJson?: st
     source = dist.source;
     if (!assets.some(a => a.servePath === '/'))
       console.warn(`local.ui: ${dist.source} has no "/" asset — GET / will 404 (run npm run build:device -- <config>)`);
+    else
+      assertIndexReferencesResolve(assets);
   } else {
     console.warn(
       'local.ui: device app manifest not found, embedding placeholder — run npm run build:device -- <config> first',

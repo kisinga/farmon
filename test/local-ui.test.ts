@@ -250,6 +250,36 @@ process.env.DEVICE_UI_DIST = fixture;
 assert(await generateLocalUiAssetsHeader(onManifest, TOPO_JSON) === real, "fixture: generator is deterministic");
 process.env.DEVICE_UI_DIST = MISSING_DIST;
 
+// Mixed-build guard: the index references an asset the manifest doesn't carry
+// (stale cache / mid-deploy fetch) — the bundle must hard-fail, not ship a UI
+// that boots to a blank page on the device.
+{
+  const mixed = fs.mkdtempSync(path.join(os.tmpdir(), "local-ui-mixed-"));
+  fs.writeFileSync(path.join(mixed, "index.html.gz"), gz('<!doctype html><script src="/main-DEADBEEF.js"></script>'));
+  fs.writeFileSync(path.join(mixed, "main-ABC123XY.js.gz"), gz(MAIN_JS));
+  fs.writeFileSync(
+    path.join(mixed, "device-ui-manifest.json"),
+    JSON.stringify({
+      version: 1,
+      assets: [
+        { path: "/", file: "index.html.gz", contentType: "text/html", immutable: false },
+        { path: "/main-ABC123XY.js", file: "main-ABC123XY.js.gz", contentType: "text/javascript", immutable: true },
+      ],
+    }),
+  );
+  process.env.DEVICE_UI_DIST = mixed;
+  let threw = "";
+  try {
+    await generateLocalUiAssetsHeader(onManifest, TOPO_JSON);
+  } catch (err) {
+    threw = err instanceof Error ? err.message : String(err);
+  }
+  process.env.DEVICE_UI_DIST = MISSING_DIST;
+  assert(threw.includes("main-DEADBEEF.js") && threw.includes("mixed app builds"),
+    "mixed build: index referencing a missing asset hard-fails, naming the file");
+  fs.rmSync(mixed, { recursive: true, force: true });
+}
+
 // An unparseable manifest → placeholder, with a warning naming the manifest.
 const badManifest = fs.mkdtempSync(path.join(os.tmpdir(), "local-ui-badman-"));
 fs.writeFileSync(path.join(badManifest, "device-ui-manifest.json"), "{not json");

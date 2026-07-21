@@ -138,6 +138,11 @@ func New(cfg config.Config) *pocketbase.PocketBase {
 				ctype := deviceUIContentType(name)
 				e.Response.Header().Set("Content-Type", ctype)
 				e.Response.Header().Del("Content-Encoding")
+				// These files are fetched at firmware-generation time; a stale cached
+				// .gz from a previous deploy silently mixes two app builds into one
+				// bundle (index references assets that were never embedded). Force
+				// revalidation on every generation.
+				e.Response.Header().Set("Cache-Control", "no-cache")
 				http.ServeContent(e.Response, e.Request, st.Name(), st.ModTime(), rs)
 				return nil
 			})
