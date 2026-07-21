@@ -23,6 +23,15 @@ export interface GeneratedFile {
   content: string;
 }
 
+export interface GenerateOptions {
+  /**
+   * Raw site topology JSON — embedded (gzipped) as the /topology.json asset of
+   * the local-UI bundle when the topology's local.ui flag is on, so the
+   * on-device dashboard boots from the exact site it was generated for.
+   */
+  topologyJson?: string;
+}
+
 /**
  * Pinned ESPHome version. The bundle vendors external_components that bind to ESPHome's
  * C++ component API, which shifts across releases — an unpinned bump can break the build.
@@ -228,14 +237,15 @@ function internalizeEntities(yaml: string): string {
   return out.join('\n');
 }
 
-export function generateEsphome(
+export async function generateEsphome(
   m: Manifest,
   board: BoardDef,
   siteId: string,
   secrets: SecretsMap | undefined,
   metadata: GenerationMetadata,
   expansionBoards: ExpansionBoardCatalog,
-): GeneratedFile[] {
+  options?: GenerateOptions,
+): Promise<GeneratedFile[]> {
   const dir = m.device.directory ?? m.device.name;
   const deviceDir = `${siteRoot(siteId)}/esphome/${dir}`;
   const collected = collectEntityCodegen(m, board, expansionBoards, metadata);
@@ -245,6 +255,9 @@ export function generateEsphome(
   // On-device operator dashboard (maji_local_ui) — swaps web_server v3 for a bare
   // web_server_base the component serves on, and adds the package + app bundle below.
   const localUi = m.device.local?.ui === true;
+  // Async: the asset table is read from the device-ui manifest (disk under Node,
+  // HTTP fetch in the browser bundle).
+  const localUiAssets = localUi ? await generateLocalUiAssetsHeader(m, options?.topologyJson) : undefined;
 
   const files: GeneratedFile[] = [
     {
@@ -283,8 +296,8 @@ export function generateEsphome(
       content: generateLocalUiYaml(m),
     }, {
       relativePath: `${deviceDir}/packages/local-ui-assets.h`,
-      description: "Device-mode app assets (gzipped PROGMEM table; placeholder page when the dist is absent)",
-      content: generateLocalUiAssetsHeader(m),
+      description: "Device-mode app assets (gzipped PROGMEM table from the device-ui manifest + /topology.json; placeholder page when the manifest is absent)",
+      content: localUiAssets!,
     }] : []),
     {
       relativePath: `${deviceDir}/packages/route-engine.yaml`,
@@ -436,7 +449,7 @@ function generateCompileScript(dir: string): string {
 /**
  * Generate firmware files for a manifest + board using the specified backend.
  */
-export function generateFirmware(
+export async function generateFirmware(
   generator: GeneratorId,
   manifest: Manifest,
   board: BoardDef,
@@ -444,20 +457,22 @@ export function generateFirmware(
   secrets: SecretsMap | undefined,
   metadata: GenerationMetadata,
   expansionBoards: ExpansionBoardCatalog,
-): GeneratedFile[] {
+  options?: GenerateOptions,
+): Promise<GeneratedFile[]> {
   if (generator === 'esphome') {
-    return generateEsphome(manifest, board, siteId, secrets, metadata, expansionBoards);
+    return generateEsphome(manifest, board, siteId, secrets, metadata, expansionBoards, options);
   }
   throw new Error(`Unknown generator: ${generator}`);
 }
 
-export function generateAll(
+export async function generateAll(
   m: Manifest,
   board: BoardDef,
   siteId: string,
   secrets: SecretsMap | undefined,
   metadata: GenerationMetadata,
   expansionBoards: ExpansionBoardCatalog,
-): GeneratedFile[] {
-  return [...generateFirmware('esphome', m, board, siteId, secrets, metadata, expansionBoards)];
+  options?: GenerateOptions,
+): Promise<GeneratedFile[]> {
+  return [...(await generateFirmware('esphome', m, board, siteId, secrets, metadata, expansionBoards, options))];
 }

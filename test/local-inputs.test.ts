@@ -147,6 +147,8 @@ assert(boardInputPins(heltec).length === 0, "heltec-v3 has no input expanders");
   assert(y.includes("number: 4"), "IN5 resolves to expander port 4");
 }
 
+// async main: generateAll is async (manifest-driven local-UI assets).
+const main = async () => {
 // --- Generator: board without input expanders emits nothing ------------------
 
 {
@@ -156,7 +158,7 @@ assert(boardInputPins(heltec).length === 0, "heltec-v3 has no input expanders");
   assert(hasLocalInputs(heltecManifest, heltec) === false, "predicate: false without input expanders");
   assert(hasLocalInputs(manifest, kc868) === true, "predicate: true for the kc868 manifest (gates the device-YAML include)");
 
-  const files = generateAll(heltecManifest, heltec, "test-site", undefined, createTestMetadata(), {});
+  const files = await generateAll(heltecManifest, heltec, "test-site", undefined, createTestMetadata(), {});
   assert(!files.some(f => f.relativePath.endsWith("local-inputs.yaml")), "no local-inputs.yaml in the bundle");
   const deviceYaml = files.find(f => f.relativePath.endsWith(".yaml") && !f.relativePath.includes("packages/") && !f.relativePath.includes("common/"))!;
   assert(!deviceYaml.content.includes("local_inputs"), "device YAML skips the package include");
@@ -165,7 +167,7 @@ assert(boardInputPins(heltec).length === 0, "heltec-v3 has no input expanders");
 // --- Bundle wiring (kc868) ----------------------------------------------------
 
 {
-  const files = generateAll(manifest, kc868, "test-site", undefined, createTestMetadata(), {});
+  const files = await generateAll(manifest, kc868, "test-site", undefined, createTestMetadata(), {});
   const pkg = files.find(f => f.relativePath.endsWith("packages/local-inputs.yaml"));
   assert(!!pkg, "bundle carries packages/local-inputs.yaml");
   assert(pkg!.content.includes("internal: true"), "button sensors internalized (no MQTT auto-publish)");
@@ -204,3 +206,5 @@ assert(boardInputPins(heltec).length === 0, "heltec-v3 has no input expanders");
   assert(explicitHtml.includes("<td>Button 2</td><td><code>IN5</code></td><td>Start / stop"), "manual (explicit): route button follows in input order (IN5 = Button 2)");
   done();
 })();
+};
+void main();

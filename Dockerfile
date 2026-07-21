@@ -23,6 +23,13 @@ COPY public ./public
 RUN npm run build
 # → /build/dist/app/browser
 
+# Device-mode app (no config arg — the topology is injected at generation time):
+# pre-gzipped assets + device-ui-manifest.json, hosted at /device-ui/ so the
+# browser-side firmware codegen can fetch them when building a bundle.
+COPY scripts/build-device.mjs ./scripts/build-device.mjs
+RUN npm run build:device
+# → /build/dist/device/browser
+
 # ── Stage 2: build the Go server (cloud binary) ──────────────────────────────
 FROM golang:1.25-alpine AS api
 RUN apk add --no-cache git
@@ -43,11 +50,13 @@ RUN apk add --no-cache ca-certificates
 WORKDIR /app
 COPY --from=api /maji-cloud /usr/local/bin/maji-cloud
 COPY --from=web /build/dist/app/browser /app/spa
+COPY --from=web /build/dist/device/browser /app/device-ui
 COPY deploy/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
-# SPA dir is baked; everything else is runtime env (see .env.example).
+# SPA + device-UI dirs are baked; everything else is runtime env (see .env.example).
 ENV MAJI_SPA_DIR=/app/spa
+ENV MAJI_DEVICE_UI_DIR=/app/device-ui
 # 8090 HTTP (SPA + /api + /_/), 1883 plain MQTT, 8883 TLS MQTT (when enabled).
 EXPOSE 8090 1883 8883
 # All persistent state (SQLite + storage/ + logs) lives here; mount a volume.

@@ -23,7 +23,7 @@ function mintCommandId(): string {
  * DeviceBackendService — the device-mode stand-in for BackendService's two
  * runtime surfaces the dashboard touches:
  *
- *  - `siteLoad` serves the baked topology module instead of the `sites`
+ *  - `siteLoad` fetches `/topology.json` from the device instead of the `sites`
  *    collection (the device has no PocketBase).
  *  - `sendCommand` POSTs the command envelope straight to the controller's
  *    `/local/command`, minting the `command_id` client-side (in the cloud flow

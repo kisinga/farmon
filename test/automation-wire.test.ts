@@ -79,9 +79,11 @@ const empty = serializeAutomationSet(0x0d52, []);
 assert(empty.length === 6 && new DataView(empty.buffer).getUint8(4) === 0, "empty set = 6-byte header, count 0");
 
 // --- Firmware struct must match the layout + bake the version ---
+// async main: generateAll is async (manifest-driven local-UI assets).
+const main = async () => {
 const topology = parseTopology(parseYaml(fs.readFileSync(CONFIG_PATH, "utf-8")));
 const manifest: Manifest = topologyToManifestForController(topology, topology.controllers[0]?.id ?? "default");
-const files = generateAll(manifest, loadBoard(BOARD_DIR), "test-site", undefined, createTestMetadata(), {});
+const files = await generateAll(manifest, loadBoard(BOARD_DIR), "test-site", undefined, createTestMetadata(), {});
 const get = (n: string) => files.find((f) => f.relativePath.endsWith(n))?.content ?? "";
 
 // The struct + static_assert + wire constants now live in the vendored maji_automations
@@ -112,3 +114,5 @@ assert(autoYaml.includes(`route_set_version: ${routeSetVersion(manifest)}`), "au
 console.log(`\n========================================`);
 console.log(`${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);
+};
+void main();

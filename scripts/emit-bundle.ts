@@ -14,10 +14,15 @@ if (!configPath || !boardDir || !outDir) {
   process.exit(2);
 }
 
-const topo = parseTopology(parseYaml(fs.readFileSync(configPath, "utf-8")));
+// async main: generateAll is async (manifest-driven local-UI assets).
+const main = async () => {
+const rawConfig = parseYaml(fs.readFileSync(configPath, "utf-8"));
+const topo = parseTopology(rawConfig);
 const ctrl = topo.controllers[0]?.id ?? "default";
 const manifest = topologyToManifestForController(topo, ctrl);
-const files = generateAll(manifest, loadBoard(boardDir), "test-site", undefined, createTestMetadata(), {});
+const files = await generateAll(manifest, loadBoard(boardDir), "test-site", undefined, createTestMetadata(), {}, {
+  topologyJson: JSON.stringify(rawConfig),
+});
 
 for (const f of files) {
   const p = path.join(outDir, f.relativePath);
@@ -33,3 +38,5 @@ if (!deviceYaml) {
 }
 console.log(`wrote ${files.length} files to ${outDir}`);
 console.log(`DEVICE_YAML=${path.join(outDir, deviceYaml.relativePath)}`);
+};
+void main();

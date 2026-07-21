@@ -13,6 +13,7 @@ export {
   createTestMetadata,
   generateDefaultSecrets,
   type GeneratedFile,
+  type GenerateOptions,
 } from './generate';
 
 export { type GeneratorId, type SecretsMap, type GenerationMetadata } from './backends/types';
@@ -20,7 +21,12 @@ export { type GeneratorId, type SecretsMap, type GenerationMetadata } from './ba
 export { generateBoardPackage } from './generators/board-package';
 export { generateMajiControlConfig } from './generators/routes';
 export { generateLocalInputs } from './generators/local-inputs';
-export { generateLocalUiYaml, generateLocalUiAssetsHeader } from './generators/local-ui';
+export {
+  generateLocalUiYaml,
+  generateLocalUiAssetsHeader,
+  fetchDeviceUiAssets,
+  type DeviceUiManifest,
+} from './generators/local-ui';
 export { collectEntityCodegen } from './generators/collect';
 
 export { generateSelfTest, activeProbes } from './self-test';

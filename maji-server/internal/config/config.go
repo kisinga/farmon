@@ -21,6 +21,11 @@ type Config struct {
 	// SPADir is the directory of the built Angular SPA to serve. Empty disables
 	// static serving (e.g. during local backend-only development).
 	SPADir string
+	// DeviceUIDir is the directory of the device-mode app build (pre-gzipped
+	// assets + device-ui-manifest.json) served raw under /device-ui/ so the
+	// browser-side firmware codegen can fetch them at bundle-generation time.
+	// Empty disables the route.
+	DeviceUIDir string
 	// MQTTTCPAddr is the address the broker BINDS to (device-facing listener).
 	MQTTTCPAddr string
 	// MQTTWSAddr is the browser-facing MQTT-over-WebSocket listener address.
@@ -64,6 +69,7 @@ func Load(mode Mode) Config {
 	return Config{
 		Mode:           mode,
 		SPADir:         env("MAJI_SPA_DIR", ""),
+		DeviceUIDir:    env("MAJI_DEVICE_UI_DIR", ""),
 		MQTTTCPAddr:    env("MAJI_MQTT_TCP", ":1883"),
 		MQTTWSAddr:     env("MAJI_MQTT_WS", ":8082"),
 		MQTTTLSEnabled: envBool("MAJI_MQTT_TLS_ENABLED", false),

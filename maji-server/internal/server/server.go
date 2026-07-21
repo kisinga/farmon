@@ -4,7 +4,11 @@ package server
 
 import (
 	"errors"
+	"io"
+	"mime"
+	"net/http"
 	"os"
+	"path"
 	"time"
 
 	"github.com/kisinga/majiflow/internal/alerts"
@@ -106,6 +110,39 @@ func New(cfg config.Config) *pocketbase.PocketBase {
 			return automations.PublishConfigForController(app, broker.Server, site, ctrl)
 		}
 
+		// Host the device-mode app build (pre-gzipped assets + manifest) for the
+		// browser-side firmware codegen, which fetches them at bundle-generation
+		// time to embed into the firmware's local-ui asset table. Served as RAW
+		// bytes: the .gz payloads are the exact bytes flashed to the device — the
+		// browser reads them with fetch()/arrayBuffer, so Content-Encoding must
+		// NOT be set (the transport must not gunzip them).
+		if cfg.DeviceUIDir != "" {
+			deviceFS := os.DirFS(cfg.DeviceUIDir)
+			se.Router.GET("/device-ui/{path...}", func(e *core.RequestEvent) error {
+				// path.Clean with a leading slash confines traversal ("../" stays
+				// inside the root); the trimmed result is the fs-relative name.
+				name := path.Clean("/" + e.Request.PathValue("path"))[1:]
+				f, err := deviceFS.Open(name)
+				if err != nil {
+					return apis.NewNotFoundError("not found", nil)
+				}
+				defer f.Close()
+				st, err := f.Stat()
+				if err != nil || st.IsDir() {
+					return apis.NewNotFoundError("not found", nil)
+				}
+				rs, ok := f.(io.ReadSeeker)
+				if !ok {
+					return apis.NewNotFoundError("not found", nil)
+				}
+				ctype := deviceUIContentType(name)
+				e.Response.Header().Set("Content-Type", ctype)
+				e.Response.Header().Del("Content-Encoding")
+				http.ServeContent(e.Response, e.Request, st.Name(), st.ModTime(), rs)
+				return nil
+			})
+		}
+
 		// Serve the built SPA when a directory is configured. Prerendered marketing
 		// pages (/, /pricing, /features) resolve to their own index.html; every
 		// other path is an authenticated SPA route, so it falls back to the bare
@@ -128,6 +165,20 @@ func New(cfg config.Config) *pocketbase.PocketBase {
 	})
 
 	return app
+}
+
+// deviceUIContentType picks the Content-Type for a /device-ui/ asset. The .gz
+// siblings are application/gzip payloads fetched as arrayBuffer; anything
+// without a registered type falls back to octet-stream. Go's built-in table has
+// no ".gz" entry and the alpine image ships no /etc/mime.types, so pin it here.
+func deviceUIContentType(name string) string {
+	if path.Ext(name) == ".gz" {
+		return "application/gzip"
+	}
+	if ctype := mime.TypeByExtension(path.Ext(name)); ctype != "" {
+		return ctype
+	}
+	return "application/octet-stream"
 }
 
 // keepRealtimeAlive pushes a no-op event through every connected realtime (SSE)

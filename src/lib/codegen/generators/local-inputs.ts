@@ -45,7 +45,9 @@ export function generateLocalInputs(m: Manifest, board: BoardDef): string | null
   if (assignments.length === 0) return null;
 
   const blocks = assignments.map((a) => {
-    const label = a.action === 'stop_all' ? 'Stop All' : `Start/stop ${a.routeName}`;
+    // Entity names must not contain '/' (ESPHome URL separator — warns now, hard
+    // error in 2026.7.0). Hyphenate both our own prefix and any '/' in route names.
+    const label = a.action === 'stop_all' ? 'Stop All' : `Start-stop ${a.routeName.replaceAll('/', '-')}`;
     const onPress = a.action === 'stop_all'
       ? `  on_press:
     - button.press: btn_stop_all`

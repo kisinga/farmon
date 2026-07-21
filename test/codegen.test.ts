@@ -105,6 +105,8 @@ function pumpedPressureTopology(sourcePumpRated: boolean, destPumpRated: boolean
   });
 }
 
+// async main: generateAll is async (manifest-driven local-UI assets).
+const main = async () => {
 // --- Setup ---
 
 console.log("Codegen Integration Tests");
@@ -115,7 +117,7 @@ const rawConfig = fs.readFileSync(CONFIG_PATH, "utf-8");
 const topology = parseTopology(parseYaml(rawConfig));
 manifest = topologyToManifestForController(topology, topology.controllers[0]?.id ?? 'default');
 const validation = validateAll(topology, manifest, board);
-files = generateAll(manifest, board, 'test-site', undefined, createTestMetadata(), {});
+files = await generateAll(manifest, board, 'test-site', undefined, createTestMetadata(), {});
 fileMap = new Map(files.map((f) => [f.relativePath, f.content]));
 
 // Helper arrays
@@ -268,7 +270,7 @@ assert(
 // A TLS endpoint pins the broker's self-signed cert, skips the CN check, and dials 8883.
 const SAMPLE_CA =
   "-----BEGIN CERTIFICATE-----\nMIIBsampleCAbodyLineOne\nMIIBsampleCAbodyLineTwo\n-----END CERTIFICATE-----\n";
-const tlsFiles = generateAll(
+const tlsFiles = await generateAll(
   manifest, board, 'test-site', undefined,
   createTestMetadata({ brokerTls: true, brokerPort: 8883, brokerCa: SAMPLE_CA }), {},
 );
@@ -502,7 +504,7 @@ const VFD_CONFIG_PATH = path.join(DEFAULTS, "configs/vfd-pump-controller.yaml");
 const vfdRawConfig = fs.readFileSync(VFD_CONFIG_PATH, "utf-8");
 const vfdTopology = parseTopology(parseYaml(vfdRawConfig));
 const vfdManifest = topologyToManifestForController(vfdTopology, vfdTopology.controllers[0]?.id ?? 'default');
-const vfdFiles = generateAll(vfdManifest, board, 'test-site', undefined, createTestMetadata(), {});
+const vfdFiles = await generateAll(vfdManifest, board, 'test-site', undefined, createTestMetadata(), {});
 const vfdFileMap = new Map(vfdFiles.map((f) => [f.relativePath, f.content]));
 
 function getVfdFile(suffix: string): string {
@@ -577,7 +579,7 @@ const kcBoard = loadBoard(KC_BOARD_DIR);
 const kcRawConfig = fs.readFileSync(KC_CONFIG_PATH, "utf-8");
 const kcTopology = parseTopology(parseYaml(kcRawConfig));
 const kcManifest = topologyToManifestForController(kcTopology, kcTopology.controllers[0]?.id ?? 'default');
-const kcFiles = generateAll(kcManifest, kcBoard, 'test-site', undefined, createTestMetadata(), {});
+const kcFiles = await generateAll(kcManifest, kcBoard, 'test-site', undefined, createTestMetadata(), {});
 const kcFileMap = new Map(kcFiles.map((f) => [f.relativePath, f.content]));
 
 function getKcFile(suffix: string): string {
@@ -723,7 +725,7 @@ const r4RawConfig = fs.readFileSync(R4_CONFIG_PATH, "utf-8");
 const r4Topology = parseTopology(parseYaml(r4RawConfig));
 const r4Manifest = topologyToManifestForController(r4Topology, r4Topology.controllers[0]?.id ?? 'default');
 const r4Validation = validateAll(r4Topology, r4Manifest, r4Board);
-const r4Files = generateAll(r4Manifest, r4Board, 'test-site', undefined, createTestMetadata(), {});
+const r4Files = await generateAll(r4Manifest, r4Board, 'test-site', undefined, createTestMetadata(), {});
 const r4FileMap = new Map(r4Files.map((f) => [f.relativePath, f.content]));
 
 function getR4File(suffix: string): string {
@@ -876,7 +878,7 @@ const scheduledTopo = parseTopology({
 });
 
 const schedManifest = topologyToManifestForController(scheduledTopo, 'pressure-runtime');
-const schedFiles = generateAll(schedManifest, board, 'sched-site', undefined, createTestMetadata(), {});
+const schedFiles = await generateAll(schedManifest, board, 'sched-site', undefined, createTestMetadata(), {});
 const schedMap = new Map(schedFiles.map((f) => [f.relativePath, f.content]));
 const getSched = (suffix: string): string => {
   for (const [k, v] of schedMap) if (k.endsWith(suffix)) return v;
@@ -944,3 +946,5 @@ assert(
 console.log(`\n${"=".repeat(40)}`);
 console.log(`${passed} passed, ${failed} failed`);
 process.exit(failed > 0 ? 1 : 0);
+};
+void main();

@@ -138,7 +138,7 @@ interface TestResult {
   routesHLines?: number;
 }
 
-function runTest(label: string, p: ScaleParams): TestResult {
+async function runTest(label: string, p: ScaleParams): Promise<TestResult> {
   const flowCount = Math.max(p.flows, 1);
   const manifest = buildManifest(p);
   const result: TestResult = {
@@ -159,7 +159,7 @@ function runTest(label: string, p: ScaleParams): TestResult {
   if (!v.ok) return result;
 
   try {
-    const files = generateAll(manifest, board, 'test-site', undefined, createTestMetadata());
+    const files = await generateAll(manifest, board, 'test-site', undefined, createTestMetadata());
     result.generateOk = true;
     const rh = files.find((f) => f.relativePath.endsWith("routes.h"));
     if (rh) result.routesHLines = rh.content.split("\n").length;
@@ -201,24 +201,26 @@ function suite(name: string, tests: TestResult[]) {
 let totalPass = 0;
 let totalFail = 0;
 
-function run(name: string, configs: Array<[string, ScaleParams]>) {
-  const results = configs.map(([label, p]) => runTest(label, p));
+async function run(name: string, configs: Array<[string, ScaleParams]>) {
+  const results = await Promise.all(configs.map(([label, p]) => runTest(label, p)));
   suite(name, results);
   totalPass += results.filter((r) => r.generateOk).length;
   totalFail += results.filter((r) => !r.generateOk).length;
 }
 
+// async main: generateAll is async (manifest-driven local-UI assets).
+const main = async () => {
 console.log("Scaling Limits Tests");
 console.log("====================\n");
 
-run("Tanks (4 valves, 2 flows)", [
+await run("Tanks (4 valves, 2 flows)", [
   ["1 tank", { tanks: 1, valves: 4, flows: 2, routes: 2 }],
   ["4 tanks", { tanks: 4, valves: 4, flows: 2, routes: 8 }],
   ["10 tanks", { tanks: 10, valves: 4, flows: 2, routes: 20 }],
   ["15 tanks", { tanks: 15, valves: 4, flows: 2, routes: 20 }],
 ]);
 
-run("Valves (2 tanks, 2 flows)", [
+await run("Valves (2 tanks, 2 flows)", [
   ["4 valves", { tanks: 2, valves: 4, flows: 2, routes: 4 }],
   ["8 valves", { tanks: 2, valves: 8, flows: 2, routes: 8 }],
   ["16 valves", { tanks: 2, valves: 16, flows: 2, routes: 10 }],
@@ -226,26 +228,26 @@ run("Valves (2 tanks, 2 flows)", [
   ["20 valves", { tanks: 2, valves: 20, flows: 2, routes: 10 }],
 ]);
 
-run("Flow sensors (2 tanks, 4 valves)", [
+await run("Flow sensors (2 tanks, 4 valves)", [
   ["1 flow", { tanks: 2, valves: 4, flows: 1, routes: 4 }],
   ["4 flows", { tanks: 2, valves: 4, flows: 4, routes: 4 }],
   ["10 flows", { tanks: 2, valves: 4, flows: 10, routes: 4 }],
 ]);
 
-run("Routes (4 tanks, 8 valves, 4 flows)", [
+await run("Routes (4 tanks, 8 valves, 4 flows)", [
   ["5 routes", { tanks: 4, valves: 8, flows: 4, routes: 5 }],
   ["20 routes", { tanks: 4, valves: 8, flows: 4, routes: 20 }],
   ["50 routes", { tanks: 4, valves: 8, flows: 4, routes: 50 }],
 ]);
 
-run("Proportional N (N tanks, 2N valves, N flows, N\u00b2 routes)", [
+await run("Proportional N (N tanks, 2N valves, N flows, N\u00b2 routes)", [
   ["N=2", { tanks: 2, valves: 4, flows: 2, routes: 4 }],
   ["N=4", { tanks: 4, valves: 8, flows: 4, routes: 16 }],
   ["N=6", { tanks: 6, valves: 12, flows: 6, routes: 36 }],
   ["N=8", { tanks: 8, valves: 16, flows: 8, routes: 64 }],
 ]);
 
-run("valve_mask overflow (uint16_t = 16 bits)", [
+await run("valve_mask overflow (uint16_t = 16 bits)", [
   ["16 valves", { tanks: 2, valves: 16, flows: 1, routes: 3 }],
   ["17 valves", { tanks: 2, valves: 17, flows: 1, routes: 3 }],
 ]);
@@ -366,7 +368,7 @@ function buildKcManifest(p: KcScaleParams): Manifest {
   };
 }
 
-function runKcTest(label: string, p: KcScaleParams): TestResult {
+async function runKcTest(label: string, p: KcScaleParams): Promise<TestResult> {
   const numPumps = p.pumps ?? 1;
   const flowCount = Math.max(p.flows, 1);
   const manifest = buildKcManifest(p);
@@ -388,7 +390,7 @@ function runKcTest(label: string, p: KcScaleParams): TestResult {
   if (!v.ok) return result;
 
   try {
-    const files = generateAll(manifest, kcBoard, 'test-site', undefined, createTestMetadata());
+    const files = await generateAll(manifest, kcBoard, 'test-site', undefined, createTestMetadata());
     result.generateOk = true;
     const rh = files.find((f) => f.relativePath.endsWith("routes.h"));
     if (rh) result.routesHLines = rh.content.split("\n").length;
@@ -399,41 +401,41 @@ function runKcTest(label: string, p: KcScaleParams): TestResult {
   return result;
 }
 
-function runKc(name: string, configs: Array<[string, KcScaleParams]>) {
-  const results = configs.map(([label, p]) => runKcTest(label, p));
+async function runKc(name: string, configs: Array<[string, KcScaleParams]>) {
+  const results = await Promise.all(configs.map(([label, p]) => runKcTest(label, p)));
   suite(name, results);
   totalPass += results.filter((r) => r.generateOk).length;
   totalFail += results.filter((r) => !r.generateOk).length;
 }
 
-runKc("KC868 Valves (2 tanks, 1 flow, 1 pump)", [
+await runKc("KC868 Valves (2 tanks, 1 flow, 1 pump)", [
   ["1 valve", { tanks: 2, valves: 1, flows: 1, routes: 2 }],
   ["4 valves", { tanks: 2, valves: 4, flows: 1, routes: 4 }],
   ["7 valves", { tanks: 2, valves: 7, flows: 1, routes: 4 }],
   ["8 valves (OUT overflow)", { tanks: 2, valves: 8, flows: 1, routes: 4 }],
 ]);
 
-runKc("KC868 Valves no pump (2 tanks, 1 flow, VFD)", [
+await runKc("KC868 Valves no pump (2 tanks, 1 flow, VFD)", [
   ["7 valves", { tanks: 2, valves: 7, flows: 1, routes: 4, pumps: 0 }],
   ["8 valves", { tanks: 2, valves: 8, flows: 1, routes: 4, pumps: 0 }],
   ["9 valves (OUT overflow)", { tanks: 2, valves: 9, flows: 1, routes: 4, pumps: 0 }],
 ]);
 
-runKc("KC868 Tanks (4 valves, 1 flow)", [
+await runKc("KC868 Tanks (4 valves, 1 flow)", [
   ["1 tank", { tanks: 1, valves: 4, flows: 1, routes: 2 }],
   ["2 tanks", { tanks: 2, valves: 4, flows: 1, routes: 4 }],
   ["4 tanks", { tanks: 4, valves: 4, flows: 1, routes: 8 }],
   ["5 tanks (ADC overflow)", { tanks: 5, valves: 4, flows: 1, routes: 10 }],
 ]);
 
-runKc("KC868 Flow sensors (2 tanks, 4 valves)", [
+await runKc("KC868 Flow sensors (2 tanks, 4 valves)", [
   ["1 flow", { tanks: 2, valves: 4, flows: 1, routes: 4 }],
   ["2 flows", { tanks: 2, valves: 4, flows: 2, routes: 4 }],
   ["3 flows", { tanks: 2, valves: 4, flows: 3, routes: 4 }],
   ["4 flows (pulse overflow)", { tanks: 2, valves: 4, flows: 4, routes: 4 }],
 ]);
 
-runKc("KC868 Max config (4 tanks, 7 valves, 3 flows, 1 pump)", [
+await runKc("KC868 Max config (4 tanks, 7 valves, 3 flows, 1 pump)", [
   ["N=2 (2T 4V 2F)", { tanks: 2, valves: 4, flows: 2, routes: 4 }],
   ["N=3 (3T 6V 3F)", { tanks: 3, valves: 6, flows: 3, routes: 9 }],
   ["N=4 max (4T 7V 3F)", { tanks: 4, valves: 7, flows: 3, routes: 12 }],
@@ -460,3 +462,5 @@ console.log("  Routes          flash memory   \u2192 max 16 (conflict_mask limit
 
 console.log(`\n${totalPass} passed, ${totalFail} expected failures`);
 process.exit(0);
+};
+void main();

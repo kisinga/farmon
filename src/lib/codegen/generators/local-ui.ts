@@ -15,14 +15,14 @@ import { commandActionNames, commandDispatchLines } from './mqtt';
  *                          need id() access, so they are generated here, not baked
  *                          into the component).
  *   - local-ui-assets.h  — the device-mode app (npm run build:device →
- *                          dist/device/browser) as a flat table of gzipped
- *                          PROGMEM assets (LOCAL_UI_ASSETS /
+ *                          dist/device/browser + device-ui-manifest.json) as a
+ *                          flat table of gzipped PROGMEM assets (LOCAL_UI_ASSETS /
  *                          LOCAL_UI_ASSETS_COUNT, one maji_localui::LocalUiAsset per
- *                          file). When the dist is absent or has no device-build.json
- *                          marker — tests, cloud-side codegen, a fresh checkout, a
- *                          cloud build in the same dir — a placeholder page is
- *                          embedded as the single "/" entry instead, so codegen
- *                          never requires an Angular build.
+ *                          file), plus a /topology.json entry carrying the site
+ *                          topology. When the manifest is absent/unreadable —
+ *                          tests, a fresh checkout, a failed fetch in the browser —
+ *                          a placeholder page is embedded as the "/" entry instead,
+ *                          so codegen never requires an Angular build.
  *
  * Serving contract (component side in firmware/components/maji_local_ui):
  *   exact path match → the file (Content-Encoding: gzip, the table's Content-Type);
@@ -187,173 +187,122 @@ ${indent(bootBody, 12)}
 const escapeHtml = (s: string) =>
   s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
-// --- Device-app dist reading ---------------------------------------------------
+// --- Device-app manifest reading ---------------------------------------------
 // The device-mode Angular build (npm run build:device → dist/device/browser) is
-// read from disk ONLY under Node; codegen also runs inside the browser bundle
-// (lazy editor/deploy chunk), where there is no fs — process.getBuiltinModule
-// keeps the builtin out of the static import graph so the browser build never
-// sees node:fs.
+// packaged by scripts/build-device.mjs: every servable file is gzipped (level 9)
+// and described by device-ui-manifest.json (path / file / contentType /
+// immutable). Codegen TRUSTS the manifest — skip lists, content types, and the
+// immutable heuristic are applied at build time; here we only read the bytes.
+// Two read paths, same header output:
+//   - Node (emit-bundle, tests): the manifest + its .gz files are read from disk
+//     (default dist/device/browser anchored at the repo root, DEVICE_UI_DIST
+//     override). process.getBuiltinModule keeps node:fs out of the static import
+//     graph so the browser bundle never sees it.
+//   - Browser (in-app firmware download): no node:fs → the same manifest is
+//     fetched from /device-ui/, where the server hosts the dist; each asset's
+//     file is fetched relative to the manifest URL.
 
-/** One dist file queued for embedding. */
-interface DistAsset {
-  servePath: string; // URL path in the table; the root index.html is "/"
-  data: Uint8Array; // raw (pre-gzip) bytes
+/** Manifest emitted by scripts/build-device.mjs next to the gzipped app dist. */
+export interface DeviceUiManifest {
+  version: number;
+  assets: Array<{
+    path: string; // URL path in the table; the root index is "/"
+    file: string; // sibling of the manifest, already gzipped (level 9)
+    contentType: string;
+    immutable: boolean; // content-hashed name → year-long cache header
+  }>;
+}
+
+/** One asset queued for embedding — `gz` bytes are ALREADY gzipped. */
+interface EmbeddedAsset {
+  servePath: string;
+  gz: Uint8Array;
   contentType: string;
-  immutable: boolean; // content-hashed filename → year-long cache header
+  immutable: boolean;
+  raw?: number; // uncompressed size, when known (placeholder/topology — we gzip those ourselves)
 }
 
 const DEVICE_UI_DIST_ENV = 'DEVICE_UI_DIST';
+const DEVICE_UI_MANIFEST = 'device-ui-manifest.json';
 /**
  * The device build's browser output (angular.json outputPath dist/device → the
- * application builder's browser/ subdir, where build-device.mjs also stamps the
- * marker), anchored at the repo root — the default must not resolve against the
- * process CWD or codegen run from another directory would silently embed the
- * placeholder. This file is src/lib/codegen/generators/local-ui.ts, so the root
- * is four levels up.
+ * application builder's browser/ subdir, where build-device.mjs also writes the
+ * manifest), anchored at the repo root — the default must not resolve against
+ * the process CWD or codegen run from another directory would silently embed
+ * the placeholder. This file is src/lib/codegen/generators/local-ui.ts, so the
+ * root is four levels up.
  */
 const DEFAULT_DEVICE_UI_DIST = new URL('../../../../dist/device/browser', import.meta.url).pathname;
-/** Stamped into the dist by scripts/build-device.mjs — proof this dir is a device build. */
-const DEVICE_BUILD_MARKER = 'device-build.json';
+/** Where the server hosts the device dist for the in-browser codegen path. */
+const DEVICE_UI_BASE_URL = '/device-ui/';
 /** Warn when the embedded payload passes this gzip total (ESP32 flash budget). */
 const GZ_WARN_BYTES = 700 * 1024;
 
-/** extension → MIME — keep in sync with content_type_for in maji_local_ui/core.cpp. */
-const CONTENT_TYPES: Record<string, string> = {
-  html: 'text/html',
-  htm: 'text/html',
-  js: 'text/javascript',
-  mjs: 'text/javascript',
-  css: 'text/css',
-  json: 'application/json',
-  webmanifest: 'application/manifest+json',
-  txt: 'text/plain',
-  xml: 'application/xml',
-  svg: 'image/svg+xml',
-  png: 'image/png',
-  jpg: 'image/jpeg',
-  jpeg: 'image/jpeg',
-  gif: 'image/gif',
-  webp: 'image/webp',
-  avif: 'image/avif',
-  ico: 'image/x-icon',
-  woff: 'font/woff',
-  woff2: 'font/woff2',
-  ttf: 'font/ttf',
-  otf: 'font/otf',
-  pdf: 'application/pdf',
-  wasm: 'application/wasm',
-};
+/** Parse + shape-check the manifest — trusted, but a malformed one must not poison the flash image. */
+function parseManifest(raw: string): DeviceUiManifest | null {
+  try {
+    const m = JSON.parse(raw) as DeviceUiManifest;
+    if (m?.version !== 1 || !Array.isArray(m.assets)) return null;
+    return m;
+  } catch {
+    return null;
+  }
+}
 
-const contentTypeFor = (p: string) => CONTENT_TYPES[p.slice(p.lastIndexOf('.') + 1)] ?? 'application/octet-stream';
-
-/** Angular emits content-hashed names as `name-HASH.ext` (8 upper-alnum chars). */
-const HASHED_NAME = /-[A-Z0-9]{8}\.[^/]+$/;
-
-/** Serve paths are plain ASCII URL paths — anything else can't be matched over HTTP. */
-const SERVABLE_PATH = /^\/([A-Za-z0-9._~-]+(\/[A-Za-z0-9._~-]+)*)?$/;
-
-/**
- * Read the device-app dist into embeddable assets, or null when it isn't there
- * (missing dir, missing/unparseable device-build.json marker, an unreadable
- * tree, or running in the browser bundle). Subdirectories are served at their
- * full path; the marker, *.map files, and the pre-rename index.csr.html are
- * skipped.
- */
 // Structural minimums of node:fs/node:path — the app tsconfig has no node types,
 // and a static node: import would leak into the browser bundle.
 interface FsLike {
   existsSync(p: string): boolean;
-  readdirSync(p: string, opts: { withFileTypes: true }): DirentLike[];
   readFileSync(p: string): Uint8Array;
-}
-interface DirentLike {
-  name: string;
-  isDirectory(): boolean;
-  isFile(): boolean;
 }
 interface PathLike {
   resolve(...segments: string[]): string;
   join(...segments: string[]): string;
 }
 
-function readDeviceUiDist(): { dir: string; files: DistAsset[]; config?: string } | null {
-  const proc = (globalThis as { process?: { env?: Record<string, string | undefined>; getBuiltinModule?: (m: string) => unknown } })
-    .process;
+interface NodeModules {
+  fs: FsLike;
+  path: PathLike;
+  env: Record<string, string | undefined>;
+}
+
+/** node:fs/node:path/env under Node, null in the browser bundle. */
+function nodeModules(): NodeModules | null {
+  const proc = (globalThis as {
+    process?: { env?: Record<string, string | undefined>; getBuiltinModule?: (m: string) => unknown };
+  }).process;
   const fs = proc?.getBuiltinModule?.('node:fs') as FsLike | undefined;
   const path = proc?.getBuiltinModule?.('node:path') as PathLike | undefined;
   if (!fs || !path || !proc?.env) return null;
+  return { fs, path, env: proc.env };
+}
+
+const manifestAssets = (m: DeviceUiManifest, read: (file: string) => Uint8Array): EmbeddedAsset[] =>
+  m.assets.map(a => ({ servePath: a.path, gz: read(a.file), contentType: a.contentType, immutable: a.immutable }));
+
+/** Node path: read the manifest + its .gz files from the dist dir, or null when absent/broken. */
+function readFromDisk(node: NodeModules): { source: string; assets: EmbeddedAsset[] } | null {
+  const { fs, path, env } = node;
   // The env override is an explicit pointer, so CWD resolution is fine for it;
   // the default is anchored at the repo root (see DEFAULT_DEVICE_UI_DIST).
-  const override = proc.env[DEVICE_UI_DIST_ENV];
+  const override = env[DEVICE_UI_DIST_ENV];
   const dir = override ? path.resolve(override) : DEFAULT_DEVICE_UI_DIST;
-  if (!fs.existsSync(dir)) return null;
+  const manifestPath = path.join(dir, DEVICE_UI_MANIFEST);
+  if (!fs.existsSync(manifestPath)) return null;
 
-  // The marker separates a device build from a cloud build / stale output in the
-  // same dir — without it there is no telling WHICH app these files are, so fall
-  // back to the placeholder rather than poison the flash image.
-  let config: string | undefined;
-  try {
-    const marker: unknown = JSON.parse(new TextDecoder().decode(fs.readFileSync(path.join(dir, DEVICE_BUILD_MARKER))));
-    if (typeof (marker as { config?: unknown }).config === 'string')
-      config = (marker as { config: string }).config;
-  } catch {
+  const manifest = parseManifest(new TextDecoder().decode(fs.readFileSync(manifestPath)));
+  if (!manifest) {
     console.warn(
-      `local.ui: ${dir} has no readable ${DEVICE_BUILD_MARKER} — not a device build, embedding placeholder` +
+      `local.ui: ${manifestPath} is missing/unparseable — not a device build, embedding placeholder` +
         ' (run npm run build:device -- <config>)',
     );
     return null;
   }
-
   try {
-    const files: DistAsset[] = [];
-    const walk = (rel: string) => {
-      const entries = fs
-        .readdirSync(rel ? path.join(dir, rel) : dir, { withFileTypes: true })
-        // Bytewise, not localeCompare — the header must be identical on every machine.
-        .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
-      for (const e of entries) {
-        const r = rel ? `${rel}/${e.name}` : e.name;
-        if (e.isDirectory()) {
-          walk(r);
-          continue;
-        }
-        if (!e.isFile()) continue;
-        if (r === DEVICE_BUILD_MARKER) continue; // build provenance, not a servable asset
-        if (r.endsWith('.map')) continue; // source maps never ship to the device
-        if (r === 'index.csr.html') continue; // SSR artifact; build:device renames it to index.html
-        // Service-worker files — device mode disables the SW; pure dead flash.
-        if (r === 'ngsw-worker.js' || r === 'ngsw.json' || r === 'safety-worker.js' || r === 'worker-basic.min.js')
-          continue;
-        // Marketing/landing imagery belongs to the public site, not the dashboard —
-        // it's the single largest dist entry and pure dead weight on the flash budget.
-        if (r.startsWith('marketing/')) continue;
-        // PWA install icons + SEO files — meaningless on a controller (no service
-        // worker, no crawler); the dashboard never references them.
-        if (r.startsWith('icons/')) continue;
-        if (r === 'manifest.webmanifest' || r === 'robots.txt' || r === 'sitemap.xml') continue;
-        // Self-hosted fonts (~200KB woff2): every font stack in styles.css ends in
-        // system fallbacks (ui-sans-serif/system-ui, ui-monospace/Menlo), and
-        // font-display:swap paints the fallback immediately on the 404 — the device
-        // runs on system fonts, the cloud keeps the brand typefaces.
-        if (r.startsWith('fonts/')) continue;
-        const servePath = r === 'index.html' ? '/' : `/${r}`;
-        if (!SERVABLE_PATH.test(servePath)) {
-          console.warn(`local.ui: skipping ${r} — path can't be served by the flat asset table`);
-          continue;
-        }
-        files.push({
-          servePath,
-          data: new Uint8Array(fs.readFileSync(path.join(dir, r))),
-          contentType: contentTypeFor(r),
-          immutable: HASHED_NAME.test(r),
-        });
-      }
-    };
-    walk('');
-    return { dir, files, config };
+    return { source: dir, assets: manifestAssets(manifest, f => new Uint8Array(fs.readFileSync(path.join(dir, f)))) };
   } catch (err) {
-    // Permissions, a dir swapped mid-walk, … — a broken dist must not break the
-    // whole bundle generation.
+    // A file listed in the manifest but missing/unreadable — a broken dist must
+    // not break the whole bundle generation.
     console.warn(
       `local.ui: failed to read ${dir} (${err instanceof Error ? err.message : String(err)}), embedding placeholder` +
         ' (run npm run build:device -- <config>)',
@@ -362,7 +311,53 @@ function readDeviceUiDist(): { dir: string; files: DistAsset[]; config?: string 
   }
 }
 
-/** Placeholder page — embedded as the sole "/" entry when the dist is absent. */
+/**
+ * Browser path: fetch the manifest, then each asset file relative to the
+ * manifest URL. Exported (and fetch-injectable) so tests can drive it without a
+ * server. Returns null on any failure — the caller embeds the placeholder.
+ */
+export async function fetchDeviceUiAssets(
+  fetchImpl: typeof fetch,
+  baseUrl = DEVICE_UI_BASE_URL,
+): Promise<{ source: string; assets: EmbeddedAsset[] } | null> {
+  const manifestUrl = baseUrl + DEVICE_UI_MANIFEST;
+  try {
+    const res = await fetchImpl(manifestUrl);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const manifest = parseManifest(await res.text());
+    if (!manifest) throw new Error('unparseable manifest');
+    const base = manifestUrl.slice(0, manifestUrl.lastIndexOf('/') + 1);
+    const assets: EmbeddedAsset[] = [];
+    for (const a of manifest.assets) {
+      const r = await fetchImpl(base + a.file);
+      if (!r.ok) throw new Error(`HTTP ${r.status} for ${a.file}`);
+      assets.push({
+        servePath: a.path,
+        gz: new Uint8Array(await r.arrayBuffer()),
+        contentType: a.contentType,
+        immutable: a.immutable,
+      });
+    }
+    return { source: manifestUrl, assets };
+  } catch (err) {
+    console.warn(
+      `local.ui: failed to fetch the device app from ${manifestUrl} (${err instanceof Error ? err.message : String(err)}),` +
+        ' embedding placeholder — the server must host the build:device dist at /device-ui/',
+    );
+    return null;
+  }
+}
+
+/** Manifest-driven assets, from disk under Node or over HTTP in the browser. */
+async function readDeviceUiAssets(): Promise<{ source: string; assets: EmbeddedAsset[] } | null> {
+  const node = nodeModules();
+  if (node) return readFromDisk(node);
+  const fetchImpl = (globalThis as { fetch?: typeof fetch }).fetch;
+  if (typeof fetchImpl !== 'function') return null;
+  return fetchDeviceUiAssets(fetchImpl);
+}
+
+/** Placeholder page — embedded as the "/" entry when the manifest is absent. */
 function placeholderIndex(m: Manifest): Uint8Array {
   const name = escapeHtml(m.device.friendly_name);
   const html = [
@@ -383,51 +378,74 @@ function placeholderIndex(m: Manifest): Uint8Array {
 const kb = (n: number) => `${(n / 1024).toFixed(1)}KB`;
 
 /**
- * C++ header — the app as a flat table of gzipped PROGMEM assets. Every dist file
- * becomes a static byte array; LOCAL_UI_ASSETS maps serve paths to them (the index
- * is the "/" entry). Missing dist → the placeholder page as the single "/" entry,
- * so codegen never requires an Angular build.
+ * C++ header — the app as a flat table of gzipped PROGMEM assets. Every manifest
+ * asset becomes a static byte array (bytes straight from the .gz files — no
+ * re-gzip); LOCAL_UI_ASSETS maps serve paths to them (the index is the "/"
+ * entry). The site's raw topology JSON is gzipped here and appended as
+ * /topology.json (the dashboard boots from it even with the broker down).
+ * Missing manifest/failed fetch → the placeholder page as the "/" entry (plus
+ * /topology.json when the topology is available), so codegen never requires an
+ * Angular build.
  */
-export function generateLocalUiAssetsHeader(m: Manifest): string {
-  const dist = readDeviceUiDist();
-  let files: DistAsset[];
+export async function generateLocalUiAssetsHeader(m: Manifest, topologyJson?: string): Promise<string> {
+  const dist = await readDeviceUiAssets();
+  let assets: EmbeddedAsset[];
   let source: string;
   if (dist) {
-    files = dist.files;
-    // Name the baked site config (from the device-build.json marker) so a stale
-    // or wrong-config build is visible in the bundle log.
-    source = `${dist.dir} — device build of ${dist.config ?? '(unknown config)'}`;
-    if (!files.some(f => f.servePath === '/'))
-      console.warn(`local.ui: ${dist.dir} has no index.html — GET / will 404 (run npm run build:device -- <config>)`);
+    assets = dist.assets;
+    source = dist.source;
+    if (!assets.some(a => a.servePath === '/'))
+      console.warn(`local.ui: ${dist.source} has no "/" asset — GET / will 404 (run npm run build:device -- <config>)`);
   } else {
     console.warn(
-      'local.ui: device app dist not found, embedding placeholder — run npm run build:device -- <config> first',
+      'local.ui: device app manifest not found, embedding placeholder — run npm run build:device -- <config> first',
     );
-    files = [{ servePath: '/', data: placeholderIndex(m), contentType: 'text/html', immutable: false }];
-    source = 'placeholder page (no dist)';
+    const raw = placeholderIndex(m);
+    assets = [{ servePath: '/', gz: gzipSync(raw, { level: 9 }), contentType: 'text/html', immutable: false, raw: raw.length }];
+    source = 'placeholder page (no device-ui manifest)';
+  }
+
+  // Topology injection — gzipped here (the manifest assets arrive pre-gzipped;
+  // this one originates in codegen, so codegen compresses it).
+  if (topologyJson !== undefined) {
+    const raw = new TextEncoder().encode(topologyJson);
+    assets = [
+      ...assets,
+      {
+        servePath: '/topology.json',
+        gz: gzipSync(raw, { level: 9 }),
+        contentType: 'application/json',
+        immutable: false,
+        raw: raw.length,
+      },
+    ];
+    source += ' + site topology';
   }
 
   const arrays: string[] = [];
   const entries: string[] = [];
   let totalRaw = 0;
+  let rawKnown = true;
   let totalGz = 0;
-  files.forEach((f, i) => {
-    const gz = gzipSync(f.data);
-    totalRaw += f.data.length;
-    totalGz += gz.length;
+  assets.forEach((a, i) => {
+    totalGz += a.gz.length;
+    if (a.raw === undefined) rawKnown = false;
+    else totalRaw += a.raw;
+    const sizeNote = a.raw === undefined ? `${a.gz.length} B gz` : `${a.raw} B raw → ${a.gz.length} B gz`;
     const bytes: string[] = [];
-    for (let o = 0; o < gz.length; o += 12) {
+    for (let o = 0; o < a.gz.length; o += 12) {
       bytes.push(
-        '  ' + Array.from(gz.subarray(o, o + 12), b => '0x' + b.toString(16).padStart(2, '0')).join(', ') + ',',
+        '  ' + Array.from(a.gz.subarray(o, o + 12), b => '0x' + b.toString(16).padStart(2, '0')).join(', ') + ',',
       );
     }
-    arrays.push(`// ${f.servePath} (${f.data.length} B raw → ${gz.length} B gz)\nstatic const uint8_t LOCAL_UI_ASSET_${i}[] PROGMEM = {\n${bytes.join('\n')}\n};`);
+    arrays.push(`// ${a.servePath} (${sizeNote})\nstatic const uint8_t LOCAL_UI_ASSET_${i}[] PROGMEM = {\n${bytes.join('\n')}\n};`);
     entries.push(
-      `  {"${f.servePath}", LOCAL_UI_ASSET_${i}, sizeof(LOCAL_UI_ASSET_${i}), "${f.contentType}", ${f.immutable}},`,
+      `  {"${a.servePath}", LOCAL_UI_ASSET_${i}, sizeof(LOCAL_UI_ASSET_${i}), "${a.contentType}", ${a.immutable}},`,
     );
   });
 
-  console.log(`local.ui: embedded ${files.length} asset(s), ${kb(totalRaw)} raw → ${kb(totalGz)} gz (${source})`);
+  const sizeSummary = rawKnown ? `${kb(totalRaw)} raw → ${kb(totalGz)} gz` : `${kb(totalGz)} gz`;
+  console.log(`local.ui: embedded ${assets.length} asset(s), ${sizeSummary} (${source})`);
   if (totalGz > GZ_WARN_BYTES)
     console.warn(`local.ui: embedded assets total ${kb(totalGz)} gz — above the 700KB flash budget warning line`);
 
@@ -440,10 +458,11 @@ export function generateLocalUiAssetsHeader(m: Manifest): string {
 // "/" is the index, and "/index.html" / extension-less navigation GETs outside
 // /local fall back to it (SPA deep-links); immutable entries (content-hashed
 // names) are served with Cache-Control: max-age=31536000, immutable, everything
-// else no-cache.
+// else no-cache. /topology.json carries the site topology this bundle was
+// generated from.
 // Wired via id(local_ui).set_assets in local-ui.yaml.
 // Source: ${source}
-// Embedded: ${files.length} file(s), ${totalRaw} B raw → ${totalGz} B gz
+// Embedded: ${assets.length} file(s), ${rawKnown ? `${totalRaw} B raw → ${totalGz} B gz` : `${totalGz} B gz`}
 // =============================================================================
 
 #include "esphome/core/hal.h"  // PROGMEM (no-op on esp-idf — the blobs stay in flash rodata)

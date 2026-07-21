@@ -127,7 +127,7 @@ export class BuildService {
     siteId: string,
     controllerId: string,
   ): Promise<GenerateResult> {
-    const { topo, site } = await this.loadTopology(siteId);
+    const { topo, site, topologyRaw } = await this.loadTopology(siteId);
     const ctrl = topo.controllers.find((c) => c.id === controllerId);
     if (!ctrl) throw new Error(`Controller "${controllerId}" not found in site.`);
 
@@ -141,7 +141,7 @@ export class BuildService {
     const provisioned: SecretsMap = { ota_password: prov.ota_password, mqtt_token: prov.token, udp_key: prov.udp_key };
 
     const expansionBoards = await this.boardCatalog.expansionDefs();
-    const built = await this.buildController(topo, ctrl, siteId, expansionBoards, deployment, provisioned);
+    const built = await this.buildController(topo, ctrl, siteId, expansionBoards, deployment, provisioned, topologyRaw);
     const downloadUrl = URL.createObjectURL(this.zipBundle(built.files, true));
 
     return {
@@ -164,14 +164,14 @@ export class BuildService {
    * since the latest version) returns that version without creating a new one.
    */
   async commit(siteId: string, note?: string): Promise<CommitResult> {
-    const { topo, site } = await this.loadTopology(siteId);
+    const { topo, site, topologyRaw } = await this.loadTopology(siteId);
 
     const expansionBoards = await this.boardCatalog.expansionDefs();
     const deployment = await this.resolveDeployment(site);
     const allFiles: GeneratedFile[] = [];
     const hashParts: string[] = [];
     for (const ctrl of topo.controllers) {
-      const built = await this.buildController(topo, ctrl, siteId, expansionBoards, deployment);
+      const built = await this.buildController(topo, ctrl, siteId, expansionBoards, deployment, undefined, topologyRaw);
       allFiles.push(...built.files);
       hashParts.push(built.hashPart);
     }
@@ -281,10 +281,10 @@ export class BuildService {
 
   // --- Generation internals ------------------------------------------------
 
-  private async loadTopology(siteId: string): Promise<{ topo: SiteTopology; site: SiteFullPayload['site'] }> {
+  private async loadTopology(siteId: string): Promise<{ topo: SiteTopology; site: SiteFullPayload['site']; topologyRaw: SiteFullPayload['topology'] }> {
     const { topology, site } = await this.backend.siteLoad(siteId);
     if (!topology) throw new Error('Site has no topology to generate from.');
-    return { topo: parseTopology(topology), site };
+    return { topo: parseTopology(topology), site, topologyRaw: topology };
   }
 
   /**
@@ -408,6 +408,7 @@ export class BuildService {
     expansionBoards: ExpansionBoardCatalog,
     deployment: DeploymentConfig,
     secrets?: SecretsMap,
+    topologyRaw?: SiteFullPayload['topology'],
   ): Promise<{ files: GeneratedFile[]; hashPart: string; version: string }> {
     // Hard guard: an empty broker host bakes `broker: ""` into device.yaml, and
     // the device boots into "Couldn't resolve IP address for ''" forever. Refuse
@@ -469,13 +470,16 @@ export class BuildService {
       );
     }
 
-    const files = generateEsphome(
+    const files = await generateEsphome(
       manifest,
       board,
       siteId,
       secrets ?? generateDefaultSecrets(),
       metadata,
       expansionBoards,
+      // The raw draft topology — baked into the local-UI bundle as
+      // /topology.json so the on-device dashboard boots from this exact site.
+      topologyRaw !== undefined ? { topologyJson: JSON.stringify(topologyRaw) } : undefined,
     );
     // Re-align this controller's automations to the route table just baked
     // (route_index + route_set_version) so the device accepts the retained set once

@@ -40,8 +40,10 @@ const deviceYaml = (files: GeneratedFile[]) =>
   files.find(f => f.relativePath.endsWith(".yaml") && !f.relativePath.includes("packages/") && !f.relativePath.includes("common/"))!;
 const gen = (m: Manifest, board: BoardDef) => generateAll(m, board, "test-site", undefined, createTestMetadata(), {});
 
-const offFiles = gen(manifestWithLocal(undefined), kc868);
-const onFiles = gen(manifestWithLocal({ rtc: true }), kc868);
+// async main: generateAll is async (manifest-driven local-UI assets).
+const main = async () => {
+const offFiles = await gen(manifestWithLocal(undefined), kc868);
+const onFiles = await gen(manifestWithLocal({ rtc: true }), kc868);
 
 const offMqtt = get(offFiles, "packages/mqtt.yaml")!.content;
 const onMqtt = get(onFiles, "packages/mqtt.yaml")!.content;
@@ -59,7 +61,7 @@ assert(offFiles.every(f => !f.content.includes("ds1307") && !f.content.includes(
 
 // Explicit rtc:false and an empty local object gate the same way as unset.
 for (const [label, local] of [["rtc: false", { rtc: false }], ["empty local", {}]] as const) {
-  const files = gen(manifestWithLocal(local), kc868);
+  const files = await gen(manifestWithLocal(local), kc868);
   assert(get(files, "packages/mqtt.yaml")!.content === goldenMqtt, `off (${label}): mqtt.yaml still byte-identical`);
   assert(deviceYaml(files).content === goldenDevice, `off (${label}): device YAML still byte-identical`);
 }
@@ -100,10 +102,12 @@ assert(!goldenDevice.includes("ds1307.read_time"), "off: golden has no RTC boot 
 // --- Board without i2c: flag ignored --------------------------------------------------
 
 const noI2c: BoardDef = { ...kc868, buses: {} };
-const noI2cFiles = gen(manifestWithLocal({ rtc: true }), noI2c);
+const noI2cFiles = await gen(manifestWithLocal({ rtc: true }), noI2c);
 assert(noI2cFiles.every(f => !f.content.includes("ds1307") && !f.content.includes("rtc_time")),
   "no-i2c: local.rtc ignored — no ds1307 anywhere");
 assert(get(noI2cFiles, "packages/mqtt.yaml")!.content === goldenMqtt,
   "no-i2c: mqtt.yaml byte-identical to the golden (SNTP-only)");
 
 done();
+};
+void main();

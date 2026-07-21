@@ -17,7 +17,9 @@ const kc868 = loadBoard(path.join(ROOT, "defaults", "boards", "kc868-a16"));
 const raw = parseYaml(fs.readFileSync(path.join(ROOT, "defaults", "configs", "kc868-a16-controller.yaml"), "utf-8"));
 const topo = parseTopology(raw);
 const manifest = topologyToManifestForController(topo, topo.controllers[0].id);
-const files = generateAll(manifest, kc868, "test-site", undefined, createTestMetadata(), {});
+// async main: generateAll is async (manifest-driven local-UI assets).
+const main = async () => {
+const files = await generateAll(manifest, kc868, "test-site", undefined, createTestMetadata(), {});
 
 const mqtt = files.find(f => f.relativePath.endsWith("packages/mqtt.yaml"))!;
 const device = files.find(f => f.relativePath.endsWith(".yaml") && !f.relativePath.includes("packages/") && !f.relativePath.includes("common/"))!;
@@ -26,3 +28,5 @@ fs.mkdirSync(OUT, { recursive: true });
 fs.writeFileSync(path.join(OUT, "rtc-off-mqtt.yaml"), mqtt.content);
 fs.writeFileSync(path.join(OUT, "rtc-off-device.yaml"), device.content);
 console.log("wrote", mqtt.relativePath, mqtt.content.length, "bytes;", device.relativePath, device.content.length, "bytes");
+};
+void main();

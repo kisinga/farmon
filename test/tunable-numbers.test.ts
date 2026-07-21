@@ -38,7 +38,9 @@ function assert(condition: boolean, name: string, detail?: string) {
 const board = loadBoard(BOARD_DIR);
 const topology = parseTopology(parseYaml(fs.readFileSync(CONFIG_PATH, "utf-8")));
 const manifest: Manifest = topologyToManifestForController(topology, topology.controllers[0]?.id ?? "default");
-const files = generateAll(manifest, board, "test-site", undefined, createTestMetadata(), {});
+// async main: generateAll is async (manifest-driven local-UI assets).
+const main = async () => {
+const files = await generateAll(manifest, board, "test-site", undefined, createTestMetadata(), {});
 
 // Parse the emitted `number:` entities (they live in the sensors file).
 const sensorsYaml = files.find((f) => f.relativePath.endsWith("sensors.yaml"))?.content ?? "";
@@ -116,3 +118,5 @@ assert(mismatched.length === 0, "min/max/step match between UI metadata and emit
 console.log(`\n${"=".repeat(40)}`);
 console.log(`${passed} passed, ${failed} failed   (${tunables.length} tunables, ${emitted.size} emitted)`);
 process.exit(failed ? 1 : 0);
+};
+void main();
