@@ -28,3 +28,12 @@ export function getStringArray(record: RecordModel, key: string): string[] {
   }
   return [];
 }
+
+/** PocketBase autodate ("YYYY-MM-DD HH:MM:SS.sssZ") → ISO 8601 (T-separated). A
+ *  space-separated string is not valid ISO and parses inconsistently across
+ *  engines (NaN in JavaScriptCore/Safari), so every record timestamp that will
+ *  be Date.parse()d downstream — activity feed merges, presence `last_seen` —
+ *  must be normalised here first. */
+export function toIso(ts: string): string {
+  return typeof ts === 'string' ? ts.replace(' ', 'T') : ts;
+}

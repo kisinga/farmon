@@ -2,7 +2,7 @@ import { Injectable, inject, signal } from '@angular/core';
 import type { RecordModel, UnsubscribeFunc } from 'pocketbase';
 import type { ControllerSnapshot } from '@core';
 import { BackendService } from './backend.service';
-import { getNumber, getString } from '../util/record';
+import { getNumber, getString, toIso } from '../util/record';
 import type { ShadowRow, TelemetryHistory, StateEventRow, ControllerRow, CommandOutcomeRow, CommandLogRow, ConfigEventRow, UsageReport, UsageRun } from '../models/runtime';
 
 /** Liveness of the PocketBase realtime SSE stream. `connecting` is the idle
@@ -396,7 +396,10 @@ function toController(r: RecordModel): ControllerRow {
     site: r['site'] ?? '',
     active: r['active'] !== false,
     online: r['online'],
-    last_seen: r['last_seen'],
+    // Normalise like toCommandLog: the presence check (DashboardStore.presence,
+    // AlertsStore.recompute) Date.parse()s this, and PocketBase's space-separated
+    // autodate parses as NaN in some engines → a live controller reads offline.
+    last_seen: toIso(r['last_seen']),
     firmware_version: r['firmware_version'],
   };
 }
@@ -487,11 +490,4 @@ function toConfigEvent(r: RecordModel): ConfigEventRow {
     actorName: undefined,
     ts: r['ts'],
   };
-}
-
-/** PocketBase autodate ("YYYY-MM-DD HH:MM:SS.sssZ") → ISO 8601 (T-separated). The
- *  activity feed merges these with RFC3339 transition timestamps; a space-separated
- *  string is not valid ISO and parses inconsistently across engines, so normalise. */
-function toIso(ts: string): string {
-  return typeof ts === 'string' ? ts.replace(' ', 'T') : ts;
 }

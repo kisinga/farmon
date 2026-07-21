@@ -613,12 +613,19 @@ assert(kcBoardPkg.includes("mode: CLK_OUT"), "Ethernet CLK mode (structured, val
 assert(!kcBoardPkg.includes("clk_mode"), "No deprecated clk_mode key");
 assert(!kcBoardPkg.includes("wifi:"), "No wifi: section (ethernet board, default transport)");
 assert(!kcBoardPkg.includes("captive_portal"), "No captive_portal (no wifi)");
-assert(kcBoardPkg.includes("web_server:"), "Has web_server: dashboard for in-browser control");
-// web_server MUST stay on port 80: ESPHome's web_server_base is a singleton
-// AsyncWebServer shared with captive_portal. Moving it to another port
-// removes any HTTP listener from 192.168.4.1:80 → fallback AP captive
-// portal silently breaks. (See networking.ts emitWebServer comment.)
-assert(kcBoardPkg.includes("port: 80"), "web_server pinned to port 80 — required for fallback AP captive portal");
+// The default config enables local.ui, so the stock web_server v3 page is
+// swapped for a bare web_server_base the maji_local_ui component serves the
+// operator dashboard on (see networking.ts emitWebServer + local-ui.ts).
+assert(!kcBoardPkg.includes("web_server:"), "local.ui: no stock web_server v3 page");
+assert(kcBoardPkg.includes("web_server_base:"), "local.ui: bare web_server_base for maji_local_ui");
+const kcLocalUi = getKcFile("packages/local-ui.yaml");
+assert(kcLocalUi.includes("maji_local_ui:"), "local.ui: maji_local_ui package emitted (operator dashboard)");
+// Port 80 MUST stay the HTTP port: ESPHome's web_server_base is a singleton
+// AsyncWebServer shared with captive_portal. Moving it removes any HTTP
+// listener from 192.168.4.1:80 → fallback AP captive portal silently breaks.
+// With local.ui the pin lives in the maji_local_ui component (CONF_PORT
+// default 80, firmware/components/maji_local_ui/__init__.py), not the YAML.
+assert(!kcBoardPkg.includes("port: 80"), "local.ui: no YAML port override — component default keeps 80");
 assert(kcBoardPkg.includes("pcf8574:"), "Has pcf8574: expander declarations");
 assert(kcBoardPkg.includes("pcf8575: false"), "Explicit pcf8575: false on expanders");
 assert(kcBoardPkg.includes("0x24"), "PCF8574 output expander 1 address");
