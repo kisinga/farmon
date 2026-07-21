@@ -321,15 +321,19 @@ export async function fetchDeviceUiAssets(
   baseUrl = DEVICE_UI_BASE_URL,
 ): Promise<{ source: string; assets: EmbeddedAsset[] } | null> {
   const manifestUrl = baseUrl + DEVICE_UI_MANIFEST;
+  // cache: 'no-cache' on every fetch — a stale cached .gz from a previous deploy
+  // mixes two app builds into one bundle (caught by the index-consistency guard,
+  // but better to never fetch the stale bytes in the first place).
+  const fresh: RequestInit = { cache: 'no-cache' };
   try {
-    const res = await fetchImpl(manifestUrl);
+    const res = await fetchImpl(manifestUrl, fresh);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const manifest = parseManifest(await res.text());
     if (!manifest) throw new Error('unparseable manifest');
     const base = manifestUrl.slice(0, manifestUrl.lastIndexOf('/') + 1);
     const assets: EmbeddedAsset[] = [];
     for (const a of manifest.assets) {
-      const r = await fetchImpl(base + a.file);
+      const r = await fetchImpl(base + a.file, fresh);
       if (!r.ok) throw new Error(`HTTP ${r.status} for ${a.file}`);
       assets.push({
         servePath: a.path,
