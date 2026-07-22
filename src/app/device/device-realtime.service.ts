@@ -1,9 +1,11 @@
 import { Injectable, signal } from '@angular/core';
 import type { UnsubscribeFunc } from 'pocketbase';
-import type { ControllerSnapshot } from '@core';
+import type { ControllerSnapshot, SnapshotEvent } from '@core';
 import { RealtimeService, explodeSnapshot, snapOutcomes, type RealtimeConnection } from '../core/services/realtime.service';
 import type { ShadowRow, CommandOutcomeRow, ControllerRow, StateEventRow, CommandLogRow, ConfigEventRow, UsageRun } from '../core/models/runtime';
 import { deviceControllerId, deviceSnapshotIntervalMs } from './device-topology';
+import { normalizeSnapshotEvents } from './device-activity';
+import { readNames } from './device-automations.service';
 
 /** How long `latest()` waits for the first SSE snapshot before resolving empty.
  *  Derived from the baked snapshot cadence (update_interval runs up to 60s — a
@@ -23,9 +25,10 @@ const RECONNECT_MAX_MS = 30_000;
  *
  * The stream reconnects with exponential backoff; the `connection` signal mirrors
  * its state, so DashboardStore's reconnect-resync effect refills the shadow on a
- * drop exactly as it does for the cloud feed. Reads that have no device endpoint
- * (history, usage, events, command audit) resolve empty — the dashboard hides
- * those surfaces in device mode (see DEVICE_MODE).
+ * drop exactly as it does for the cloud feed. The snapshot's `events[]` ring backs
+ * the Activity feed (recentDeviceEvents / subscribeDeviceEvents). Reads that have
+ * no device endpoint (history, usage, command audit) resolve empty — the dashboard
+ * hides those surfaces in device mode (see DEVICE_MODE).
  */
 @Injectable()
 export class DeviceRealtimeService extends RealtimeService {
@@ -37,6 +40,9 @@ export class DeviceRealtimeService extends RealtimeService {
 
   private lastRows: ShadowRow[] = [];
   private lastOutcomes: CommandOutcomeRow[] = [];
+  /** The latest snapshot's activity ring (newest-first), timestamps resolved at
+   *  ingest (untrusted `ts: 0` placed via the uptime offset — see device-activity). */
+  private lastEvents: SnapshotEvent[] = [];
   private lastMsgAt = 0;
   private firmwareVersion = '';
   private gotSnapshot: () => void = () => {};
@@ -44,6 +50,7 @@ export class DeviceRealtimeService extends RealtimeService {
 
   private shadowCbs = new Set<(rows: ShadowRow[], outcomes: CommandOutcomeRow[]) => void>();
   private presenceCbs = new Set<(row: ControllerRow) => void>();
+  private eventCbs = new Set<(events: SnapshotEvent[]) => void>();
 
   constructor() {
     super();
@@ -94,13 +101,18 @@ export class DeviceRealtimeService extends RealtimeService {
       return; // a malformed event is dropped; the next interval re-asserts everything
     }
     const controller = deviceControllerId();
-    const ts = new Date(snap.ts > 0 ? snap.ts * 1000 : Date.now()).toISOString();
+    const now = Date.now();
+    const ts = new Date(snap.ts > 0 ? snap.ts * 1000 : now).toISOString();
     this.lastRows = explodeSnapshot(controller, snap, ts);
     this.lastOutcomes = snapOutcomes(controller, snap);
+    // Older firmware emits no `events` — the ring stays empty and the feed reads
+    // "No activity yet", never a parse error.
+    this.lastEvents = normalizeSnapshotEvents(snap.events ?? [], now);
     this.firmwareVersion = snap.text?.['fw_version'] ?? '';
-    this.lastMsgAt = Date.now();
+    this.lastMsgAt = now;
     this.gotSnapshot();
     for (const cb of this.shadowCbs) cb(this.lastRows, this.lastOutcomes);
+    for (const cb of this.eventCbs) cb(this.lastEvents);
   }
 
   private presenceRow(): ControllerRow {
@@ -151,10 +163,32 @@ export class DeviceRealtimeService extends RealtimeService {
     return 0;
   }
 
+  // --- On-device activity ring (the snapshot's `events[]`) --------------------
+
+  /** The latest snapshot's activity ring. Waits for the first event so the feed's
+   *  initial paint seeds from a full snapshot, like {@link latest}. */
+  override async recentDeviceEvents(_siteId: string): Promise<SnapshotEvent[]> {
+    await this.firstSnapshot;
+    return this.lastEvents;
+  }
+
+  override subscribeDeviceEvents(_siteId: string, cb: (events: SnapshotEvent[]) => void): Promise<UnsubscribeFunc> {
+    this.eventCbs.add(cb);
+    return Promise.resolve(async () => { this.eventCbs.delete(cb); });
+  }
+
+  /** Automation id → name from the on-device name store (localStorage — the wire
+   *  record has no room for names), for the feed's "Automation: <name>" chips.
+   *  Read fresh on every call so a mid-session rename shows without a reload. */
+  override automationActorNamesNow(): Record<string, string> {
+    return readNames();
+  }
+
   // --- Cloud-only reads: no device endpoint, resolve empty ---------------------
 
-  /** The device keeps no transition log; route state reads from the self-healing
-   *  shadow rows (route_<id>_state), which the snapshot re-asserts every interval. */
+  /** The device keeps no server-style transition log; route state reads from the
+   *  self-healing shadow rows (route_<id>_state), and the Activity feed reads the
+   *  snapshot's own event ring (recentDeviceEvents above) instead of this. */
   override async recentEvents(_siteId: string, _limit = 100): Promise<StateEventRow[]> {
     return [];
   }

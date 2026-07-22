@@ -514,6 +514,9 @@ func reconcileConfig(app core.App, site, ctrl, applied string) {
 
 // resolveActorLabel turns a route's origin+actor (whole ids) into a display label:
 // MANUAL → the user's name/email; AUTOMATION → the automation's name; else "".
+// Reserved non-user actors (panel buttons, the on-device dashboard — see
+// RESERVED_ACTOR_LABELS in src/lib/codegen-ids.ts) have no users/automations row,
+// so they fall through to a fixed label.
 func resolveActorLabel(app core.App, origin, actor string) string {
 	if actor == "" {
 		return ""
@@ -533,6 +536,12 @@ func resolveActorLabel(app core.App, origin, actor string) string {
 			}
 			return "Automation"
 		}
+	}
+	switch actor {
+	case "panel":
+		return "Panel button"
+	case "local-ui":
+		return "On-device dashboard"
 	}
 	return ""
 }

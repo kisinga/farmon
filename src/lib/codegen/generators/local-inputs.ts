@@ -58,7 +58,7 @@ export function generateLocalInputs(m: Manifest, board: BoardDef): string | null
         auto &cs = id(control).state();
         int s = maji_ctl::find_slot_by_route(cs, ${a.routeIndex});
         if (s >= 0 && cs.slots[s].state >= maji_ctl::ST_PREPARING && cs.slots[s].state <= maji_ctl::ST_STOPPING) {
-          id(control).stop_route(${a.routeIndex}, "", maji_ctl::ORIGIN_MANUAL, "");
+          id(control).stop_route(${a.routeIndex}, "", maji_ctl::ORIGIN_MANUAL, "panel");
         } else if (s >= 0 && cs.slots[s].state == maji_ctl::ST_FAULT) {
           // FAULT is neither startable nor stoppable — start_route would be
           // refused, leaving the button dead exactly when the operator needs
@@ -66,8 +66,9 @@ export function generateLocalInputs(m: Manifest, board: BoardDef): string | null
           // start the route.
           id(control).reset_faults();
         } else {
-          // Physical button = a local manual action with no remote user id.
-          id(control).start_route(${a.routeIndex}, "", maji_ctl::StopSpec{}, maji_ctl::ORIGIN_MANUAL, "");
+          // Physical button = a local manual action with no remote user id; actor
+          // "panel" so the dashboard can say WHO started/stopped the route.
+          id(control).start_route(${a.routeIndex}, "", maji_ctl::StopSpec{}, maji_ctl::ORIGIN_MANUAL, "panel");
         }
 ${PUBLISH_STATUS}`;
     return `\

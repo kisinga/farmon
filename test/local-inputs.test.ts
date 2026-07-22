@@ -124,8 +124,8 @@ assert(boardInputPins(heltec).length === 0, "heltec-v3 has no input expanders");
   assert(y.includes("cs.slots[s].state >= maji_ctl::ST_PREPARING && cs.slots[s].state <= maji_ctl::ST_STOPPING"), "toggle range uses the kernel enum names, not magic numbers");
   assert(y.includes("cs.slots[s].state == maji_ctl::ST_FAULT"), "toggle detects the FAULT slot state by enum name");
   assert(y.includes("id(control).reset_faults();"), "a press on a FAULTed route clears faults (two-press: clear, then start)");
-  assert(y.includes('id(control).start_route(0, "", maji_ctl::StopSpec{}, maji_ctl::ORIGIN_MANUAL, "");'), "toggle starts an idle route");
-  assert(y.includes('id(control).stop_route(0, "", maji_ctl::ORIGIN_MANUAL, "");'), "toggle stops an active route");
+  assert(y.includes('id(control).start_route(0, "", maji_ctl::StopSpec{}, maji_ctl::ORIGIN_MANUAL, "panel");'), "toggle starts an idle route, actor = panel");
+  assert(y.includes('id(control).stop_route(0, "", maji_ctl::ORIGIN_MANUAL, "panel");'), "toggle stops an active route, actor = panel");
   assert(y.includes("id(system_state) = id(control).system_state();"), "toggle copies engine status into globals");
 }
 

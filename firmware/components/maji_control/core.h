@@ -24,11 +24,35 @@ static constexpr int MAX_OUTCOMES = 4;
 static constexpr uint32_t COMMAND_TTL_MS = 300000;  // dedup window
 static constexpr int COMMAND_CAP = 64;              // dedup map ceiling
 
+// Distinct try_route_* rc for an idempotent duplicate (a QoS1 redelivery inside the
+// dedup TTL): the command already ran, so the outcome is the same success as rc 0 —
+// but nothing changed, so the shell must NOT log a second control event for it. The
+// shell maps it back to 0 for callers; it never indexes a result table.
+static constexpr int RC_DUPLICATE = 100;
+
 // Slot states.
 enum State { ST_IDLE = 0, ST_PREPARING = 1, ST_RUNNING = 2, ST_STOPPING = 3, ST_FAULT = 4 };
 
 // Run-origin codes (index == value; mirror ORIGIN_TOKENS in codegen-ids.ts).
 enum Origin { ORIGIN_SYSTEM = 0, ORIGIN_MANUAL = 1, ORIGIN_AUTOMATION = 2 };
+
+// --- Control-event log (the on-device "what happened" feed) ---
+// Event actions (index == value; mirror EVENT_ACTION_TOKENS in codegen-ids.ts).
+enum EventAction { EV_START = 0, EV_STOP = 1, EV_STOP_ALL = 2, EV_FAULT = 3 };
+static constexpr int MAX_EVENTS = 10;  // ring depth; the snapshot buffer sizes for it
+
+// One control event. POD (fixed char buffers, no std::string) so the shell can persist
+// the whole ring as a single NVS blob. ts is trusted unix seconds (0 = untrusted — the
+// app renders up_s then); route is -1 for non-route events (STOP_ALL).
+struct ControlEvent {
+  int64_t ts{0};
+  uint32_t up_s{0};
+  int8_t route{-1};
+  uint8_t action{0};
+  uint8_t origin{0};
+  char actor[16]{};
+  char reason[16]{};
+};
 
 // Sparse run-param override bits.
 enum OverrideBit {
@@ -129,6 +153,15 @@ struct ControlState {
   CmdOutcome outcomes[MAX_OUTCOMES];
   uint8_t outcome_head{0};
 
+  // Last MAX_EVENTS control events, newest first (events[0] = newest).
+  // MAIN-LOOP ONLY: record_event (via the shell's log_event_) and the snapshot reader
+  // both run unsynchronized on the ESPHome main loop — command dispatch (MQTT
+  // on_message, panel binary_sensor lambdas), the local-UI glue (defer_to_loop), the
+  // automation tick, and the tick_2s fault diff are all loop-thread. Never call
+  // start_route/stop_route/stop_all (or record_event directly) off the main loop.
+  ControlEvent events[MAX_EVENTS];
+  uint8_t event_count{0};
+
   // Manual / claim-driven pump guard (parallel arrays, sized to manual_pumps).
   std::vector<ManualPump> manual_pumps;
   std::vector<int> manual_latch;          // 0 ok, else a STOP_* reason
@@ -171,6 +204,19 @@ bool is_duplicate_command(ControlState &cs, const std::string &command_id, uint3
 // --- Command outcomes (ring buffer) ---
 void record_outcome(ControlState &cs, const std::string &command_id, const std::string &result,
                     const std::string &reason);
+
+// --- Control-event ring ---
+// Push an event at the head (newest-first), dropping the oldest past MAX_EVENTS.
+// actor/reason are truncated to the POD field width.
+void record_event(ControlState &cs, int64_t ts, uint32_t up_s, int route, uint8_t action,
+                  uint8_t origin, const char *actor, const char *reason);
+// True when prev->cur is a fresh fault latch. The shell diffs slot states each tick
+// because faults latch inside the kernel (tick_2s) — there is no command choke point.
+bool is_fault_transition(int prev, int cur);
+// POD pack/unpack for the shell's NVS blob (the flash I/O itself stays in the shell).
+// pack returns the entry count written (min(event_count, cap)).
+uint8_t events_pack(const ControlState &cs, ControlEvent *out, int cap);
+void events_unpack(ControlState &cs, const ControlEvent *in, uint8_t count);
 
 // Escape a string for a JSON value (quotes/backslashes, drop control chars) into the
 // caller's buffer. Reentrant — use this anywhere that can run off the main loop (e.g.
@@ -249,10 +295,12 @@ int check_precheck(const Inputs &in, uint8_t src_idx, uint8_t src_min, uint8_t d
 void activate_slot(ControlState &cs, int slot, int route_id, const StopSpec &spec, uint8_t origin,
                    const std::string &actor, uint32_t now_ms);
 
-// Start: 0 started, 1 queued, 2 rejected (invalid/duplicate/active/full), 3 source-low, 4 dest-full.
+// Start: 0 started, 1 queued, 2 rejected (invalid/duplicate/active/full), 3 source-low,
+// 4 dest-full, RC_DUPLICATE idempotent replay within the dedup TTL (no state change —
+// same success outcome as 0, but the shell skips the event log for it).
 int try_route_start(ControlState &cs, const Inputs &in, int route_id, const std::string &command_id,
                     const StopSpec &spec, uint8_t origin, const std::string &actor);
-// Stop: 0 stopping, 1 not active, 2 already stopping/idle/faulted.
+// Stop: 0 stopping, 1 not active, 2 already stopping/idle/faulted, RC_DUPLICATE as above.
 int try_route_stop(ControlState &cs, int route_id, const std::string &command_id, uint8_t origin,
                    const std::string &actor, uint32_t now_ms);
 

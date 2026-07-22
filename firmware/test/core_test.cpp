@@ -6,6 +6,7 @@
 //   bash firmware/test/run-host-tests.sh
 #include "core.h"
 #include <cstdio>
+#include <cstring>
 
 using namespace maji_ctl;
 
@@ -266,7 +267,26 @@ int main() {
     try_route_start(cs, mk_inputs(1000), 0, "s2", StopSpec{}, ORIGIN_MANUAL, "");
     try_route_stop(cs, 0, "s3", ORIGIN_MANUAL, "", 2000);  // -> STOPPING
     check(try_route_stop(cs, 0, "s4", ORIGIN_MANUAL, "", 2500) == 2, "stop: already STOPPING -> 2");
-    check(try_route_stop(cs, 0, "s3", ORIGIN_MANUAL, "", 2600) == 0, "stop: duplicate command_id -> 0");
+    check(try_route_stop(cs, 0, "s3", ORIGIN_MANUAL, "", 2600) == RC_DUPLICATE,
+          "stop: duplicate command_id -> RC_DUPLICATE (distinct from a real stop)");
+  }
+
+  // --- duplicate redelivery (both lanes): distinct rc, no state change ---
+  // A QoS1 redelivery inside the dedup TTL must report idempotent success WITHOUT a
+  // second control event — the core flags it with RC_DUPLICATE so the shell skips the log.
+  {
+    ControlState cs = scenario_state();
+    check(try_route_start(cs, mk_inputs(1000), 0, "dup1", StopSpec{}, ORIGIN_MANUAL, "") == 0,
+          "dup: first start -> 0 (PREPARING)");
+    check(try_route_start(cs, mk_inputs(1500), 0, "dup1", StopSpec{}, ORIGIN_MANUAL, "") == RC_DUPLICATE,
+          "dup: start redelivery within TTL -> RC_DUPLICATE");
+    check(cs.queue_count == 0 && cs.slots[0].state == ST_PREPARING && cs.slots[1].route_id == -1,
+          "dup: redelivery changes nothing (no queue push, no second slot)");
+    check(try_route_start(cs, mk_inputs(1000 + COMMAND_TTL_MS + 2), 0, "dup1", StopSpec{}, ORIGIN_MANUAL, "") == 2,
+          "dup: same id past TTL is a real command again (-> already active)");
+    check(try_route_stop(cs, 0, "dup2", ORIGIN_MANUAL, "", 2000) == 0, "dup: first stop -> 0");
+    check(try_route_stop(cs, 0, "dup2", ORIGIN_MANUAL, "", 2500) == RC_DUPLICATE,
+          "dup: stop redelivery within TTL -> RC_DUPLICATE");
   }
 
   // --- manual / claim-driven pump guard ---
@@ -365,6 +385,84 @@ int main() {
     cs.slots[0].state = ST_IDLE;
     check(run_live(cs, in, 0).delivered_l == -1 && run_live(cs, in, 0).target_vol_l == 0,
           "run_live: idle slot is empty");
+  }
+
+  // --- control-event ring (the on-device activity feed) ---
+  {
+    ControlState cs = make_state();
+    check(cs.event_count == 0, "events: empty at init");
+
+    record_event(cs, 1000, 10, 0, EV_START, ORIGIN_MANUAL, "panel", "");
+    record_event(cs, 1001, 11, 1, EV_STOP, ORIGIN_AUTOMATION, "auto-3", "MANUAL");
+    check(cs.event_count == 2, "events: count grows");
+    check(cs.events[0].ts == 1001 && cs.events[0].up_s == 11 && cs.events[0].route == 1 &&
+          cs.events[0].action == EV_STOP && cs.events[0].origin == ORIGIN_AUTOMATION,
+          "events: newest first, fields intact");
+    check(strcmp(cs.events[0].actor, "auto-3") == 0 && strcmp(cs.events[0].reason, "MANUAL") == 0 &&
+          strcmp(cs.events[1].actor, "panel") == 0 && cs.events[1].reason[0] == 0,
+          "events: actor/reason strings land");
+    check(cs.events[1].ts == 1000 && cs.events[1].action == EV_START, "events: older shifts down");
+
+    // POD field truncation (mirror the 15-char cap of bind_route_actor).
+    record_event(cs, 0, 0, 2, EV_START, ORIGIN_MANUAL, "a-very-long-actor-name", "a-very-long-reason!");
+    check(strlen(cs.events[0].actor) == 15 && strlen(cs.events[0].reason) == 15,
+          "events: actor/reason truncate to the POD width");
+  }
+  {
+    // overflow: pushing past MAX_EVENTS drops the oldest, keeps order.
+    ControlState cs = make_state();
+    for (int i = 0; i < MAX_EVENTS + 2; i++)
+      record_event(cs, 100 + i, i, i % 3, EV_START, ORIGIN_SYSTEM, "", "");
+    check(cs.event_count == MAX_EVENTS, "events: ring caps at MAX_EVENTS");
+    check(cs.events[0].ts == 100 + MAX_EVENTS + 1, "events: newest kept at the head");
+    check(cs.events[MAX_EVENTS - 1].ts == 100 + 2, "events: oldest dropped off the tail");
+    bool ordered = true;
+    for (int i = 1; i < MAX_EVENTS; i++)
+      if (cs.events[i - 1].ts <= cs.events[i].ts) ordered = false;
+    check(ordered, "events: strictly newest-first after overflow");
+
+    // NVS round-trip: pack -> unpack into a fresh state preserves the ring exactly.
+    ControlEvent blob[MAX_EVENTS];
+    uint8_t n = events_pack(cs, blob, MAX_EVENTS);
+    check(n == MAX_EVENTS, "events: pack reports the full ring");
+    ControlState restored = make_state();
+    events_unpack(restored, blob, n);
+    check(restored.event_count == cs.event_count &&
+          memcmp(restored.events, cs.events, sizeof(blob)) == 0,
+          "events: NVS pack/unpack round-trips the ring");
+    events_unpack(restored, blob, MAX_EVENTS + 5);  // corrupt count from flash
+    check(restored.event_count == MAX_EVENTS, "events: unpack clamps an out-of-range count");
+  }
+  {
+    // fault path: the latch happens inside the kernel (tick_2s), so the shell diffs
+    // slot states (is_fault_transition) and logs once with the run's attribution.
+    check(is_fault_transition(ST_PREPARING, ST_FAULT) && is_fault_transition(ST_RUNNING, ST_FAULT) &&
+          is_fault_transition(ST_STOPPING, ST_FAULT), "events: active -> FAULT is a fault transition");
+    check(!is_fault_transition(ST_FAULT, ST_FAULT), "events: latched FAULT does not re-fire");
+    check(!is_fault_transition(ST_RUNNING, ST_STOPPING) && !is_fault_transition(ST_IDLE, ST_FAULT),
+          "events: clean stop / idle are not fault transitions");
+
+    ControlState cs = scenario_state();
+    try_route_start(cs, mk_inputs(1000), 0, "f1", StopSpec{}, ORIGIN_MANUAL, "panel");
+    int prev = cs.slots[find_slot_by_route(cs, 0)].state;
+    tick_1s(cs, mk_inputs(4001));  // -> RUNNING
+    int s = find_slot_by_route(cs, 0);
+    if (is_fault_transition(prev, cs.slots[s].state)) record_event(cs, 0, 0, 0, EV_FAULT, 0, "", "");  // not taken
+    prev = cs.slots[s].state;
+    Inputs dry = mk_inputs(4001 + 10002);
+    dry.flow_rates = {0.0f};
+    tick_2s(cs, dry);  // dry-run -> FAULT latch
+    check(is_fault_transition(prev, cs.slots[s].state), "events: tick_2s latch is caught by the diff");
+    if (is_fault_transition(prev, cs.slots[s].state))
+      record_event(cs, 2000, 20, cs.slots[s].route_id, EV_FAULT, cs.route_origin[0],
+                   cs.route_actor[0].c_str(), "NO_FLOW");
+    check(cs.event_count == 1 && cs.events[0].action == EV_FAULT && cs.events[0].route == 0 &&
+          strcmp(cs.events[0].actor, "panel") == 0 && strcmp(cs.events[0].reason, "NO_FLOW") == 0,
+          "events: fault event carries the faulted run's attribution");
+    // the next tick sees FAULT -> FAULT: no double record
+    prev = cs.slots[s].state;
+    tick_2s(cs, dry);
+    check(!is_fault_transition(prev, cs.slots[s].state), "events: steady FAULT stays quiet");
   }
 
   printf("\n%d passed, %d failed\n", pass, fail);

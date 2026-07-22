@@ -1,5 +1,6 @@
 #include "core.h"
 #include <cmath>
+#include <cstring>
 
 namespace maji_ctl {
 
@@ -151,6 +152,48 @@ void record_outcome(ControlState &cs, const std::string &command_id, const std::
   cs.outcome_head = (cs.outcome_head + 1) % MAX_OUTCOMES;
 }
 
+// Bounded copy into a POD char field (mirrors the 15-char truncation of bind_route_actor).
+static void set_str(char *dst, size_t cap, const char *src) {
+  if (src == nullptr) src = "";
+  size_t n = strlen(src);
+  if (n >= cap) n = cap - 1;
+  memcpy(dst, src, n);
+  dst[n] = '\0';
+}
+
+void record_event(ControlState &cs, int64_t ts, uint32_t up_s, int route, uint8_t action,
+                  uint8_t origin, const char *actor, const char *reason) {
+  // Newest-first: shift everything down one slot; the tail entry falls off the ring.
+  memmove(&cs.events[1], &cs.events[0], (MAX_EVENTS - 1) * sizeof(ControlEvent));
+  if (cs.event_count < MAX_EVENTS) cs.event_count++;
+  ControlEvent &e = cs.events[0];
+  e = ControlEvent{};
+  e.ts = ts;
+  e.up_s = up_s;
+  e.route = (int8_t) route;
+  e.action = action;
+  e.origin = origin;
+  set_str(e.actor, sizeof(e.actor), actor);
+  set_str(e.reason, sizeof(e.reason), reason);
+}
+
+bool is_fault_transition(int prev, int cur) {
+  return prev >= ST_PREPARING && prev <= ST_STOPPING && cur == ST_FAULT;
+}
+
+uint8_t events_pack(const ControlState &cs, ControlEvent *out, int cap) {
+  int n = cs.event_count < cap ? cs.event_count : cap;
+  if (n < 0) n = 0;
+  memcpy(out, cs.events, n * sizeof(ControlEvent));
+  return (uint8_t) n;
+}
+
+void events_unpack(ControlState &cs, const ControlEvent *in, uint8_t count) {
+  if (count > MAX_EVENTS) count = MAX_EVENTS;
+  memcpy(cs.events, in, count * sizeof(ControlEvent));
+  cs.event_count = count;
+}
+
 // --- Effective run-params (slot override else route's live tunable) ---
 
 uint8_t effective_source_min_pct(const ControlState &cs, const Inputs &in, int s) {
@@ -240,7 +283,7 @@ int try_route_start(ControlState &cs, const Inputs &in, int route_id, const std:
   // would activate a slot that actuates nothing. Refuse it (REJECTED). Defense in
   // depth: the app also hides Start for non-runnable routes. See route-capabilities.ts.
   if (cs.routes[route_id].valve_mask == 0 && cs.routes[route_id].pump_idx == 0xFF) return 2;
-  if (is_duplicate_command(cs, command_id, in.now_ms)) return 0;  // idempotent success
+  if (is_duplicate_command(cs, command_id, in.now_ms)) return RC_DUPLICATE;  // idempotent success, no re-log
   if (find_slot_by_route(cs, route_id) != -1) return 2;           // already active
 
   if (has_conflict(cs, route_id) || find_free_slot(cs) == -1)
@@ -258,7 +301,7 @@ int try_route_start(ControlState &cs, const Inputs &in, int route_id, const std:
 
 int try_route_stop(ControlState &cs, int route_id, const std::string &command_id, uint8_t origin,
                    const std::string &actor, uint32_t now_ms) {
-  if (is_duplicate_command(cs, command_id, now_ms)) return 0;  // idempotent success
+  if (is_duplicate_command(cs, command_id, now_ms)) return RC_DUPLICATE;  // idempotent success, no re-log
   int s = find_slot_by_route(cs, route_id);
   if (s < 0) return 1;
   if (cs.slots[s].state == ST_IDLE || cs.slots[s].state == ST_STOPPING || cs.slots[s].state == ST_FAULT)

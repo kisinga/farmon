@@ -10,9 +10,10 @@
 #
 # - Snapshot: ONE JSON on majiflow/test-site/default/state every interval — readings
 #   (numbers), text channels, system state, per-route current run (state + origin +
-#   actor), and the recent command outcomes. The server projects it into the latest
-#   doc, batched numeric history (rollups), a derived transition timeline, and
-#   command reconciliation.
+#   actor), the recent command outcomes, and the on-device control-event log
+#   (events[], newest first — who started/stopped/faulted what, for the activity
+#   feed). The server projects it into the latest doc, batched numeric history
+#   (rollups), a derived transition timeline, and command reconciliation.
 # - Commands:  operator actions arrive as JSON on the command topic (QoS 1 over a
 #   persistent session, so the broker queues across a reconnect; stale ones gated
 #   by issued_at) and dispatch into the route/queue functions (routes.h / control);
@@ -124,7 +125,9 @@ mqtt:
               id(control).fault_reset(route_id); id(system_state) = id(control).system_state();
               id(control).record_outcome(command_id, "APPLIED", "");
             } else if (strcmp(action, "stop_all") == 0) {
-              id(btn_stop_all).press(); id(control).record_outcome(command_id, "APPLIED", "");
+              // Direct call (not btn_stop_all — that button is the panel path) so the event
+              // log attributes the envelope actor.
+              id(control).stop_all(maji_ctl::ORIGIN_MANUAL, actor); id(control).record_outcome(command_id, "APPLIED", "");
             } else if (strcmp(action, "reset_faults") == 0) {
               id(btn_reset_faults).press(); id(control).record_outcome(command_id, "APPLIED", "");
             } else if (strcmp(action, "clear_queue") == 0) {
@@ -277,8 +280,9 @@ script:
           static const char* STOP_TOK[] = {"NONE", "MANUAL", "TANK_FULL", "NO_FLOW", "MAX_RUNTIME", "CONTROL_LOST", "SOURCE_LOW", "VOLUME_REACHED", "DURATION_REACHED", "FLOW_STALLED"};
           static const char* FAULT_TOK[] = {"NONE", "NO_FLOW", "MAX_RUNTIME", "CONTROL_LOST"};
           static const char* ORIGIN_TOK[] = {"SYSTEM", "MANUAL", "AUTOMATION"};
+          static const char* ACTION_TOK[] = {"START", "STOP", "STOP_ALL", "FAULT"};
           static const char* RR_TOK[] = {"UNKNOWN", "POWERON", "EXT", "SW", "PANIC", "INT_WDT", "TASK_WDT", "WDT", "DEEPSLEEP", "BROWNOUT", "SDIO"};
-          static char buf[3924];
+          static char buf[5724];
           int n = 0;
           bool first = true;
           auto sep = [&]() -> const char* { const char* s = first ? "" : ","; first = false; return s; };
@@ -315,6 +319,9 @@ script:
           put(snprintf(buf+n, sizeof(buf)-n, "],\"outcomes\":["));
           first = true;
           for (int k = 0; k < maji_ctl::MAX_OUTCOMES; k++) { if (!cs.outcomes[k].command_id.empty()) put(snprintf(buf+n, sizeof(buf)-n, "%s{\"command_id\":\"%s\",\"result\":\"%s\",\"reason\":\"%s\"}", sep(), cs.outcomes[k].command_id.c_str(), cs.outcomes[k].result.c_str(), cs.outcomes[k].reason.c_str())); }
+          put(snprintf(buf+n, sizeof(buf)-n, "],\"events\":["));
+          first = true;
+          { int ec = 0; const maji_ctl::ControlEvent *evs = id(control).events(ec); for (int k = 0; k < ec; k++) { const maji_ctl::ControlEvent &ev = evs[k]; char ea[34]; maji_ctl::json_esc_to(ea, sizeof(ea), ev.actor); char er[34]; maji_ctl::json_esc_to(er, sizeof(er), ev.reason); put(snprintf(buf+n, sizeof(buf)-n, "%s{\"ts\":%lld,\"up\":%u,\"route\":%d,\"action\":\"%s\",\"origin\":\"%s\",\"actor\":\"%s\",\"reason\":\"%s\"}", sep(), (long long) ev.ts, (unsigned) ev.up_s, (int) ev.route, (ev.action < 4) ? ACTION_TOK[ev.action] : "START", ORIGIN_TOK[ev.origin < 3 ? ev.origin : 0], ea, er)); } }
           put(snprintf(buf+n, sizeof(buf)-n, "],\"runs\":["));
           put(id(control).meter_runs_json(buf + n, (int) sizeof(buf) - n));
           put(snprintf(buf+n, sizeof(buf)-n, "]}"));

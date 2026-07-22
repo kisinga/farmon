@@ -354,8 +354,10 @@ interface DashSection { id: string; label: string; widgets: DashboardWidget[] }
           <ng-container [ngTemplateOutlet]="cardSection" [ngTemplateOutletContext]="{ $implicit: section }" />
         }
 
-        <!-- Reporting zone: usage summary above the activity detail log. Cloud-only
-             (the /usage facade + the audit feeds have no device endpoint). -->
+        <!-- Reporting zone: usage summary above the activity detail log. The usage
+             summary is cloud-only (the /usage facade has no device endpoint); the
+             activity log renders in both modes — device mode feeds it from the
+             snapshot's on-device event ring. -->
         @if (hasRoutes() && !deviceMode) {
           <section class="mb-6">
             <h2 class="section-label mb-3">Water usage</h2>
@@ -401,10 +403,10 @@ export class DashboardComponent {
   protected lifecycle = inject(CommandLifecycleStore);
 
   /** Device-mode build (served from the controller's flash): the cloud-only
-   *  surfaces — history charts, water usage, activity feed, health history,
-   *  setup, docs — are hidden; automations (the device serves its own
-   *  /local/automations), routes, tank levels, the live map and command tracking
-   *  stay. */
+   *  surfaces — history charts, water usage, health history, setup, docs — are
+   *  hidden; automations (the device serves its own /local/automations), routes,
+   *  tank levels, the live map, command tracking and the Activity feed (the
+   *  snapshot's on-device event ring) stay. */
   protected deviceMode = inject(DEVICE_MODE);
 
   protected siteId = '';
@@ -449,10 +451,11 @@ export class DashboardComponent {
   });
 
   /** The activity log section(s), rendered at the bottom of the Reporting zone
-   *  (below the usage totals: summary above detail). Cloud-only: the device keeps
-   *  no transition/command/config audit log. */
+   *  (below the usage totals: summary above detail). Renders in device mode too —
+   *  the cloud merges its audit collections, the device feeds the same row UI
+   *  from the snapshot's on-device event ring (DashboardStore.activityFor). */
   protected activitySections = computed<DashSection[]>(() =>
-    this.deviceMode ? [] : this.sections().filter((s) => s.id === 'activity'));
+    this.sections().filter((s) => s.id === 'activity'));
 
   /** Building/opening the site documentation. */
   protected docBusy = signal(false);

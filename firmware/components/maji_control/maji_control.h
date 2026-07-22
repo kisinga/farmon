@@ -93,7 +93,7 @@ class MajiControl : public Component {
   int start_route(int route_id, const std::string &command_id, const maji_ctl::StopSpec &spec,
                   uint8_t origin, const std::string &actor);
   int stop_route(int route_id, const std::string &command_id, uint8_t origin, const std::string &actor);
-  void stop_all();           // btn_stop_all
+  void stop_all(uint8_t origin, const std::string &actor);  // btn_stop_all + command dispatch
   void reset_faults();       // btn_reset_faults (all faults)
   void fault_reset(int route_id);  // clear one route's fault (mqtt fault_reset)
   void clear_queue();        // btn_clear_queue
@@ -109,6 +109,12 @@ class MajiControl : public Component {
   void record_outcome(const std::string &command_id, const std::string &result, const std::string &reason);
 
   maji_ctl::ControlState &state() { return state_; }  // snapshot builder reads this
+
+  // The on-device control-event log (newest first) for the snapshot's activity feed.
+  const maji_ctl::ControlEvent *events(int &count) const {
+    count = state_.event_count;
+    return state_.events;
+  }
 
   // --- Billing meter (delegates to the pure maji_meter kernel) -----------------
   // Called by codegen lambdas: the runs_ack subscriber and the snapshot publisher.
@@ -148,6 +154,18 @@ class MajiControl : public Component {
 
   maji_meter::MeterState meter_;
   ESPPreferenceObject meter_pref_;
+
+  // Control-event log (last ~10 events, newest first — "what happened at 3am"). The
+  // ring lives in the kernel's ControlState; the shell records at the command choke
+  // points, catches fault latches by diffing slot states in tick_2s, and persists the
+  // ring to NVS so it survives reboot. ts stamps use the last trusted epoch the tick
+  // saw (0 = untrusted; the app renders up_s then) — command entry points take no clock.
+  void log_event_(int route, uint8_t action, uint8_t origin, const std::string &actor,
+                  const char *reason);
+  void events_load_();     // restore the ring from NVS in setup()
+  void events_persist_();  // write the ring to the fixed NVS blob (flash write is batched)
+  ESPPreferenceObject events_pref_;
+  uint32_t last_epoch_{0};  // last trusted wall-clock the tick passed in (0 = untrusted)
   // Pre-tick slot snapshot for the transition diff (prev_stop_ holds the reason before
   // init_slot wipes it on ->IDLE).
   int prev_state_[maji_ctl::MAX_CONCURRENT_ROUTES];

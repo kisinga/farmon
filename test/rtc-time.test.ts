@@ -2,10 +2,12 @@
  * DS3231 RTC (local.rtc) — pins the gated emission on the topology flag:
  *
  *   - OFF (flag unset): mqtt.yaml + device YAML are BYTE-IDENTICAL to the golden
- *     files captured before the RTC feature existed (test/golden/rtc-off-*.yaml).
- *     This is the hard requirement: no RTC flag, no change. If an intentional
- *     off-path edit legitimately changes those files, re-capture with
- *     `npx tsx test/capture-rtc-golden.ts`.
+ *     files (test/golden/rtc-off-*.yaml). What the pin guarantees NOW: with the
+ *     config's `local` block stripped, the rtc-off output is byte-identical to the
+ *     golden — no RTC flag, no change. Provenance: recaptured 2026-07-22 from a
+ *     doctored input (`delete raw.controllers[0].local`), post-events — NOT from a
+ *     pre-RTC tree. If an intentional off-path edit legitimately changes those
+ *     files, re-capture with `npx tsx test/capture-rtc-golden.ts`.
  *   - ON (kc868-a16): the ds1307 platform rides the board i2c bus, SNTP writes back
  *     to the RTC on sync, the boot read restores wall clock after the persisted
  *     seed, and time_trusted is earned from EITHER source.
@@ -50,12 +52,12 @@ const onMqtt = get(onFiles, "packages/mqtt.yaml")!.content;
 const offDevice = deviceYaml(offFiles).content;
 const onDevice = deviceYaml(onFiles).content;
 
-// --- Gated OFF: byte-identical to the pre-RTC golden -------------------------------
+// --- Gated OFF: byte-identical to the golden -----------------------------------------
 
 const goldenMqtt = fs.readFileSync(path.join(GOLDEN, "rtc-off-mqtt.yaml"), "utf-8");
 const goldenDevice = fs.readFileSync(path.join(GOLDEN, "rtc-off-device.yaml"), "utf-8");
-assert(offMqtt === goldenMqtt, "off: mqtt.yaml byte-identical to the pre-RTC golden");
-assert(offDevice === goldenDevice, "off: device YAML byte-identical to the pre-RTC golden");
+assert(offMqtt === goldenMqtt, "off: mqtt.yaml byte-identical to the rtc-off golden");
+assert(offDevice === goldenDevice, "off: device YAML byte-identical to the rtc-off golden");
 assert(offFiles.every(f => !f.content.includes("ds1307") && !f.content.includes("rtc_time")),
   "off: no ds1307/rtc_time reference anywhere in the bundle");
 

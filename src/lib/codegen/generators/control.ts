@@ -75,7 +75,9 @@ button:
     icon: "mdi:stop-circle"
     on_press:
       - lambda: |-
-          id(control).stop_all();
+          // Panel path (IN1 presses this button): MQTT / local-UI stop-alls call
+          // stop_all directly with the envelope actor instead.
+          id(control).stop_all(maji_ctl::ORIGIN_MANUAL, "panel");
 ${PUBLISH_STATUS}
           ESP_LOGI("ctrl", "Stop all requested");
 

@@ -1,7 +1,10 @@
 /**
  * One-shot capture: RTC-off golden output for test/rtc-time.test.ts.
- * Run from the pre-RTC working tree; the two files it writes pin the
- * "no local.rtc" byte stream the RTC feature must not alter.
+ * What the golden pins: with the config's `local` block stripped (the doctored
+ * input below), the rtc-off mqtt.yaml + device YAML are byte-identical to these
+ * files — the "no local.rtc" byte stream the RTC feature must not alter.
+ * Provenance: recaptured 2026-07-22, post-events (NOT from a pre-RTC tree).
+ * Re-run after any intentional off-path output change.
  */
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -15,6 +18,10 @@ const OUT = path.join(ROOT, "test", "golden");
 
 const kc868 = loadBoard(path.join(ROOT, "defaults", "boards", "kc868-a16"));
 const raw = parseYaml(fs.readFileSync(path.join(ROOT, "defaults", "configs", "kc868-a16-controller.yaml"), "utf-8"));
+// The golden pins the rtc-OFF byte stream, which rtc-time.test.ts generates with
+// `local` overridden to undefined — strip the config's own local block (ui etc.)
+// so the capture matches the test's off-state exactly.
+delete raw.controllers[0].local;
 const topo = parseTopology(raw);
 const manifest = topologyToManifestForController(topo, topo.controllers[0].id);
 // async main: generateAll is async (manifest-driven local-UI assets).

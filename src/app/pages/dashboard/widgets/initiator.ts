@@ -1,3 +1,5 @@
+import { RESERVED_ACTOR_LABELS } from '@core';
+
 /**
  * Initiator phrasing → one vocabulary for "who/what is behind this" across the
  * dashboard, so the route card's live origin line and the activity timeline's
@@ -7,6 +9,8 @@
  *   - "you"                — the viewer's own manual action (label already "you")
  *   - "by Jane"            — another operator's manual action
  *   - "Automation: Morning"— an automation, or bare "Automation" with no name
+ *   - "Panel button"       — a device source (origin DEVICE: panel / on-device
+ *                            dashboard); the bare label, no "by" — not a person
  *   - "Manual"             — a manual action with no resolved name
  *   - ""                   — nothing to attribute (SYSTEM / no label)
  *
@@ -16,6 +20,7 @@
 export function formatInitiator(origin: string | undefined, label: string | undefined): string {
   if (label === 'you') return 'you';
   if (origin === 'AUTOMATION') return label ? `Automation: ${label}` : 'Automation';
+  if (origin === 'DEVICE') return label ?? '';
   if (origin === 'MANUAL') return label ? `by ${label}` : 'Manual';
   return label ? `by ${label}` : '';
 }
@@ -48,6 +53,8 @@ export interface ResolvedInitiator {
  *   - an automation         → its name (origin adds the "Automation:" prefix later)
  *   - the viewer themselves → "you" (hover: their email)
  *   - another co-owner      → their name (hover: name · email · co-owner)
+ *   - a reserved device actor (panel / local-ui — RESERVED_ACTOR_LABELS) → its
+ *     fixed label (rendered via the DEVICE origin — see {@link displayOrigin})
  *   - an outsider (admin who took control) → "Support" (never their name — no leak)
  *   - no actor (SYSTEM)     → '' */
 export function resolveInitiator(
@@ -72,5 +79,19 @@ export function resolveInitiator(
       title: detail ? `${detail} · co-owner` : 'Co-owner of this site',
     };
   }
+  // Reserved non-user actors (panel buttons, the on-device dashboard) have no
+  // users/owners row anywhere — label them from the shared map (the same labels
+  // the server applies at ingest) instead of misreading them as Support.
+  const reserved = RESERVED_ACTOR_LABELS[a.actorId];
+  if (reserved) return { label: reserved, support: false, title: reserved };
   return { label: 'Support', support: true, title: 'Support — an operator acting on your site' };
+}
+
+/** The origin a row renders with: a reserved actor id (panel / local-ui) is a
+ *  device source, not a person, so its rows take the DEVICE path in
+ *  {@link formatInitiator} (the bare label, no "by") whatever the wire origin
+ *  says (the device stamps MANUAL for a button press). Every other actor keeps
+ *  its wire origin unchanged. */
+export function displayOrigin(origin: string | undefined, actorId: string | undefined): string | undefined {
+  return actorId && RESERVED_ACTOR_LABELS[actorId] ? 'DEVICE' : origin;
 }

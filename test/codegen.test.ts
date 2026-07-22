@@ -227,6 +227,35 @@ assert(
   /\/state"/.test(mqttYaml) && /\\"routes\\":\[/.test(mqttYaml),
   "One controller snapshot to .../state carries the per-route current run (state + origin + actor)",
 );
+// --- On-device control-event log rides the snapshot (the activity feed) ---
+assert(
+  /\\"events\\":\[/.test(mqttYaml) && mqttYaml.includes("id(control).events(ec)"),
+  "Snapshot carries the on-device control-event log (events[], newest first)",
+);
+assert(
+  mqttYaml.includes('static const char* ACTION_TOK[] = {"START", "STOP", "STOP_ALL", "FAULT"};'),
+  "Snapshot maps event action codes through ACTION_TOK (mirrors enum EventAction in core.h)",
+);
+assert(
+  /\\"action\\":\\"%s\\",\\"origin\\":\\"%s\\",\\"actor\\":\\"%s\\",\\"reason\\":\\"%s\\"/.test(mqttYaml) &&
+    /\\"ts\\":%lld,\\"up\\":%u,\\"route\\":%d/.test(mqttYaml),
+  "Event entries carry ts/up/route/action/origin/actor/reason (ts=0 when untrusted -> app renders up)",
+);
+{
+  // Sizing: the buffer formula reserves 10 * 180 B for the event ring on top of the
+  // pre-events baseline (worst-case entry ~187 B: long ts/up + STOP_ALL + two 33 B
+  // escaped fields) — pin the emitted size against the formula so a future BUFSZ edit
+  // that drops the events headroom fails here.
+  const m2 = mqttYaml.match(/static char buf\[(\d+)\];/);
+  assert(!!m2, "Snapshot buffer size is pinned in the emitted script");
+  const channels = collectTelemetryChannels(manifest).filter(
+    (c) => !["system_state", "queue_depth", "safety_override"].includes(c.sensor) &&
+      (c.kind === "state" || c.kind === "bool" || c.kind === "cover" || c.kind === "enum" || c.kind === "text"),
+  );
+  const expected = Math.max(2048, channels.length * 44 + manifest.routes.length * 192 + 1024 + 16 * 150 + 10 * 180);
+  assert(Number(m2![1]) === expected, "Snapshot buffer includes the events headroom (10 events x 180 B)",
+    `got ${m2![1]}, want ${expected}`);
+}
 assert(
   !/telemetry\//.test(mqttYaml) && !/\/event"/.test(mqttYaml),
   "No per-sensor telemetry topic and no lossy event topic — the snapshot is the single source of truth",
@@ -427,7 +456,10 @@ assert(control.includes("interval: 2s"), "Has 2s safety interval");
 assert(control.includes("id(control).tick_1s("), "1s interval drives the engine");
 assert(control.includes("id(control).tick_2s("), "2s interval drives the watchdog");
 assert(control.includes("id(control).start_route"), "Route start buttons call the engine");
-assert(control.includes("id(control).stop_all()"), "Stop-all button calls the engine");
+assert(control.includes('id(control).stop_all(maji_ctl::ORIGIN_MANUAL, "panel")'),
+  "Stop-all button calls the engine attributed to the panel");
+assert(mqttYaml.includes("id(control).stop_all(maji_ctl::ORIGIN_MANUAL, actor)"),
+  "MQTT/local-UI stop_all calls the engine directly with the envelope actor (not btn_stop_all)");
 assert(!control.includes("reconcile_valves"), "Valve reconcile moved into the engine");
 assert(!control.includes("get_flow_rate"), "Safety loop moved into the engine");
 assert(!control.includes("flowThresholdFallback"), "Control generator does not duplicate flow-threshold formatting");

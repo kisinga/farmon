@@ -3,7 +3,7 @@ import {
   MQTT_ROOT, commandTopic, automationsTopic, statusTopic, identityTopic, snapshotTopic, runsAckTopic, configTopic,
   HEAP_FREE_SENSOR, HEAP_MIN_SENSOR, HEAP_TOTAL_SENSOR, UPTIME_SENSOR, TEMP_SENSOR, WIFI_SIGNAL_SENSOR,
   collectTelemetryChannels, type TelemetryChannel,
-  SYSTEM_STATE_TOKENS, STOP_REASON_TOKENS, FAULT_TOKENS, ORIGIN_TOKENS,
+  SYSTEM_STATE_TOKENS, STOP_REASON_TOKENS, FAULT_TOKENS, ORIGIN_TOKENS, EVENT_ACTION_TOKENS,
   COMMAND_TTL_S, ROUTE_START_RESULTS, ROUTE_STOP_RESULTS, NODE_SET_RESULTS,
   collectTunableNumbers, boardSupportedTransports, effectiveTransport,
 } from '@core';
@@ -87,7 +87,9 @@ export function commandDispatchLines(opts?: { allowOta?: boolean }): string[] {
     '  id(control).fault_reset(route_id); id(system_state) = id(control).system_state();',
     '  id(control).record_outcome(command_id, "APPLIED", "");',
     '} else if (strcmp(action, "stop_all") == 0) {',
-    '  id(btn_stop_all).press(); id(control).record_outcome(command_id, "APPLIED", "");',
+    '  // Direct call (not btn_stop_all — that button is the panel path) so the event',
+    '  // log attributes the envelope actor.',
+    '  id(control).stop_all(maji_ctl::ORIGIN_MANUAL, actor); id(control).record_outcome(command_id, "APPLIED", "");',
     '} else if (strcmp(action, "reset_faults") == 0) {',
     '  id(btn_reset_faults).press(); id(control).record_outcome(command_id, "APPLIED", "");',
     '} else if (strcmp(action, "clear_queue") == 0) {',
@@ -280,8 +282,10 @@ export function generateMqtt(m: Manifest, metadata: GenerationMetadata, board: B
   // --- Controller snapshot (one JSON, re-asserted every interval) -----------
   // The single source of truth. ONE message carries: numeric readings (charts +
   // rollups), text channels, system state, per-route current run (with origin +
-  // actor), and the recent command outcomes. The server projects it (latest doc,
-  // batched raw history, transitions derived from changes, command reconcile).
+  // actor), the recent command outcomes, and the on-device control-event log
+  // (events[]: who started/stopped/faulted what — the activity feed). The server
+  // projects it (latest doc, batched raw history, transitions derived from changes,
+  // command reconcile).
   // Replaces the per-sensor telemetry, the route-state tokens, AND the lossy
   // transition-event log — nothing authoritative reads a one-shot message now.
   const SYS_SENSORS = new Set(['system_state', 'queue_depth', 'safety_override']);
@@ -290,9 +294,12 @@ export function generateMqtt(m: Manifest, metadata: GenerationMetadata, board: B
   // +runs[]: the billing outbox (maji_meter::OUTBOX_CAP=16) the device re-asserts until
   // acked. A full outbox would otherwise crowd out the rest of the snapshot; a dropped run
   // self-heals (FIFO drain over snapshots), but headroom keeps steady state intact.
+  // +events[]: the control-event ring (maji_ctl::MAX_EVENTS=10), ~180 B per entry worst
+  // case (long ts/up + STOP_ALL + two 33 B escaped actor/reason fields). codegen.test.ts
+  // pins this headroom against the emitted buffer size — keep the two in sync.
   // Tunables no longer echo into readings (the server owns the desired config), so they
   // are not sized here — only the one `config_version` text field rides the snapshot now.
-  const BUFSZ = Math.max(2048, (readingCh.length + textCh.length) * 44 + m.routes.length * 192 + 1024 + 16 * 150);
+  const BUFSZ = Math.max(2048, (readingCh.length + textCh.length) * 44 + m.routes.length * 192 + 1024 + 16 * 150 + 10 * 180);
 
   const readingLine = (c: TelemetryChannel): string => {
     if (c.kind === 'bool') return `put(snprintf(buf+n, sizeof(buf)-n, "%s\\"${c.sensor}\\":%d", sep(), id(${c.ref}).state ? 1 : 0));`;
@@ -309,7 +316,8 @@ export function generateMqtt(m: Manifest, metadata: GenerationMetadata, board: B
   // origin/actor come from the per-route attribution (route_origin/route_actor),
   // which outlives the slot — so a finished run still reports who/what is
   // responsible for the route's current (idle) state until the next run rebinds it.
-  // state/reason ride the live slot while one exists.
+  // state/reason ride the live slot while one exists. The durable per-action copy
+  // (who did what, when) is the events[] ring emitted below.
   const routeLine = (i: number): string =>
     `{ int s = maji_ctl::find_slot_by_route(cs, ${i}); int st = (s >= 0) ? cs.slots[s].state : 0; ` +
     `const char* o = (cs.route_origin[${i}] < 3) ? ORIGIN_TOK[cs.route_origin[${i}]] : "SYSTEM"; ` +
@@ -336,6 +344,7 @@ export function generateMqtt(m: Manifest, metadata: GenerationMetadata, board: B
     cppTokenArray('STOP_TOK', STOP_REASON_TOKENS),
     cppTokenArray('FAULT_TOK', FAULT_TOKENS),
     cppTokenArray('ORIGIN_TOK', ORIGIN_TOKENS),
+    cppTokenArray('ACTION_TOK', EVENT_ACTION_TOKENS),
     cppTokenArray('RR_TOK', RESET_REASON_TOKENS),
     // static (not stack): ~${BUFSZ} B, and the snapshot script is mode:single on the one
     // main loop, so it is never reentrant — keep it off the loop-task stack (overflow safety).
@@ -379,6 +388,20 @@ export function generateMqtt(m: Manifest, metadata: GenerationMetadata, board: B
     'put(snprintf(buf+n, sizeof(buf)-n, "],\\"outcomes\\":["));',
     'first = true;',
     'for (int k = 0; k < maji_ctl::MAX_OUTCOMES; k++) { if (!cs.outcomes[k].command_id.empty()) put(snprintf(buf+n, sizeof(buf)-n, "%s{\\"command_id\\":\\"%s\\",\\"result\\":\\"%s\\",\\"reason\\":\\"%s\\"}", sep(), cs.outcomes[k].command_id.c_str(), cs.outcomes[k].result.c_str(), cs.outcomes[k].reason.c_str())); }',
+    // Control-event log (maji_ctl ring, newest first): who started/stopped/faulted
+    // what — the activity feed on both dashboards. ts is 0 when the clock was
+    // untrusted at the event (the app renders the up uptime then). actor/reason are
+    // user-controlled strings, so they escape into per-entry stack buffers (the
+    // shared json_esc static buffer can't serve two fields of one snprintf).
+    'put(snprintf(buf+n, sizeof(buf)-n, "],\\"events\\":["));',
+    'first = true;',
+    '{ int ec = 0; const maji_ctl::ControlEvent *evs = id(control).events(ec); ' +
+    'for (int k = 0; k < ec; k++) { const maji_ctl::ControlEvent &ev = evs[k]; ' +
+    'char ea[34]; maji_ctl::json_esc_to(ea, sizeof(ea), ev.actor); ' +
+    'char er[34]; maji_ctl::json_esc_to(er, sizeof(er), ev.reason); ' +
+    'put(snprintf(buf+n, sizeof(buf)-n, "%s{\\"ts\\":%lld,\\"up\\":%u,\\"route\\":%d,\\"action\\":\\"%s\\",\\"origin\\":\\"%s\\",\\"actor\\":\\"%s\\",\\"reason\\":\\"%s\\"}", sep(), ' +
+    '(long long) ev.ts, (unsigned) ev.up_s, (int) ev.route, ' +
+    `(ev.action < ${EVENT_ACTION_TOKENS.length}) ? ACTION_TOK[ev.action] : "START", ORIGIN_TOK[ev.origin < 3 ? ev.origin : 0], ea, er)); } }`,
     // Billing runs: the meter's durable outbox of closed runs, re-asserted until the
     // retained runs_ack high-water-mark confirms them. meter_runs_json emits the array
     // body (comma-joined objects); put() clamps the would-be length so a full outbox
@@ -418,9 +441,10 @@ export function generateMqtt(m: Manifest, metadata: GenerationMetadata, board: B
 #
 # - Snapshot: ONE JSON on majiflow/${site}/${ctrl}/state every interval — readings
 #   (numbers), text channels, system state, per-route current run (state + origin +
-#   actor), and the recent command outcomes. The server projects it into the latest
-#   doc, batched numeric history (rollups), a derived transition timeline, and
-#   command reconciliation.
+#   actor), the recent command outcomes, and the on-device control-event log
+#   (events[], newest first — who started/stopped/faulted what, for the activity
+#   feed). The server projects it into the latest doc, batched numeric history
+#   (rollups), a derived transition timeline, and command reconciliation.
 # - Commands:  operator actions arrive as JSON on the command topic (QoS 1 over a
 #   persistent session, so the broker queues across a reconnect; stale ones gated
 #   by issued_at) and dispatch into the route/queue functions (routes.h / control);

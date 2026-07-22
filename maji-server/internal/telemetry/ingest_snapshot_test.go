@@ -147,4 +147,28 @@ func TestIngestSnapshot(t *testing.T) {
 	if aev == nil || aev.GetString("origin") != "AUTOMATION" || aev.GetString("actor") != auto.Id || aev.GetString("actor_label") != "Morning" {
 		t.Errorf("automation-derived event attribution wrong: %v", aev)
 	}
+
+	// Snapshot 4: a panel button stops the route — the reserved actor "panel"
+	// has no users row, so the label falls through to the fixed mapping.
+	ing(`{"ts":4,"readings":{},"system":{"state":"IDLE","queue":0,"safety":false},"routes":[{"id":0,"state":"IDLE","origin":"MANUAL","actor":"panel","reason":"MANUAL"}],"outcomes":[]}`)
+	if r = loadSnap().Routes[0]; r.ActorLabel != "Panel button" {
+		t.Errorf("panel actor label wrong: %+v", r)
+	}
+	pev, _ := app.FindFirstRecordByFilter("state_events",
+		"controller = {:c} && to_state = {:s}", dbx.Params{"c": "dev1", "s": "IDLE"})
+	if pev == nil || pev.GetString("actor") != "panel" || pev.GetString("actor_label") != "Panel button" {
+		t.Errorf("panel-derived event attribution wrong: %v", pev)
+	}
+
+	// Snapshot 5: the on-device dashboard starts the route — the reserved actor
+	// "local-ui" falls through to the same fixed mapping as "panel".
+	ing(`{"ts":5,"readings":{},"system":{"state":"RUNNING","queue":0,"safety":false},"routes":[{"id":0,"state":"RUNNING","origin":"MANUAL","actor":"local-ui","reason":""}],"outcomes":[]}`)
+	if r = loadSnap().Routes[0]; r.ActorLabel != "On-device dashboard" {
+		t.Errorf("local-ui actor label wrong: %+v", r)
+	}
+	lev, _ := app.FindFirstRecordByFilter("state_events",
+		"controller = {:c} && actor = {:a}", dbx.Params{"c": "dev1", "a": "local-ui"})
+	if lev == nil || lev.GetString("actor_label") != "On-device dashboard" {
+		t.Errorf("local-ui-derived event attribution wrong: %v", lev)
+	}
 }

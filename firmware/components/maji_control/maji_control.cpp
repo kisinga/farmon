@@ -81,6 +81,19 @@ struct MeterBlob {
   BlobRun outbox[maji_meter::OUTBOX_CAP];
 };
 
+// --- Fixed POD on-flash form of the control-event ring -------------------------
+// ControlEvent is already POD, so the blob is just a count + the ring entries
+// (newest-first) — ~0.5 KB, the same make_preference<POD> idiom as MeterBlob /
+// AutosBlob. No unchanged-skip: a save only ever follows a fresh event, so the
+// blob always differs (and events are rare — writes never ride a hot path).
+static constexpr uint32_t EVENTS_BLOB_KEY = 0x45564E54;   // "EVNT" — preferences hash
+static constexpr uint32_t EVENTS_BLOB_MAGIC = 0x45564E31; // "EVN1" — format/sanity tag
+struct EventsBlob {
+  uint32_t magic;
+  uint8_t count;
+  ControlEvent events[MAX_EVENTS];
+};
+
 void MajiControl::setup() {
   state_.init(routes_, (int) valves_.size());
   state_.set_manual_pumps(manual_pumps_);
@@ -95,6 +108,7 @@ void MajiControl::setup() {
   // left open by a mid-run reboot), then seed the transition-diff baseline.
   meter_.init((int) flows_.size(), MAX_CONCURRENT_ROUTES);
   meter_load_();
+  events_load_();  // the event log survives reboot ("what happened at 3am")
   for (int s = 0; s < MAX_CONCURRENT_ROUTES; s++) {
     prev_state_[s] = state_.slots[s].state;
     prev_stop_[s] = 0;
@@ -230,6 +244,7 @@ void MajiControl::tick_1s(uint32_t wall_epoch) {
   // then reconcile run open/close from the slot transitions this tick.
   maji_meter::stamp_epoch(meter_, wall_epoch);
   if (wall_epoch) meter_.last_wall = wall_epoch;  // for a boot-interrupted run's duration
+  if (wall_epoch) last_epoch_ = wall_epoch;       // event-log ts stamps (0 = untrusted)
   for (int i = 0; i < (int) flows_.size(); i++) {
     float t = flows_[i].total != nullptr ? flows_[i].total->state : NAN;
     if (!std::isnan(t) && t >= 0.0f) maji_meter::on_reading(meter_, i, (uint32_t) t, 1);
@@ -257,6 +272,18 @@ void MajiControl::tick_2s(uint32_t wall_epoch) {
   uint32_t now = millis();
   Inputs in = snapshot_(now);
   WatchdogResult wr = maji_ctl::tick_2s(state_, in);
+  if (wall_epoch) last_epoch_ = wall_epoch;
+  // Event log: a slot that latched FAULT this tick. Faults originate inside the kernel
+  // (tick_2s), so there is no command choke point to hook — diff against the pre-tick
+  // baseline (prev_state_, still untouched until meter_sync_ below). The event carries
+  // the faulted run's attribution (route_origin/route_actor) + the fault token.
+  for (int s = 0; s < MAX_CONCURRENT_ROUTES; s++) {
+    int rid = state_.slots[s].route_id;
+    if (rid >= 0 && rid < (int) state_.routes.size() &&
+        is_fault_transition(prev_state_[s], state_.slots[s].state))
+      log_event_(rid, EV_FAULT, state_.route_origin[rid], state_.route_actor[rid],
+                 fault_tok(state_.slots[s].fault_code));
+  }
   meter_sync_(wall_epoch, now);  // catch RUNNING->FAULT closes set here (1s tick catches ->IDLE)
   for (int i = 0; i < (int) valves_.size() && i < 16; i++)
     if ((wr.fault_resync_valves & (1 << i)) && valves_[i].cover != nullptr)
@@ -298,24 +325,35 @@ void MajiControl::meter_sync_(uint32_t wall_epoch, uint32_t now) {
 int MajiControl::start_route(int route_id, const std::string &command_id, const StopSpec &spec,
                              uint8_t origin, const std::string &actor) {
   Inputs in = snapshot_(millis());
-  return try_route_start(state_, in, route_id, command_id, spec, origin, actor);
+  int rc = try_route_start(state_, in, route_id, command_id, spec, origin, actor);
+  // Event log: only a real start (rc 0) — a queue/refuse changes nothing the feed shows,
+  // and an idempotent duplicate (RC_DUPLICATE) must not double-log the original command.
+  if (rc == 0) log_event_(route_id, EV_START, origin, actor, "");
+  return rc == RC_DUPLICATE ? 0 : rc;  // a duplicate reports the same idempotent success
 }
 
 int MajiControl::stop_route(int route_id, const std::string &command_id, uint8_t origin,
                             const std::string &actor) {
-  return try_route_stop(state_, route_id, command_id, origin, actor, millis());
+  int rc = try_route_stop(state_, route_id, command_id, origin, actor, millis());
+  if (rc == 0) log_event_(route_id, EV_STOP, origin, actor, stop_tok(STOP_MANUAL));
+  return rc == RC_DUPLICATE ? 0 : rc;  // a duplicate reports the same idempotent success
 }
 
-void MajiControl::stop_all() {
+void MajiControl::stop_all(uint8_t origin, const std::string &actor) {
   uint32_t now = millis();
+  bool any = false;
   for (int s = 0; s < MAX_CONCURRENT_ROUTES; s++)
     if (state_.slots[s].state >= ST_PREPARING && state_.slots[s].state <= ST_RUNNING) {
       state_.slots[s].stop_reason = STOP_MANUAL;
       state_.slots[s].state = ST_STOPPING;
       state_.slots[s].stop_time = now;
+      any = true;
     }
   state_.queue_head = 0;
   state_.queue_count = 0;
+  // Attribution rides the parameters: the panel (btn_stop_all) passes "panel", the
+  // command dispatch passes the envelope actor. Idle stop-all is a no-op, logs nothing.
+  if (any) log_event_(-1, EV_STOP_ALL, origin, actor, stop_tok(STOP_MANUAL));
 }
 
 void MajiControl::reset_faults() {
@@ -354,6 +392,26 @@ bool MajiControl::is_duplicate(const std::string &command_id) {
 void MajiControl::record_outcome(const std::string &command_id, const std::string &result,
                                  const std::string &reason) {
   maji_ctl::record_outcome(state_, command_id, result, reason);
+}
+
+void MajiControl::log_event_(int route, uint8_t action, uint8_t origin, const std::string &actor,
+                             const char *reason) {
+  record_event(state_, last_epoch_, millis() / 1000, route, action, origin, actor.c_str(), reason);
+  events_persist_();
+}
+
+void MajiControl::events_load_() {
+  events_pref_ = global_preferences->make_preference<EventsBlob>(EVENTS_BLOB_KEY);
+  EventsBlob b{};  // ~0.5 KB: small enough for the setup-task stack
+  if (!events_pref_.load(&b) || b.magic != EVENTS_BLOB_MAGIC) return;  // fresh device / no record
+  events_unpack(state_, b.events, b.count);
+}
+
+void MajiControl::events_persist_() {
+  EventsBlob b{};
+  b.magic = EVENTS_BLOB_MAGIC;
+  b.count = events_pack(state_, b.events, MAX_EVENTS);
+  events_pref_.save(&b);
 }
 
 void MajiControl::meter_load_() {

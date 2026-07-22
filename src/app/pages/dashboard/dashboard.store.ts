@@ -1,11 +1,13 @@
 import { Injectable, OnDestroy, computed, effect, inject, signal } from '@angular/core';
 import type { UnsubscribeFunc } from 'pocketbase';
-import { SYSTEM_STATE_TOKENS, routeStateSensor, routeLabel, findRoute, bucketReading, channelPriority, formatDurationS, formatLitres, type DashboardSpec, type DashboardWidget, type NodeRuntime, type RouteLive } from '@core';
+import { SYSTEM_STATE_TOKENS, routeStateSensor, routeLabel, findRoute, bucketReading, channelPriority, formatDurationS, formatLitres, type DashboardSpec, type DashboardWidget, type NodeRuntime, type RouteLive, type SnapshotEvent } from '@core';
 import { RealtimeService } from '../../core/services/realtime.service';
 import { AuthStore } from '../../core/services/auth.store';
 import type { ShadowRow, StateEventRow, ControllerRow, CommandOutcomeRow, CommandLogRow, ConfigEventRow, ActivityItem, UsageRun } from '../../core/models/runtime';
 import { resolveOfflineMs } from '../../core/models/alerts';
-import { resolveInitiator, type InitiatorCtx } from './widgets/initiator';
+import { DEVICE_MODE } from '../../core/tokens/device-mode';
+import { deviceEventToActivity } from '../../device/device-activity';
+import { displayOrigin, resolveInitiator, type InitiatorCtx } from './widgets/initiator';
 
 /** Cap on retained command outcomes — only the in-flight command's id is ever
  *  read, so this just bounds the map against a long-open page (the device ring is
@@ -42,6 +44,9 @@ export interface SiteTiming {
 export class DashboardStore implements OnDestroy {
   private realtime = inject(RealtimeService);
   private auth = inject(AuthStore);
+  /** Device-mode build: the Activity feed reads the snapshot's on-device event
+   *  ring instead of the cloud audit collections (see activityFor). */
+  private deviceMode = inject(DEVICE_MODE);
 
   /** The site's co-owner ids, set at init() — the membership test behind the
    *  viewer-relative initiator resolution (you / co-owner / Support). An actor
@@ -82,6 +87,10 @@ export class DashboardStore implements OnDestroy {
    *  at once without the 30d over-fetch, and each carries its own duration + volume +
    *  initiator id (no fragile event<->run join). */
   readonly feedRuns = signal<UsageRun[]>([]);
+  /** Device mode only: the snapshot's on-device activity ring (newest-first, max
+   *  10), re-asserted on every snapshot. The device-mode Activity feed's ONLY
+   *  source — the audit collections above have no device endpoint and stay empty. */
+  readonly deviceEvents = signal<SnapshotEvent[]>([]);
   /** Presence rows keyed by controller id (== device_id). */
   readonly controllers = signal<Map<string, ControllerRow>>(new Map());
   /** Site-wide telemetry timing (from topology) — the command lifecycle derives a
@@ -129,10 +138,11 @@ export class DashboardStore implements OnDestroy {
     if (gap && now - this.lastResyncAt < RESYNC_DEBOUNCE_MS) return;
     this.lastResyncAt = now;
 
-    const [{ rows, outcomes }, evts, ctrls] = await Promise.all([
+    const [{ rows, outcomes }, evts, ctrls, devEvts] = await Promise.all([
       this.realtime.latest(siteId),
       this.realtime.recentEvents(siteId, 100),
       this.realtime.controllers(siteId),
+      this.realtime.recentDeviceEvents(siteId),
     ]);
     const map = new Map<string, ShadowRow>();
     for (const r of rows) map.set(`${r.controller}/${r.sensor}`, r);
@@ -140,6 +150,7 @@ export class DashboardStore implements OnDestroy {
     this.mergeOutcomes(outcomes);
     this.events.set(evts);
     this.controllers.set(new Map(ctrls.map((c) => [c.device_id, c])));
+    this.deviceEvents.set(devEvts);
   }
 
   /** Backfill the activity feed: commands, config events, and recent runs. These
@@ -219,6 +230,11 @@ export class DashboardStore implements OnDestroy {
         await this.realtime.subscribeControllers(siteId, (row) => {
           this.controllers.update((m) => new Map(m).set(row.device_id, row));
         }),
+      );
+      // Device mode: the snapshot re-asserts its activity ring every interval —
+      // replace (not prepend) so the feed never duplicates the retained events.
+      this.unsubs.push(
+        await this.realtime.subscribeDeviceEvents(siteId, (evts) => this.deviceEvents.set(evts)),
       );
 
       // First paint is ready.
@@ -353,6 +369,15 @@ export class DashboardStore implements OnDestroy {
    *  only trace of a manual valve/pump action (they make no route transition), and
    *  carry who initiated them. */
   activityFor(controller: string): ActivityItem[] {
+    // Device mode: none of the cloud audit sources exist on the device — the feed
+    // is the snapshot's own activity ring, re-asserted live (already newest-first).
+    if (this.deviceMode) {
+      // Names are re-read on every call (a cheap localStorage read on the device)
+      // so a mid-session automation rename shows without a reload.
+      const names = this.realtime.automationActorNamesNow();
+      return this.deviceEvents().map((e) =>
+        deviceEventToActivity(e, (routeId) => this.routeName(controller, routeId), names));
+    }
     const routeName = (routeId: number) => this.routeName(controller, routeId);
     const ctx = this.viewerCtx();
     const items: ActivityItem[] = [];
@@ -407,7 +432,7 @@ export class DashboardStore implements OnDestroy {
   routeState(controller: string, routeId: number): { token: string; reason: string; ts: string; origin?: string; initiator?: { label: string; support: boolean; title: string } } | undefined {
     const row = this.shadow().get(`${controller}/${routeStateSensor(routeId)}`);
     const token = row?.reported_text ?? '';
-    const origin = row?.origin;
+    const origin = displayOrigin(row?.origin, row?.actorId);
     // Resolve who's running it through the SAME rule as the activity feed, so the
     // card and the timeline never disagree (and a take-control run reads "Support").
     const initiator = row ? resolveInitiator({ origin, actorId: row.actorId, actorName: row.actorLabel }, this.viewerCtx()) : undefined;
@@ -476,7 +501,7 @@ function eventToActivity(e: StateEventRow, routeName: (routeId: number) => strin
     label: e.route < 0 ? 'controller' : routeName(e.route),
     detail: e.reason || undefined,
     actor: who.label || undefined,
-    origin: e.origin,
+    origin: displayOrigin(e.origin, e.actorId),
     bySupport: who.support,
     actorTitle: who.title || undefined,
   };
@@ -500,7 +525,7 @@ function runToActivity(r: UsageRun, routeName: (routeId: number) => string, ctx:
     label: routeName(r.route),
     metrics: litres ? `${duration} · ${litres}` : duration,
     actor: who.label || undefined,
-    origin: r.origin,
+    origin: displayOrigin(r.origin, r.actor_id),
     bySupport: who.support,
     actorTitle: who.title || undefined,
     ok: !r.fault,

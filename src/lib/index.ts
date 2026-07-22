@@ -147,19 +147,21 @@ export {
 } from './codegen-ids';
 export type {
   DeploymentMode, CommandAction, CommandEnvelope, CoordMessage, TelemetryRole,
-  ControllerSnapshot, RouteSnapshot, RouteLive, CommandOutcome,
+  ControllerSnapshot, RouteSnapshot, RouteLive, CommandOutcome, SnapshotEvent,
 } from './codegen-ids';
 
 // --- Runtime contract: state/fault/reason vocabulary + meanings ---
 export {
   SYSTEM_STATE_TOKENS, FAULT_TOKENS, STOP_REASON_TOKENS, OUTCOME_TOKENS, ORIGIN_TOKENS,
   SYSTEM_STATE_MEANINGS, FAULT_MEANINGS, STOP_REASON_MEANINGS, OUTCOME_MEANINGS,
+  EVENT_ACTION_TOKENS, EVENT_ACTION_MEANINGS, RESERVED_ACTOR_LABELS,
   ROUTE_START_RESULTS, ROUTE_STOP_RESULTS, NODE_SET_RESULTS,
   describeState,
 } from './codegen-ids';
 export type {
   StateKind, StateMeaning,
   SystemStateToken, FaultToken, StopReasonToken, OutcomeToken, OriginToken, StateEvent,
+  EventActionToken,
 } from './codegen-ids';
 
 // --- Remote Proxy ---

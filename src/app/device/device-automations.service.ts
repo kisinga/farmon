@@ -28,6 +28,10 @@ function readNames(): Record<string, string> {
   catch { return {}; }
 }
 
+/** The on-device automation id → name map — also read by DeviceRealtimeService to
+ *  label automation actors in the Activity feed. */
+export { readNames };
+
 function writeName(id: string, name: string): void {
   try {
     const m = readNames();

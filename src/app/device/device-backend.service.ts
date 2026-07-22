@@ -51,8 +51,11 @@ export class DeviceBackendService extends BackendService {
     // The `/local/command` envelope: only the fields the device knows; undefined
     // entries are dropped (a route_stop carries no node_id, etc.). A reclaim is
     // just a re-assert of the same command_id — the dead-man lease refresh needs
-    // no flag of its own here.
-    const body: Record<string, unknown> = { command_id: commandId, action };
+    // no flag of its own here. `actor` tags the command as coming from the
+    // on-device dashboard (the cloud path leaves it to the server, which stamps
+    // the real user); the device re-publishes it on the run/events so both feeds
+    // can read "On-device dashboard" (RESERVED_ACTOR_LABELS).
+    const body: Record<string, unknown> = { command_id: commandId, action, actor: 'local-ui' };
     const optional: Record<string, unknown> = {
       route_id: args.routeId,
       node_id: args.nodeId,

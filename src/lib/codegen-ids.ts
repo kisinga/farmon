@@ -593,6 +593,34 @@ export const OUTCOME_MEANINGS: Record<OutcomeToken, StateMeaning> = {
 };
 
 /**
+ * On-device activity actions (a snapshot `events[]` `action` token) — what the
+ * device DID, as opposed to a state it transitioned to. The device-mode Activity
+ * feed badges rows with these.
+ */
+export const EVENT_ACTION_TOKENS = [
+  'START', 'STOP', 'STOP_ALL', 'FAULT',
+] as const;
+export type EventActionToken = (typeof EVENT_ACTION_TOKENS)[number];
+
+export const EVENT_ACTION_MEANINGS: Record<EventActionToken, StateMeaning> = {
+  START:    { label: 'Started',  kind: 'active' },
+  STOP:     { label: 'Stopped',  kind: 'normal' },
+  STOP_ALL: { label: 'Stop all', kind: 'warn' },
+  FAULT:    { label: 'Fault',    kind: 'fault' },
+};
+
+/**
+ * Reserved non-user actor ids, with their display labels. Panel buttons tag
+ * commands/events `panel`; the device-mode dashboard tags `local-ui`. Neither
+ * has a `users`/`automations` row, so the server (ingest actorLabel) and the
+ * on-device feed label them from this shared mapping — keep the two in sync.
+ */
+export const RESERVED_ACTOR_LABELS: Record<string, string> = {
+  panel: 'Panel button',
+  'local-ui': 'On-device dashboard',
+};
+
+/**
  * Firmware route-command results → the transition the device emits. The array
  * INDEX is the integer try_route_start() / try_route_stop() returns (routes.ts),
  * so the MQTT command handler maps rc → {to, reason} by indexing — no
@@ -713,6 +741,31 @@ export interface ControllerSnapshot {
    *  snapshot so a dropped one isn't lost. The server reconciles each matching
    *  `commands` record and surfaces the reason for the command UI. */
   outcomes?: CommandOutcome[];
+  /** On-device activity ring — newest-first, max 10. Optional: older firmware
+   *  doesn't emit it; every read must tolerate its absence. The device-mode
+   *  dashboard renders this as its Activity feed (it has no state_events log). */
+  events?: SnapshotEvent[];
+}
+
+/** One on-device activity event (a {@link ControllerSnapshot} `events[]` entry). */
+export interface SnapshotEvent {
+  /** Event time (unix seconds); 0 = untrusted clock — the reader falls back to
+   *  the `up` uptime offset for a relative placement. */
+  ts: number;
+  /** Device uptime (seconds) at the event. */
+  up: number;
+  /** Firmware ROUTES[] index, or -1 for a system-wide action (STOP_ALL). */
+  route: number;
+  /** Action token (EVENT_ACTION_TOKENS). Consumers must tolerate a new one. */
+  action: string;
+  /** Who/what caused it (ORIGIN_TOKENS). */
+  origin: OriginToken;
+  /** Actor id, truncated to 15 chars by the firmware (mirroring route_actor's
+   *  char[16] slot): a user id, an automation id, a reserved tag
+   *  (RESERVED_ACTOR_LABELS: panel / local-ui), '' when untagged. */
+  actor: string;
+  /** Stop/fault reason token explaining the action, '' when none. */
+  reason: string;
 }
 
 /** Result of a command the device handled (rides in {@link ControllerSnapshot}). */

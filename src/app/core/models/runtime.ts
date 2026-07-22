@@ -193,7 +193,8 @@ export interface ActivityItem {
    *  transition); absent ⇒ no chip. */
   actor?: string;
   /** How `actor` is prefixed, harmonised with the route card: 'AUTOMATION' ⇒
-   *  "Automation: <actor>"; 'MANUAL'/undefined ⇒ "you" or "by <actor>". */
+   *  "Automation: <actor>"; 'DEVICE' ⇒ the bare label, no "by" (a device source —
+   *  panel button / on-device dashboard); 'MANUAL'/undefined ⇒ "you" or "by <actor>". */
   origin?: string;
   /** The actor is an outsider — not the viewer and not a site co-owner, i.e. an
    *  admin who took control. `actor` reads "Support" and the chip is styled as such.

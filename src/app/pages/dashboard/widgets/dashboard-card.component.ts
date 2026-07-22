@@ -6,7 +6,7 @@ import { SpanSelectorComponent } from './span-selector.component';
 import { DEVICE_MODE } from '../../../core/tokens/device-mode';
 import {
   describeState,
-  SYSTEM_STATE_MEANINGS, STOP_REASON_MEANINGS, FAULT_MEANINGS, OUTCOME_MEANINGS,
+  SYSTEM_STATE_MEANINGS, STOP_REASON_MEANINGS, FAULT_MEANINGS, OUTCOME_MEANINGS, EVENT_ACTION_MEANINGS,
   type DashboardWidget, type StateKind, type CommandPhase, type RuntimeState,
 } from '@core';
 import type { ShadowRow, TelemetryPoint, ActivityItem } from '../../../core/models/runtime';
@@ -15,8 +15,9 @@ import { DEFAULT_SPAN_HOURS } from '../telemetry.store';
 import { phaseUi } from './command-phase';
 import { CHART, historyLineOption } from '../../../core/util/chart-theme';
 
-/** Combined token → meaning lookup for a transition `reason`/state (any vocab). */
-const ANY_MEANING = { ...STOP_REASON_MEANINGS, ...FAULT_MEANINGS, ...OUTCOME_MEANINGS, ...SYSTEM_STATE_MEANINGS };
+/** Combined token → meaning lookup for a transition `reason`/state (any vocab —
+ *  incl. the on-device event action tokens the device-mode Activity feed badges). */
+const ANY_MEANING = { ...STOP_REASON_MEANINGS, ...FAULT_MEANINGS, ...OUTCOME_MEANINGS, ...EVENT_ACTION_MEANINGS, ...SYSTEM_STATE_MEANINGS };
 
 /** Map a meaning `kind` to a daisyUI badge colour class. */
 function kindClass(kind: StateKind): string {

@@ -1,6 +1,6 @@
 import { Injectable, inject, signal } from '@angular/core';
 import type { RecordModel, UnsubscribeFunc } from 'pocketbase';
-import type { ControllerSnapshot } from '@core';
+import type { ControllerSnapshot, SnapshotEvent } from '@core';
 import { BackendService } from './backend.service';
 import { getNumber, getString, toIso } from '../util/record';
 import type { ShadowRow, TelemetryHistory, StateEventRow, ControllerRow, CommandOutcomeRow, CommandLogRow, ConfigEventRow, UsageReport, UsageRun } from '../models/runtime';
@@ -147,6 +147,28 @@ export class RealtimeService {
       requestKey: `events:${siteId}`,
     });
     return res.items.map((r) => toEvent(r));
+  }
+
+  /** The on-device activity ring (the snapshot's `events[]`, newest-first) —
+   *  device mode only. The cloud feed's activity comes from the state_events /
+   *  commands / runs audit collections, so this resolves empty here. */
+  async recentDeviceEvents(_siteId: string): Promise<SnapshotEvent[]> {
+    return [];
+  }
+
+  /** Live re-asserts of the on-device activity ring (each snapshot carries the
+   *  full newest-10 list, so the callback replaces rather than appends). No-op
+   *  on the cloud feed. */
+  subscribeDeviceEvents(_siteId: string, _cb: (events: SnapshotEvent[]) => void): Promise<UnsubscribeFunc> {
+    return Promise.resolve(async () => {});
+  }
+
+  /** id → display name for automation actors, read synchronously so the Activity
+   *  feed always renders the CURRENT names (a mid-session rename shows on the next
+   *  recompute). Device mode reads the on-device name store (localStorage — cheap);
+   *  the cloud resolves automation names server-side at ingest, so this is empty here. */
+  automationActorNamesNow(): Record<string, string> {
+    return {};
   }
 
   /** Most-recent completed runs for a site (newest first), read straight from the
