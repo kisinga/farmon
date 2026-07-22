@@ -13,7 +13,7 @@ import * as path from "node:path";
 import { parse as parseYaml } from "yaml";
 import {
   parseTopology, topologyToManifestForController, routeSetVersion,
-  serializeAutomationSet, AUTOMATION_HEADER_BYTES, AUTOMATION_RECORD_BYTES,
+  serializeAutomationSet, decodeAutomationSet, AUTOMATION_HEADER_BYTES, AUTOMATION_RECORD_BYTES,
   AUTOMATION_ID_BYTES, AUTOMATION_WIRE_MAGIC, MAX_AUTOMATIONS, type Manifest, type WireAutomation,
 } from "@core";
 import { generateAll, createTestMetadata } from "@core/codegen";
@@ -77,6 +77,50 @@ assert(bytes[idOff + AUTOMATION_ID_BYTES - 1] === 0, "id field null-padded");
 // --- Empty set: a valid 6-byte header with count 0 (never zero-length) ---
 const empty = serializeAutomationSet(0x0d52, []);
 assert(empty.length === 6 && new DataView(empty.buffer).getUint8(4) === 0, "empty set = 6-byte header, count 0");
+
+// --- Decode round-trips (the device-mode app reads GET /local/automations) ---
+{
+  // Golden vector above decodes back to the same fields, id included.
+  const dec = decodeAutomationSet(bytes);
+  assert(dec.route_set_version === 0x0d52, "decode: route_set_version round-trips");
+  assert(dec.rows.length === 1, "decode: one row", `got ${dec.rows.length}`);
+  const r = dec.rows[0]!;
+  assert(r.id === AUTO_ID, "decode: id round-trips losslessly", `got "${r.id}"`);
+  assert(r.enabled === true && r.trigger_type === "time", "decode: enabled + trigger_type");
+  assert(r.days_mask === 0b0101010 && r.level_threshold_pct === 80, "decode: days_mask + level_threshold_pct");
+  assert(r.route_index === 3 && r.time_min === 390, "decode: route_index + time_min");
+  assert(r.override_mask === 0b10001 && r.ov_source_min_pct === 20 && r.ov_dest_max_pct === 95, "decode: override_mask + level overrides");
+  assert(r.ov_max_runtime_min === 45 && r.ov_target_duration_s === 1800 && r.ov_target_volume_l === 500, "decode: run-target overrides");
+
+  // A level trigger + a second row round-trip through a multi-record set.
+  const b: WireAutomation = { ...a, id: "zzz999yyy888xxx", enabled: false, trigger_type: 1, route_index: 0 };
+  const dec2 = decodeAutomationSet(serializeAutomationSet(0xbeef, [a, b]));
+  assert(dec2.route_set_version === 0xbeef && dec2.rows.length === 2, "decode: two-row set round-trips");
+  assert(dec2.rows[1]!.trigger_type === "level" && dec2.rows[1]!.enabled === false, "decode: level trigger + disabled flag");
+  assert(dec2.rows[1]!.id === "zzz999yyy888xxx", "decode: second id round-trips");
+
+  // Count-0 header decodes to an empty list.
+  const dec0 = decodeAutomationSet(empty);
+  assert(dec0.route_set_version === 0x0d52 && dec0.rows.length === 0, "decode: empty set → empty list");
+
+  // A blob without the trailing id block still decodes (per the id-block
+  // contract), ids empty; a trailing pad byte is ignored.
+  const noIds = bytes.slice(0, AUTOMATION_HEADER_BYTES + AUTOMATION_RECORD_BYTES);
+  const decNoIds = decodeAutomationSet(noIds);
+  assert(decNoIds.rows.length === 1 && decNoIds.rows[0]!.id === "" && decNoIds.rows[0]!.route_index === 3, "decode: id-less blob decodes, ids empty");
+  const padded = new Uint8Array([...bytes, 0xaa]);
+  assert(decodeAutomationSet(padded).rows.length === 1, "decode: extra trailing bytes ignored");
+
+  // Refusals: bad magic, truncated header, truncated record block, absurd count.
+  const refuse = (buf: Uint8Array) => { try { decodeAutomationSet(buf); return false; } catch { return true; } };
+  const badMagic = bytes.slice(); badMagic[0] = 0x00;
+  assert(refuse(badMagic), "decode: bad magic refused");
+  assert(refuse(bytes.slice(0, 4)), "decode: truncated header refused");
+  assert(refuse(bytes.slice(0, AUTOMATION_HEADER_BYTES + AUTOMATION_RECORD_BYTES - 1)), "decode: truncated record refused");
+  const bigCount = empty.slice(); bigCount[4] = MAX_AUTOMATIONS + 1;
+  assert(refuse(bigCount), "decode: count over cap refused");
+}
+
 
 // --- Firmware struct must match the layout + bake the version ---
 // async main: generateAll is async (manifest-driven local-UI assets).

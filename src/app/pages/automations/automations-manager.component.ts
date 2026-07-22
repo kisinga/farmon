@@ -8,6 +8,7 @@ import {
 import { BackendService } from '../../core/services/backend.service';
 import { AuthStore } from '../../core/services/auth.store';
 import { ConfirmService } from '../../core/services/confirm.service';
+import { DEVICE_MODE } from '../../core/tokens/device-mode';
 import { DashboardStore } from '../dashboard/dashboard.store';
 import { CommandLifecycleStore } from '../dashboard/command-lifecycle.store';
 import { TunableNumbersComponent } from '../dashboard/widgets/tunable-numbers.component';
@@ -291,6 +292,9 @@ export class AutomationsManagerComponent {
   private svc = inject(AutomationsService);
   private confirm = inject(ConfirmService);
   protected dash = inject(DashboardStore);
+  /** Device-mode build: no PocketBase session exists, so the ownership gate
+   *  below can never open — the device's own UI is trusted to edit its set. */
+  private deviceMode = inject(DEVICE_MODE);
 
   protected rows = signal<AutomationRecord[]>([]);
   protected routes = signal<AutomatableRoute[]>([]);
@@ -319,7 +323,7 @@ export class AutomationsManagerComponent {
     return `UTC${sign}${Math.floor(abs / 60)}:${String(abs % 60).padStart(2, '0')}`;
   });
 
-  protected canEdit = computed(() => this.isOwner() || this.auth.isManager());
+  protected canEdit = computed(() => this.deviceMode || this.isOwner() || this.auth.isManager());
   protected atCap = computed(() => this.rows().length >= MAX_AUTOMATIONS);
   /** Any per-route tunable exists (drives the "Route defaults" disclosure). */
   protected hasRouteTuning = computed(() => this.dash.spec().controllers.some((c) => c.tunables.some((t) => t.scope === 'route')));

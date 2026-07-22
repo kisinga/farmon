@@ -71,6 +71,12 @@ void MajiAutomations::apply_set_(const uint8_t *data, size_t len, bool persist) 
       ESP_LOGW(TAG, "Automation set truncated (%u bytes) — ignored", (unsigned) len);
       break;
   }
+  // Keep the GET /local/automations serving copy in lockstep with the live table —
+  // re-packed from autos_/ids_/count_ (never the sender's raw bytes), so the served
+  // blob is always exactly what apply_set accepted. Keep-last-good outcomes leave it
+  // untouched, same as the table itself.
+  if (r == maji_auto::APPLY_OK || r == maji_auto::APPLY_CLEARED)
+    this->refresh_served_();
   // Persist the new last-good blob on a config push (APPLY_OK / APPLY_CLEARED) — a rare
   // event, never per-tick, so flash wear is a non-issue. Keep-last-good outcomes leave
   // both the table and flash untouched. A restore passes persist=false: the blob just
@@ -84,6 +90,35 @@ void MajiAutomations::setup() {
   // Runs before any tick(): ESPHome completes all component setup()s before loop()
   // starts, and tick() is driven by the generated interval inside loop().
   this->restore_set_();
+  // No persisted set (or a refused restore) means an empty table — publish the valid
+  // count-0 header so GET /local/automations has a well-formed answer before any push.
+  if (served_len_ == 0)
+    this->refresh_served_();
+}
+
+size_t MajiAutomations::snapshot_served(uint8_t *out, size_t cap) const {
+  // httpd-task reader under the seqlock: an odd sequence (write in flight) or a changed
+  // one means the copy raced a refresh — retry. Refreshes only happen on a config push,
+  // so a few spins always settle; a persistent loser reports 0 (caller maps to 503).
+  for (int tries = 0; tries < 8; tries++) {
+    uint32_t s1 = served_seq_.load(std::memory_order_acquire);
+    if (s1 & 1)
+      continue;
+    uint16_t n = served_len_;
+    if (n == 0 || n > cap)
+      return 0;
+    memcpy(out, served_blob_, n);
+    if (served_seq_.load(std::memory_order_acquire) == s1)
+      return n;
+  }
+  return 0;
+}
+
+void MajiAutomations::refresh_served_() {
+  served_seq_.fetch_add(1, std::memory_order_acq_rel);  // odd: write in flight
+  served_len_ = (uint16_t) maji_auto::serialize_set(autos_, ids_, count_, route_set_version_, served_blob_,
+                                                    sizeof(served_blob_));
+  served_seq_.fetch_add(1, std::memory_order_release);  // even: the copy is whole
 }
 
 void MajiAutomations::persist_set_(const uint8_t *data, size_t len) {

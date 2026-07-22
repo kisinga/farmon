@@ -2,6 +2,7 @@
 #include "esphome/core/log.h"
 #include <cerrno>
 #include <cstdio>
+#include <memory>
 #include <sys/socket.h>
 
 namespace esphome {
@@ -42,7 +43,7 @@ bool MajiLocalUi::canHandle(AsyncWebServerRequest *request) const {
   char url_buf[AsyncWebServerRequest::URL_BUF_SIZE];
   StringRef url = request->url_to(url_buf);
   if (request->method() == HTTP_GET) {
-    if (url == "/local/state")
+    if (url == "/local/state" || url == "/local/automations")
       return true;
     // Exact asset hit, or the SPA navigation fallback (extension-less GET outside
     // /local/ → the index). "/local" itself, /local/* misses, and missing files
@@ -61,6 +62,8 @@ void MajiLocalUi::handleRequest(AsyncWebServerRequest *request) {
   if (request->method() == HTTP_GET) {
     if (url == "/local/state")
       return this->handle_state_(request);
+    if (url == "/local/automations")
+      return this->handle_automations_get_(request);
     return this->handle_asset_(request);  // table hit, "/", or SPA client route
   }
   if (url == "/local/command")
@@ -247,6 +250,23 @@ void MajiLocalUi::handle_automations_(AsyncWebServerRequest *request) {
     return send_json_(request, 503, "{\"error\":\"not_ready\"}");
   uint16_t code = automations_handler_((const uint8_t *) body.data(), body.size());
   send_json_(request, code, code == 200 ? "{}" : "{\"error\":\"rejected\"}");
+}
+
+// --- GET /local/automations — the current set as the POST's wire blob -------------
+
+void MajiLocalUi::handle_automations_get_(AsyncWebServerRequest *request) {
+  if (autos_ == nullptr)
+    return send_json_(request, 503, "{\"error\":\"not_ready\"}");
+  // ~1.2 KB worst case: heap, not the httpd task stack. snapshot_served reads the
+  // seqlock-guarded serving copy — never the live (loop-thread-only) table.
+  auto buf = std::unique_ptr<uint8_t[]>(new uint8_t[maji_auto::MAX_AUTOMATION_SET_BYTES]);
+  size_t n = autos_->snapshot_served(buf.get(), maji_auto::MAX_AUTOMATION_SET_BYTES);
+  if (n == 0)
+    return send_json_(request, 503, "{\"error\":\"not_ready\"}");
+  httpd_req_t *req = *request;
+  httpd_resp_set_status(req, HTTPD_200);
+  httpd_resp_set_type(req, "application/octet-stream");
+  httpd_resp_send(req, (const char *) buf.get(), (int) n);
 }
 
 void MajiLocalUi::dump_config() {

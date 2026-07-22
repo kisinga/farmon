@@ -60,14 +60,15 @@ interface DashSection { id: string; label: string; widgets: DashboardWidget[] }
           <span class="badge badge-sm gap-1 shrink-0" [class]="controlEnabled() ? 'badge-warning' : 'badge-info'">{{ controlEnabled() ? 'Controlling' : 'Read-only' }}</span>
         }
         <app-controller-health />
-        <!-- Automations + Setup + Docs are cloud-backed (PocketBase collections /
-             doc builder) — hidden in the device build. -->
+        <!-- Automations + Setup: quiet icon actions slotted in beside Docs (they
+             render with display:contents, so they sit directly in this flex row).
+             Automations works in device mode too (the device serves its own
+             /local/automations); the Setup section and Docs are cloud-backed
+             (PocketBase collections / doc builder) — hidden in the device build. -->
+        @if (siteId) {
+          <app-site-controls [siteId]="siteId" [canControl]="canControl()" />
+        }
         @if (!deviceMode) {
-          <!-- Automations + Setup: quiet icon actions slotted in beside Docs (they
-               render with display:contents, so they sit directly in this flex row). -->
-          @if (siteId) {
-            <app-site-controls [siteId]="siteId" [canControl]="canControl()" />
-          }
           <button class="btn btn-sm btn-ghost gap-1.5 shrink-0" (click)="openDocs()" [disabled]="docBusy()"
                   title="Open this site's documentation" aria-label="Open documentation">
             @if (docBusy()) { <span class="loading loading-spinner loading-xs"></span> }
@@ -401,8 +402,9 @@ export class DashboardComponent {
 
   /** Device-mode build (served from the controller's flash): the cloud-only
    *  surfaces — history charts, water usage, activity feed, health history,
-   *  automations/setup, docs — are hidden; routes, tank levels, the live map and
-   *  command tracking stay. */
+   *  setup, docs — are hidden; automations (the device serves its own
+   *  /local/automations), routes, tank levels, the live map and command tracking
+   *  stay. */
   protected deviceMode = inject(DEVICE_MODE);
 
   protected siteId = '';

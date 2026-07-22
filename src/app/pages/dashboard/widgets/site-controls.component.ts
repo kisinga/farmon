@@ -3,6 +3,7 @@ import type { UnsubscribeFunc } from 'pocketbase';
 import { DashboardStore } from '../dashboard.store';
 import { CommandLifecycleStore } from '../command-lifecycle.store';
 import { ConfirmService } from '../../../core/services/confirm.service';
+import { DEVICE_MODE } from '../../../core/tokens/device-mode';
 import { AutomationsService, type AutomationRecord } from '../../automations/automations.service';
 import { AutomationsManagerComponent } from '../../automations/automations-manager.component';
 import { TunableNumbersComponent } from './tunable-numbers.component';
@@ -209,6 +210,7 @@ export class SiteControlsComponent {
   private lifecycle = inject(CommandLifecycleStore);
   private confirm = inject(ConfirmService);
   private autoSvc = inject(AutomationsService);
+  private deviceMode = inject(DEVICE_MODE);
 
   protected open = signal<'automations' | 'setup' | null>(null);
 
@@ -223,7 +225,9 @@ export class SiteControlsComponent {
   protected hasRouteDefaults = computed(() => this.store.spec().controllers.some((c) => c.tunables.some((t) => t.scope === 'route')));
   protected hasCalibration = computed(() => this.store.spec().controllers.some((c) => c.calibrations.length > 0));
   protected hasActuators = computed(() => this.store.spec().controllers.some((c) => c.actuators.length > 0));
-  protected showSetup = computed(() => this.canControl() && this.store.spec().controllers.some((c) =>
+  /** Setup is cloud provisioning (commissioning writes ride PocketBase desired-
+   *  config) — hidden on the device build; Automations stays (device-backed). */
+  protected showSetup = computed(() => !this.deviceMode && this.canControl() && this.store.spec().controllers.some((c) =>
     c.tunables.some((t) => t.scope === 'controller' || t.scope === 'route') || c.calibrations.length > 0 || c.actuators.length > 0));
   protected anyOverride = computed(() => this.store.spec().controllers.some((c) => this.store.overrideOn(c.controller)));
 

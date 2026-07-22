@@ -19,6 +19,10 @@
 //                              publish_snapshot builds for the MQTT state topic. The script
 //                              calls push_snapshot() every time it builds one, so the SSE
 //                              cadence IS the snapshot cadence (periodic + command fast-path).
+//   GET  /local/automations  — the current automation set as the raw wire blob
+//                              (application/octet-stream, the exact bytes the POST accepts),
+//                              from maji_automations' serving copy — never the live table
+//                              (loop-thread only, see the threading note below).
 //   POST /local/command      — operator command envelope, dispatched exactly like the MQTT
 //                              handler (the generated local-ui.yaml installs command_handler_
 //                              with the shared dispatch body from mqtt.ts).
@@ -124,6 +128,7 @@ class MajiLocalUi : public AsyncWebHandler, public Component {
   void handle_state_(AsyncWebServerRequest *request);
   void handle_command_(AsyncWebServerRequest *request);
   void handle_automations_(AsyncWebServerRequest *request);
+  void handle_automations_get_(AsyncWebServerRequest *request);
 
   void sse_send_(SseSession &s, const char *json);  // offer (coalesce) + flush
   void sse_flush_(SseSession &s);                   // push pending bytes out (non-blocking)

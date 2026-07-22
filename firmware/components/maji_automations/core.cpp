@@ -80,6 +80,28 @@ ApplyResult apply_set(const uint8_t *data, size_t len, uint16_t baked, RuntimeAu
   return APPLY_OK;
 }
 
+size_t serialize_set(const RuntimeAutomation *table, const char ids[][AUTOMATION_ID_BYTES], uint8_t count,
+                     uint16_t route_set_version, uint8_t *out, size_t out_len) {
+  if (count > MAX_AUTOMATIONS)
+    count = MAX_AUTOMATIONS;
+  size_t need = (size_t) AUTOMATION_HEADER_BYTES +
+                (size_t) count * (AUTOMATION_RECORD_BYTES + AUTOMATION_ID_BYTES);
+  if (out == nullptr || out_len < need)
+    return 0;
+  AutomationSetHeader hdr;
+  hdr.magic_version = AUTOMATION_WIRE_MAGIC;
+  hdr.route_set_version = route_set_version;
+  hdr.count = count;
+  hdr._pad = 0;
+  memcpy(out, &hdr, sizeof(hdr));
+  if (count > 0) {
+    memcpy(out + AUTOMATION_HEADER_BYTES, table, (size_t) count * AUTOMATION_RECORD_BYTES);
+    memcpy(out + AUTOMATION_HEADER_BYTES + (size_t) count * AUTOMATION_RECORD_BYTES, ids,
+           (size_t) count * AUTOMATION_ID_BYTES);
+  }
+  return need;
+}
+
 bool should_fire(const RuntimeAutomation &a, const TimeInputs &t, float level, EdgeState &edge) {
   if (!a.enabled)
     return false;

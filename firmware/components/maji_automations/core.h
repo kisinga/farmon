@@ -43,6 +43,7 @@ struct RuntimeAutomation {
   uint32_t ov_target_volume_l;
 };
 #pragma pack(pop)
+static_assert(sizeof(AutomationSetHeader) == AUTOMATION_HEADER_BYTES, "AutomationSetHeader wire layout drift");
 static_assert(sizeof(RuntimeAutomation) == AUTOMATION_RECORD_BYTES, "RuntimeAutomation wire layout drift");
 
 // Outcome of validating + loading a retained set. On any code that keeps the last-good
@@ -106,6 +107,15 @@ struct TimeInputs {
 // semantics; logging is the shell's job (this is pure).
 ApplyResult apply_set(const uint8_t *data, size_t len, uint16_t baked, RuntimeAutomation *table,
                       char ids[][AUTOMATION_ID_BYTES], uint8_t &count);
+
+// Mirror of apply_set: pack the live table + ids back into the exact wire blob apply_set
+// accepts — header (magic, route_set_version, count) + count records + the count-entry id
+// block. This is what GET /local/automations serves (the shell re-packs on every apply).
+// Returns the blob length, or 0 when `out_len` can't hold it. Note the id fields are the
+// SANITIZED ones apply_set stored (last byte always NUL), so a blob whose id fields were
+// not NUL-terminated re-applies equal but serializes with the termination applied.
+size_t serialize_set(const RuntimeAutomation *table, const char ids[][AUTOMATION_ID_BYTES], uint8_t count,
+                     uint16_t route_set_version, uint8_t *out, size_t out_len);
 
 // Map ESPHome ESPTime.day_of_week (1=Sun..7=Sat) to a days_mask bit (bit0=MON..bit6=SUN).
 int dow_to_bit(int dow);

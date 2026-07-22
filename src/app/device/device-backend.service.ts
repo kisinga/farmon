@@ -77,9 +77,21 @@ export class DeviceBackendService extends BackendService {
   }
 
   /**
+   * Fetch the retained automation set (the wire blob from
+   * src/lib/automation-wire.ts) from the controller. Decode with
+   * decodeAutomationSet.
+   */
+  async fetchAutomations(): Promise<Uint8Array> {
+    const res = await fetch('/local/automations');
+    if (!res.ok) throw new Error(`Automations unavailable on the device (${res.status}).`);
+    return new Uint8Array(await res.arrayBuffer());
+  }
+
+  /**
    * Push a packed automation set (the wire blob from src/lib/automation-wire.ts)
-   * to the controller. The device-mode UI for editing automations is not wired
-   * up yet — this is the transport the contract defines, ready for it.
+   * to the controller. A 400 means the header's route_set_version differs from
+   * the firmware's baked value — the route table changed since the flash, so the
+   * device refuses the set wholesale; say so in plain words.
    */
   async sendAutomations(blob: Uint8Array): Promise<void> {
     const res = await fetch('/local/automations', {
@@ -87,6 +99,10 @@ export class DeviceBackendService extends BackendService {
       headers: { 'Content-Type': 'application/octet-stream' },
       body: blob as BodyInit,
     });
-    if (!res.ok) throw new Error(`Automation set refused by the device (${res.status}).`);
+    if (!res.ok) {
+      throw new Error(res.status === 400
+        ? 'The device refused the automation set: its route table no longer matches this site design. Regenerate and reflash the firmware, then try again.'
+        : `Automation set refused by the device (${res.status}).`);
+    }
   }
 }

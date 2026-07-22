@@ -189,6 +189,52 @@ int main() {
         "persisted cleared set restores as cleared regardless of version");
   check(count2 == 0, "cleared restore empties the table");
 
+  // --- serialize_set: the live table re-packed as the exact bytes apply_set consumed ---
+  // (what GET /local/automations serves — the shell re-packs on every apply)
+  RuntimeAutomation stable[MAX_AUTOMATIONS];
+  char sids[MAX_AUTOMATIONS][AUTOMATION_ID_BYTES];
+  uint8_t scount = 0;
+  uint8_t ser[96];
+  check(apply_set(buf, n, VER, stable, sids, scount) == APPLY_OK && scount == 1, "reload good set for serialize");
+  size_t sn = serialize_set(stable, sids, scount, VER, ser, sizeof(ser));
+  check(sn == n, "serialize size = header + record + id");
+  check(memcmp(ser, buf, n) == 0, "serialize round-trips byte-identical (incl. id block)");
+
+  // empty table → the bare count-0 header, itself a valid (version-agnostic) clear
+  check(apply_set(empty, sizeof(empty), VER, stable, sids, scount) == APPLY_CLEARED, "clear table for serialize");
+  sn = serialize_set(stable, sids, scount, VER, ser, sizeof(ser));
+  check(sn == AUTOMATION_HEADER_BYTES, "empty table serializes to the 6-byte header");
+  AutomationSetHeader sh;
+  memcpy(&sh, ser, sizeof(sh));
+  check(sizeof(sh) == AUTOMATION_HEADER_BYTES, "header struct is 6 bytes");
+  check(sh.magic_version == AUTOMATION_WIRE_MAGIC && sh.route_set_version == VER && sh.count == 0,
+        "empty header carries magic + version + count 0");
+  scount = 4;
+  check(apply_set(ser, sn, VER + 3, stable, sids, scount) == APPLY_CLEARED && scount == 0,
+        "served empty blob re-applies as a clear regardless of version");
+
+  // two records: the id block starts after BOTH records — round-trip must stay identical
+  RuntimeAutomation b;
+  memset(&b, 0, sizeof(b));
+  b.enabled = 1; b.trigger_type = 1; b.level_threshold_pct = 70; b.route_index = 5;
+  uint8_t two[AUTOMATION_HEADER_BYTES + 2 * AUTOMATION_RECORD_BYTES + 2 * AUTOMATION_ID_BYTES];
+  memset(two, 0, sizeof(two));
+  two[0] = AUTOMATION_WIRE_MAGIC & 0xFF; two[1] = (AUTOMATION_WIRE_MAGIC >> 8) & 0xFF;
+  two[2] = VER & 0xFF; two[3] = (VER >> 8) & 0xFF; two[4] = 2;
+  memcpy(two + AUTOMATION_HEADER_BYTES, &a, AUTOMATION_RECORD_BYTES);
+  memcpy(two + AUTOMATION_HEADER_BYTES + AUTOMATION_RECORD_BYTES, &b, AUTOMATION_RECORD_BYTES);
+  size_t two_ids = AUTOMATION_HEADER_BYTES + 2 * AUTOMATION_RECORD_BYTES;
+  memcpy(two + two_ids, "id-one", 6);
+  memcpy(two + two_ids + AUTOMATION_ID_BYTES, "id-two", 6);
+  check(apply_set(two, sizeof(two), VER, stable, sids, scount) == APPLY_OK && scount == 2, "two-record set applies");
+  sn = serialize_set(stable, sids, scount, VER, ser, sizeof(ser));
+  check(sn == sizeof(two) && memcmp(ser, two, sn) == 0, "two-record round-trip byte-identical");
+
+  // undersized / null output buffer → 0 (the shell maps this to 503)
+  check(serialize_set(stable, sids, scount, VER, ser, AUTOMATION_HEADER_BYTES + 1) == 0,
+        "undersized buffer -> 0");
+  check(serialize_set(stable, sids, scount, VER, nullptr, 0) == 0, "null buffer -> 0");
+
   printf("\n%d passed, %d failed\n", pass, fail);
   return fail ? 1 : 0;
 }

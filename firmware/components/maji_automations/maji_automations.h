@@ -17,6 +17,7 @@
 #include "esphome/core/component.h"
 #include "esphome/core/preferences.h"
 #include "esphome/core/time.h"
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <string>
@@ -56,10 +57,17 @@ class MajiAutomations : public Component {
   // if anything started this pass, so the caller can nudge an immediate snapshot.
   bool tick(ESPTime now, bool time_trusted);
 
+  // Copy of the current automation set as the raw wire blob (what GET /local/automations
+  // serves). Callable from the httpd task: it reads served_blob_ under a sequence counter,
+  // NEVER the live table (loop-thread only — the no-lock note below). Returns the blob
+  // length, or 0 when `cap` is too small or a refresh kept racing the copy (caller → 503).
+  size_t snapshot_served(uint8_t *out, size_t cap) const;
+
  protected:
   void apply_set_(const uint8_t *data, size_t len, bool persist);  // apply + persist gate
   void persist_set_(const uint8_t *data, size_t len);  // write the consumed wire blob to NVS
   void restore_set_();  // load the NVS blob and replay it through apply_set (setup only)
+  void refresh_served_();  // re-pack the live table into served_blob_ (main loop only)
 
   maji_control::MajiControl *control_{nullptr};
   uint16_t route_set_version_{0};
@@ -77,6 +85,13 @@ class MajiAutomations : public Component {
   // Copy of the blob currently in flash (stashed at restore and after each save) so a
   // replayed retained set that changes nothing doesn't cost an NVS erase cycle.
   std::string persisted_blob_;
+  // GET /local/automations serving copy: the live table re-packed as the wire blob on
+  // every apply/clear (main loop), read by the httpd task under served_seq_ (a seqlock —
+  // odd while refresh_served_ writes). A torn read is structurally impossible: the reader
+  // only keeps a copy whose before/after sequence values match and are even.
+  uint8_t served_blob_[maji_auto::MAX_AUTOMATION_SET_BYTES];
+  uint16_t served_len_{0};  // written only between the odd/even seq marks — seqlock data
+  std::atomic<uint32_t> served_seq_{0};
 };
 
 }  // namespace maji_automations

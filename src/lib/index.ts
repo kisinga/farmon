@@ -106,9 +106,9 @@ export type { ConfirmDescriptor, ConfirmObservation, CommandPhase } from './comm
 export { collectTunableNumbers, tunableKvKeys, routeVolumeEligible, canStopOnFull } from './tunable-numbers';
 export {
   AUTOMATION_WIRE_MAGIC, AUTOMATION_HEADER_BYTES, AUTOMATION_RECORD_BYTES, AUTOMATION_ID_BYTES,
-  MAX_AUTOMATIONS, routeSetVersion, serializeAutomationSet,
+  MAX_AUTOMATIONS, routeSetVersion, serializeAutomationSet, decodeAutomationSet,
 } from './automation-wire';
-export type { WireAutomation, TriggerKind } from './automation-wire';
+export type { WireAutomation, TriggerKind, DecodedAutomation, DecodedAutomationSet } from './automation-wire';
 export { listAutomatableRoutes } from './automation-routes';
 export type { AutomatableRoute, NewAutomationRow } from './automation-routes';
 export type { TunableNumber, TunableScope, TunableTier, TunableField } from './tunable-numbers';

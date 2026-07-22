@@ -4,8 +4,8 @@
  * into its `RuntimeAutomation[]` table.
  *
  * ONE layout, three implementors that must never drift:
- *   - this module — the reference encoder + the bit/field offsets (drift-guard
- *     test pins them to a golden vector),
+ *   - this module — the reference encoder + decoder + the bit/field offsets
+ *     (drift-guard test pins them to a golden vector + round-trips),
  *   - the firmware C++ struct ([codegen/generators/automation-engine.ts],
  *     `static_assert(sizeof == AUTOMATION_RECORD_BYTES)`),
  *   - the Go server encoder (maji-server) that actually publishes it.
@@ -130,3 +130,84 @@ export function serializeAutomationSet(routeSetVer: number, autos: WireAutomatio
 }
 
 const clampU8 = (v: number) => Math.max(0, Math.min(255, Math.round(v)));
+
+/** An automation row as the wire blob carries it: the NewAutomationRow fields the
+ *  device persists (see src/lib/automation-routes.ts), plus the row id from the
+ *  trailing id block. site/controller/name/route_key are NOT on the wire — the
+ *  caller resolves them from route_index against the topology. */
+export interface DecodedAutomation {
+  id: string;
+  enabled: boolean;
+  trigger_type: 'time' | 'level';
+  days_mask: number;
+  level_threshold_pct: number;
+  route_index: number;
+  time_min: number;
+  override_mask: number;
+  ov_source_min_pct: number;
+  ov_dest_max_pct: number;
+  ov_max_runtime_min: number;
+  ov_target_duration_s: number;
+  ov_target_volume_l: number;
+}
+
+export interface DecodedAutomationSet {
+  /** The route table version the set was stamped against (header @2). */
+  route_set_version: number;
+  rows: DecodedAutomation[];
+}
+
+/**
+ * Reference decoder — the mirror of serializeAutomationSet, for the device-mode
+ * app reading `GET /local/automations`. Validates like the firmware does: a
+ * truncated payload or a bad magic is refused outright; a count-0 header decodes
+ * to an empty set. The trailing id block is optional on read (per its contract:
+ * a reader that doesn't know it stops after the records) — without it, ids
+ * decode as ''. Extra trailing bytes are ignored (forward-compatible).
+ */
+export function decodeAutomationSet(bytes: Uint8Array): DecodedAutomationSet {
+  if (bytes.length < AUTOMATION_HEADER_BYTES) {
+    throw new Error(`Automation blob truncated: ${bytes.length} bytes, header needs ${AUTOMATION_HEADER_BYTES}.`);
+  }
+  const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  if (dv.getUint16(0, true) !== AUTOMATION_WIRE_MAGIC) {
+    throw new Error('Automation blob refused: bad magic_version.');
+  }
+  const route_set_version = dv.getUint16(2, true);
+  const count = dv.getUint8(4);
+  if (count > MAX_AUTOMATIONS) {
+    throw new Error(`Automation blob refused: count ${count} exceeds the ${MAX_AUTOMATIONS} cap.`);
+  }
+  const recordsEnd = AUTOMATION_HEADER_BYTES + count * AUTOMATION_RECORD_BYTES;
+  if (bytes.length < recordsEnd) {
+    throw new Error(`Automation blob truncated: ${count} records need ${recordsEnd} bytes, got ${bytes.length}.`);
+  }
+  const withIds = bytes.length >= recordsEnd + count * AUTOMATION_ID_BYTES;
+  const rows: DecodedAutomation[] = [];
+  for (let i = 0; i < count; i++) {
+    const o = AUTOMATION_HEADER_BYTES + i * AUTOMATION_RECORD_BYTES;
+    let id = '';
+    if (withIds) {
+      const idOff = recordsEnd + i * AUTOMATION_ID_BYTES;
+      for (let j = 0; j < AUTOMATION_ID_BYTES - 1 && bytes[idOff + j] !== 0; j++) {
+        id += String.fromCharCode(bytes[idOff + j]);
+      }
+    }
+    rows.push({
+      id,
+      enabled: dv.getUint8(o + 0) !== 0,
+      trigger_type: dv.getUint8(o + 1) === 1 ? 'level' : 'time',
+      days_mask: dv.getUint8(o + 2),
+      level_threshold_pct: dv.getUint8(o + 3),
+      route_index: dv.getUint16(o + 4, true),
+      time_min: dv.getUint16(o + 6, true),
+      override_mask: dv.getUint8(o + 8),
+      ov_source_min_pct: dv.getUint8(o + 9),
+      ov_dest_max_pct: dv.getUint8(o + 10),
+      ov_max_runtime_min: dv.getUint16(o + 12, true),
+      ov_target_duration_s: dv.getUint16(o + 14, true),
+      ov_target_volume_l: dv.getUint32(o + 16, true),
+    });
+  }
+  return { route_set_version, rows };
+}
