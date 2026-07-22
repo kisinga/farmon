@@ -26,10 +26,12 @@ using maji_localui::SseWrite;
 using maji_localui::content_type_for;
 using maji_localui::find_asset;
 using maji_localui::resolve_get;
+using maji_localui::sse_expired;
 using maji_localui::sse_flush_fold;
 using maji_localui::sse_frame;
 using maji_localui::sse_has_pending;
 using maji_localui::sse_offer;
+using maji_localui::sse_oldest;
 
 static int pass = 0, fail = 0;
 static void check(bool c, const char *name) {
@@ -183,12 +185,30 @@ static void test_content_types() {
   check(strcmp(content_type_for("/noextension"), "application/octet-stream") == 0, "no extension → octet-stream");
 }
 
+static void test_ghost_bounds() {
+  // sse_expired: over the cap is expired, at/under is not, wraparound-safe.
+  check(!sse_expired(5000, 1000, 10000), "under cap: not expired");
+  check(!sse_expired(11000, 1000, 10000), "at cap: not expired");
+  check(sse_expired(11001, 1000, 10000), "over cap: expired");
+  check(sse_expired(1000, 0xFFFFFFF0, 1000), "wraparound: age 1016 across overflow > cap");
+
+  // sse_oldest: skips unused, picks the smallest connected_ms, -1 when none used.
+  uint32_t connected[2] = {500, 100};
+  bool used[2] = {true, true};
+  check(sse_oldest(connected, used, 2) == 1, "oldest: smallest connected_ms wins");
+  bool one_used[2] = {false, true};
+  check(sse_oldest(connected, one_used, 2) == 1, "oldest: unused slot skipped");
+  bool none_used[2] = {false, false};
+  check(sse_oldest(connected, none_used, 2) == -1, "oldest: none used → -1");
+}
+
 int main() {
   test_framing();
   test_coalesce_and_partial_send();
   test_stall_drop_lifecycle();
   test_asset_routing();
   test_content_types();
+  test_ghost_bounds();
   printf("%s (%d/%d)\n", fail ? "FAILED" : "PASSED", pass, pass + fail);
   return fail ? 1 : 0;
 }

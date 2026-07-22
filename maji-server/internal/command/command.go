@@ -81,22 +81,22 @@ type Command struct {
 // keeps a present false/0 (a node release is on:false, a setpoint can be 0, route 0
 // is a real id), so the device always sees the fields its action carries.
 type envelope struct {
-	CommandID string   `json:"command_id"`
-	Action    Action   `json:"action"`
-	IssuedAt  int64    `json:"issued_at"`
-	Actor     string   `json:"actor,omitempty"`
-	RouteID   *int     `json:"route_id,omitempty"`
-	NodeID    string   `json:"node_id,omitempty"`
-	On        *bool    `json:"on,omitempty"`
-	OverrideMask      *int `json:"override_mask,omitempty"`
-	OvSourceMinPct    *int `json:"ov_source_min_pct,omitempty"`
-	OvDestMaxPct      *int `json:"ov_dest_max_pct,omitempty"`
-	OvMaxRuntimeMin   *int `json:"ov_max_runtime_min,omitempty"`
-	OvTargetDurationS *int `json:"ov_target_duration_s,omitempty"`
-	OvTargetVolumeL   *int `json:"ov_target_volume_l,omitempty"`
-	Version   string   `json:"version,omitempty"`
-	URL       string   `json:"url,omitempty"`
-	MD5       string   `json:"md5,omitempty"`
+	CommandID         string `json:"command_id"`
+	Action            Action `json:"action"`
+	IssuedAt          int64  `json:"issued_at"`
+	Actor             string `json:"actor,omitempty"`
+	RouteID           *int   `json:"route_id,omitempty"`
+	NodeID            string `json:"node_id,omitempty"`
+	On                *bool  `json:"on,omitempty"`
+	OverrideMask      *int   `json:"override_mask,omitempty"`
+	OvSourceMinPct    *int   `json:"ov_source_min_pct,omitempty"`
+	OvDestMaxPct      *int   `json:"ov_dest_max_pct,omitempty"`
+	OvMaxRuntimeMin   *int   `json:"ov_max_runtime_min,omitempty"`
+	OvTargetDurationS *int   `json:"ov_target_duration_s,omitempty"`
+	OvTargetVolumeL   *int   `json:"ov_target_volume_l,omitempty"`
+	Version           string `json:"version,omitempty"`
+	URL               string `json:"url,omitempty"`
+	MD5               string `json:"md5,omitempty"`
 }
 
 // ValidateOperator checks an operator-issued command (the POST /command surface):
@@ -122,22 +122,22 @@ func (c Command) ValidateOperator() error {
 // is the CommandEnvelope contract — see command_test.go for the pinned vectors.
 func (c Command) Encode() []byte {
 	b, _ := json.Marshal(envelope{
-		CommandID: c.CommandID,
-		Action:    c.Action,
-		IssuedAt:  c.IssuedAt,
-		Actor:     c.Actor,
-		RouteID:   c.RouteID,
-		NodeID:    c.NodeID,
-		On:        c.On,
+		CommandID:         c.CommandID,
+		Action:            c.Action,
+		IssuedAt:          c.IssuedAt,
+		Actor:             c.Actor,
+		RouteID:           c.RouteID,
+		NodeID:            c.NodeID,
+		On:                c.On,
 		OverrideMask:      c.OverrideMask,
 		OvSourceMinPct:    c.OvSourceMinPct,
 		OvDestMaxPct:      c.OvDestMaxPct,
 		OvMaxRuntimeMin:   c.OvMaxRuntimeMin,
 		OvTargetDurationS: c.OvTargetDurationS,
 		OvTargetVolumeL:   c.OvTargetVolumeL,
-		Version:   c.Version,
-		URL:       c.URL,
-		MD5:       c.MD5,
+		Version:           c.Version,
+		URL:               c.URL,
+		MD5:               c.MD5,
 	})
 	return b
 }

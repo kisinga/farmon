@@ -108,6 +108,12 @@ class MajiLocalUi : public AsyncWebHandler, public Component {
   // dead (same role as web_server_idf's MAX_CONSECUTIVE_SEND_FAILURES, shorter —
   // our events are periodic full-state snapshots, never backlog-worthy).
   static constexpr uint16_t MAX_SEND_FAILURES = 250;
+  // Hard session age cap. Write-error stall detection alone CANNOT see a
+  // dead-but-unclosed peer (a phone asleep still ACKs nothing, yet send() succeeds
+  // into the kernel buffer — and at ~1 frame per 5s the peer window takes hours to
+  // fill). The cap bounds any ghost slot's life to 1h; a healthy client's
+  // EventSource reconnects transparently, so the cap is invisible in practice.
+  static constexpr uint32_t MAX_SSE_AGE_MS = 3600000;
 
   // One SSE connection. The slot's string/buffer state is main-loop only; the httpd
   // task touches fd (connect/destroy) and used (claim) — both atomic for that reason.

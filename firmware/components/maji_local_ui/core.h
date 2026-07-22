@@ -23,11 +23,28 @@ std::string sse_frame(const std::string &message);
 // state machine as plain data. All access is main-loop only (the shell's slot flags
 // are the atomic part, not this).
 struct SseSlot {
-  std::string pending;   // framed event not yet fully sent (coalesced)
-  size_t sent{0};        // bytes of pending already written
-  uint16_t failures{0};  // consecutive would-block flushes
-  bool closing{false};   // stall close requested — waiting for httpd's free_ctx
+  std::string pending;      // framed event not yet fully sent (coalesced)
+  size_t sent{0};           // bytes of pending already written
+  uint16_t failures{0};     // consecutive would-block flushes
+  bool closing{false};      // stall close requested — waiting for httpd's free_ctx
+  uint32_t connected_ms{0}; // millis() at claim — the ghost-slot bounds below key off it
 };
+
+// --- Ghost-slot bounds ---------------------------------------------------------
+// A dead-but-unclosed peer (phone asleep, lid closed, WiFi drop) still ACCEPTS
+// sends into the kernel buffer, so write-error stall detection alone can hold a
+// slot hostage for hours. Two bounds, both closing via httpd (free_ctx reaps):
+//   1. sse_expired — a hard session age cap; healthy clients reconnect instantly,
+//      a ghost is always reaped within the cap.
+//   2. sse_oldest — when a new client connects and every slot is busy, the oldest
+//      is sacrificed (LRU purge) so a live dashboard can always get back in.
+
+// Age-cap check, wraparound-safe (uint32 subtraction).
+bool sse_expired(uint32_t now_ms, uint32_t connected_ms, uint32_t max_age_ms);
+
+// Index of the used slot with the oldest connected_ms, or -1 when none is used.
+// `connected`/`used` are parallel arrays of the shell's sessions.
+int sse_oldest(const uint32_t connected[], const bool used[], int n);
 
 // Coalesce a new snapshot onto the slot: an UNSENT pending frame is replaced (snapshots
 // are full-state re-assertions — only the newest is ever worth sending, and pending RAM

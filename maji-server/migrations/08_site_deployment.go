@@ -9,9 +9,9 @@ import (
 // controllers connect to.
 //
 //   - mode:        "managed" (MajiFlow cloud) or "local" (an on-site box).
-//                  Empty == not chosen yet; the app falls back to the server's
-//                  build shape. Drives the cross-controller (cross-talk) check:
-//                  managed forbids it, local allows it.
+//     Empty == not chosen yet; the app falls back to the server's
+//     build shape. Drives the cross-controller (cross-talk) check:
+//     managed forbids it, local allows it.
 //   - broker_host/_port/_tls: the broker the firmware is baked to reach. For a
 //     managed site these autofill from the cloud defaults (mqtt.majiflow.io:8883
 //     TLS) and stay blank here; for a local site the installer sets the box's

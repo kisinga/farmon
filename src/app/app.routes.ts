@@ -133,6 +133,43 @@ export const routes: Routes = [
       import('./pages/automations/automations.component').then((m) => m.AutomationsComponent),
   },
   {
+    // Customer + admin: tenant billing (meters, accounts, invoices, payments).
+    // Feature-flag gated; the shell additionally probes the per-site
+    // tenant_billing capability and shows an empty state when it's off.
+    path: 'site/:name/billing',
+    canActivate: [authGuard, featureGuard],
+    data: { feature: 'billing_module' },
+    loadComponent: () =>
+      import('./pages/billing/billing-shell.component').then((m) => m.BillingShellComponent),
+    children: [
+      {
+        path: '',
+        loadComponent: () =>
+          import('./pages/billing/billing-overview.component').then((m) => m.BillingOverviewComponent),
+      },
+      {
+        path: 'meters',
+        loadComponent: () =>
+          import('./pages/billing/billing-meters.component').then((m) => m.BillingMetersComponent),
+      },
+      {
+        path: 'tenants',
+        loadComponent: () =>
+          import('./pages/billing/billing-tenants.component').then((m) => m.BillingTenantsComponent),
+      },
+      {
+        path: 'invoices',
+        loadComponent: () =>
+          import('./pages/billing/billing-invoices.component').then((m) => m.BillingInvoicesComponent),
+      },
+      {
+        path: 'settings',
+        loadComponent: () =>
+          import('./pages/billing/billing-settings.component').then((m) => m.BillingSettingsComponent),
+      },
+    ],
+  },
+  {
     // Admin/partner: the unified workspace (site overview panel + shared canvas).
     path: 'site/:name',
     canActivate: [roleGuard],

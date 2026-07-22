@@ -30,6 +30,13 @@ void MajiLocalUi::loop() {
     }
     if (s.slot.closing)  // close requested — waiting for httpd's free_ctx
       continue;
+    if (maji_localui::sse_expired(millis(), s.slot.connected_ms, MAX_SSE_AGE_MS)) {
+      // Ghost bound (see MAX_SSE_AGE_MS): a dead peer the write path can't detect
+      // is still reaped within the cap. Close via httpd; free_ctx releases the slot.
+      ESP_LOGW(TAG, "SSE session hit age cap — closing");
+      httpd_sess_trigger_close(s.hd, s.fd.load());
+      continue;
+    }
     if (s.need_initial) {  // a freshly connected client gets the current snapshot first
       s.need_initial = false;
       if (!last_snapshot_.empty())
@@ -100,8 +107,25 @@ void MajiLocalUi::handle_state_(AsyncWebServerRequest *request) {
       break;
     }
   }
-  if (slot < 0) {  // heap precedent (networking.ts): never let open streams pile up
-    send_json_(request, 503, "{\"error\":\"sse_busy\"}");
+  if (slot < 0) {
+    // All slots busy: sacrifice the oldest (LRU purge) so a LIVE dashboard can
+    // always get back in — ghost slots (dead-but-unclosed peers the write path
+    // can't detect, see MAX_SSE_AGE_MS) would otherwise hold both slots hostage
+    // for hours. The close completes via free_ctx asynchronously, so this request
+    // gets a 503 and the client's retry (EventSource native ~3s, our backoff 1s)
+    // lands on the freed slot.
+    uint32_t connected[MAX_SSE_CLIENTS];
+    bool used[MAX_SSE_CLIENTS];
+    for (int i = 0; i < MAX_SSE_CLIENTS; i++) {
+      connected[i] = sessions_[i].slot.connected_ms;
+      used[i] = sessions_[i].used.load();
+    }
+    int oldest = maji_localui::sse_oldest(connected, used, MAX_SSE_CLIENTS);
+    if (oldest >= 0 && !sessions_[oldest].slot.closing) {
+      ESP_LOGW(TAG, "SSE slots full — purging oldest session");
+      httpd_sess_trigger_close(sessions_[oldest].hd, sessions_[oldest].fd.load());
+    }
+    send_json_(request, 503, "{\"error\":\"sse_busy\",\"retry\":true}");
     return;
   }
   httpd_req_t *req = *request;
@@ -116,6 +140,7 @@ void MajiLocalUi::handle_state_(AsyncWebServerRequest *request) {
   s.fd.store(httpd_req_to_sockfd(req));
   s.need_initial = true;
   s.slot = maji_localui::SseSlot{};  // slot is unclaimed, so the main loop isn't touching it yet
+  s.slot.connected_ms = millis();    // ghost bounds (age cap + LRU purge) key off this
   req->sess_ctx = &s;
   req->free_ctx = &MajiLocalUi::sse_destroy_;
   httpd_sess_set_send_override(s.hd, s.fd.load(), &MajiLocalUi::nonblocking_send_);

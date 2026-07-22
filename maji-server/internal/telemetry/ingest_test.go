@@ -2,7 +2,6 @@ package telemetry
 
 import "testing"
 
-
 func TestParseIdentityTopic(t *testing.T) {
 	cases := []struct {
 		topic      string

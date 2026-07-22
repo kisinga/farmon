@@ -41,6 +41,21 @@ SseFlush sse_flush_fold(SseSlot &s, SseWrite w, size_t wrote, uint16_t max_failu
 
 // --- Static app assets ---------------------------------------------------------
 
+bool sse_expired(uint32_t now_ms, uint32_t connected_ms, uint32_t max_age_ms) {
+  return (uint32_t) (now_ms - connected_ms) > max_age_ms;  // wraparound-safe
+}
+
+int sse_oldest(const uint32_t connected[], const bool used[], int n) {
+  int best = -1;
+  for (int i = 0; i < n; i++) {
+    if (!used[i])
+      continue;
+    if (best < 0 || connected[i] < connected[best])
+      best = i;
+  }
+  return best;
+}
+
 const LocalUiAsset *find_asset(const LocalUiAsset *assets, size_t count, const std::string &path) {
   for (size_t i = 0; i < count; i++) {
     if (path == assets[i].path)

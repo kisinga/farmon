@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"reflect"
 
 	"github.com/kisinga/majiflow/internal/api"
 	"github.com/kisinga/majiflow/internal/config"
@@ -16,18 +17,31 @@ import (
 //
 // Site design lives in draft_topology and is autosaved continuously, so it is NOT
 // a device-registration trigger: a controller becomes a registered device only at
-// provision (firmware Generate). With subscriptions free, entitlement fields
-// (packs, addons, price_override) are no longer enforced; owners may edit their
-// own sites and the managed device cap is removed.
+// provision (firmware Generate). With subscriptions free there is no device cap,
+// but entitlement fields (packs, addons, price_override) still GRANT features
+// (e.g. tenant_billing), so they remain admin-only: an owner (or partner) must
+// not self-grant capabilities on their own site.
 func registerSiteHooks(app core.App, cfg config.Config) {
 	_ = cfg
 
 	app.OnRecordCreateRequest("sites").BindFunc(func(e *core.RecordRequestEvent) error {
-		return guardOwnerCreate(e)
+		if err := guardOwnerCreate(e); err != nil {
+			return err
+		}
+		if err := guardEntitlementCreate(e); err != nil {
+			return err
+		}
+		return e.Next()
 	})
 
 	app.OnRecordUpdateRequest("sites").BindFunc(func(e *core.RecordRequestEvent) error {
-		return guardOwnerUpdate(e)
+		if err := guardOwnerUpdate(e); err != nil {
+			return err
+		}
+		if err := guardEntitlementUpdate(e); err != nil {
+			return err
+		}
+		return e.Next()
 	})
 
 	// Keep topology counts and partner mirrors in sync on every sites create/update
@@ -48,15 +62,28 @@ func registerSiteHooks(app core.App, cfg config.Config) {
 	})
 
 	// Keep device/live counts honest whenever a controller row is created,
-	// updated, or deleted.
+	// updated, or deleted. e.Next() MUST run: record hooks that short-circuit the
+	// chain starve PocketBase's realtime broadcast handler (it runs last on the
+	// same model chain), which is how controllers updates stopped reaching the
+	// dashboard even though the row kept saving — a count refresh must never
+	// block the chain on error either.
 	app.OnRecordAfterCreateSuccess("controllers").BindFunc(func(e *core.RecordEvent) error {
-		return refreshSiteDeviceCounts(e.App, e.Record.GetString("site"))
+		if err := refreshSiteDeviceCounts(e.App, e.Record.GetString("site")); err != nil {
+			e.App.Logger().Warn("refreshSiteDeviceCounts failed", "site", e.Record.GetString("site"), "error", err.Error())
+		}
+		return e.Next()
 	})
 	app.OnRecordAfterUpdateSuccess("controllers").BindFunc(func(e *core.RecordEvent) error {
-		return refreshSiteDeviceCounts(e.App, e.Record.GetString("site"))
+		if err := refreshSiteDeviceCounts(e.App, e.Record.GetString("site")); err != nil {
+			e.App.Logger().Warn("refreshSiteDeviceCounts failed", "site", e.Record.GetString("site"), "error", err.Error())
+		}
+		return e.Next()
 	})
 	app.OnRecordAfterDeleteSuccess("controllers").BindFunc(func(e *core.RecordEvent) error {
-		return refreshSiteDeviceCounts(e.App, e.Record.GetString("site"))
+		if err := refreshSiteDeviceCounts(e.App, e.Record.GetString("site")); err != nil {
+			e.App.Logger().Warn("refreshSiteDeviceCounts failed", "site", e.Record.GetString("site"), "error", err.Error())
+		}
+		return e.Next()
 	})
 }
 
@@ -66,7 +93,7 @@ func registerSiteHooks(app core.App, cfg config.Config) {
 // Partners can create sites for their own customers (or for themselves).
 func guardOwnerCreate(e *core.RecordRequestEvent) error {
 	if api.IsAdmin(e.Auth) || e.Auth == nil {
-		return e.Next()
+		return nil
 	}
 	owners := e.Record.GetStringSlice("owner")
 	if api.IsPartner(e.Auth) {
@@ -79,7 +106,7 @@ func guardOwnerCreate(e *core.RecordRequestEvent) error {
 				return apis.NewForbiddenError("can only assign the site to your own customers", nil)
 			}
 		}
-		return e.Next()
+		return nil
 	}
 	// customer
 	for _, owner := range owners {
@@ -87,7 +114,7 @@ func guardOwnerCreate(e *core.RecordRequestEvent) error {
 			return apis.NewForbiddenError("cannot assign a site to another user", nil)
 		}
 	}
-	return e.Next()
+	return nil
 }
 
 // guardOwnerUpdate stops a customer from changing a site's co-owner set (owner has
@@ -96,11 +123,11 @@ func guardOwnerCreate(e *core.RecordRequestEvent) error {
 // co-owners; order is irrelevant.
 func guardOwnerUpdate(e *core.RecordRequestEvent) error {
 	if api.IsAdmin(e.Auth) {
-		return e.Next()
+		return nil
 	}
 	old, err := e.App.FindRecordById("sites", e.Record.Id)
 	if err != nil {
-		return e.Next() // missing record — let the normal flow surface it
+		return nil // missing record — let the normal flow surface it
 	}
 	oldOwners := old.GetStringSlice("owner")
 	newOwners := e.Record.GetStringSlice("owner")
@@ -121,7 +148,69 @@ func guardOwnerUpdate(e *core.RecordRequestEvent) error {
 			}
 		}
 	}
-	return e.Next()
+	return nil
+}
+
+// guardEntitlementCreate stops a non-admin from seeding entitlement fields on a
+// new site. Entitlements GRANT features, so minting them is an admin act.
+func guardEntitlementCreate(e *core.RecordRequestEvent) error {
+	if api.IsAdmin(e.Auth) || e.Auth == nil {
+		return nil
+	}
+	if len(e.Record.GetStringSlice("packs")) > 0 ||
+		!jsonEmpty(e.Record.Get("addons")) ||
+		e.Record.GetFloat("price_override") != 0 {
+		return apis.NewForbiddenError("only an admin can grant site entitlements", nil)
+	}
+	return nil
+}
+
+// guardEntitlementUpdate stops a non-admin (owner or partner) from changing a
+// site's entitlement fields (packs, addons, price_override) — self-granting a
+// capability like tenant_billing must be impossible. Admins bypass.
+func guardEntitlementUpdate(e *core.RecordRequestEvent) error {
+	if api.IsAdmin(e.Auth) || e.Auth == nil {
+		return nil
+	}
+	old, err := e.App.FindRecordById("sites", e.Record.Id)
+	if err != nil {
+		return nil // missing record — let the normal flow surface it
+	}
+	if !sameStringSet(old.GetStringSlice("packs"), e.Record.GetStringSlice("packs")) ||
+		!jsonValueEqual(old.Get("addons"), e.Record.Get("addons")) ||
+		old.GetFloat("price_override") != e.Record.GetFloat("price_override") {
+		return apis.NewForbiddenError("only an admin can change site entitlements", nil)
+	}
+	return nil
+}
+
+// jsonValueEqual compares two JSON field values semantically (key order and
+// whitespace aside) by round-tripping through encoding/json.
+func jsonValueEqual(a, b any) bool {
+	return reflect.DeepEqual(normalizeJSON(a), normalizeJSON(b))
+}
+
+// jsonEmpty reports whether a JSON field value is absent, null, or an empty array.
+func jsonEmpty(v any) bool {
+	switch t := normalizeJSON(v).(type) {
+	case nil:
+		return true
+	case []any:
+		return len(t) == 0
+	}
+	return false
+}
+
+func normalizeJSON(v any) any {
+	raw, err := json.Marshal(v)
+	if err != nil {
+		return v
+	}
+	var out any
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return v
+	}
+	return out
 }
 
 // topologyChangedForModel reports whether the incoming update modified draft_topology.

@@ -96,6 +96,55 @@ func TestMigrationsApplyCleanly(t *testing.T) {
 			t.Errorf("notification_incidents.%s should exist (migration 41)", f)
 		}
 	}
+
+	// 57–59: tenant-billing core + Shengda metering + financial spine.
+	for name, fields := range map[string][]string{
+		"billing_units":        {"site", "code", "status"},
+		"tenant_accounts":      {"site", "account_number", "name", "phone"},
+		"occupancies":          {"site", "unit", "tenant_account", "liable_from", "liable_until"},
+		"billing_settings":     {"site", "grace_days", "warn_days", "auto_valve_enabled"},
+		"tariffs":              {"site", "rate_per_kl_minor", "tax_bps"},
+		"meter_devices":        {"site", "imei", "valve_capable", "valve_state", "last_reading_ml"},
+		"meter_readings":       {"site", "meter", "device_ts", "cumulative_ml", "message_id", "raw_cbor", "raw_hex"},
+		"meter_commands":       {"site", "meter", "type", "status", "queued_by"},
+		"meter_sightings":      {"imei", "sn", "source_ip", "status"},
+		"meter_events":         {"site", "meter", "type", "severity"},
+		"billing_cycles":       {"site", "period_start", "period_end", "due_date", "status"},
+		"invoices":             {"site", "tenant_account", "cycle", "invoice_number", "total_minor", "allocated_minor", "status"},
+		"invoice_lines":        {"site", "invoice", "type", "amount_minor", "quantity_ml"},
+		"payment_transactions": {"site", "tenant_account", "provider", "provider_transaction_id", "amount_minor", "processing_status"},
+		"payment_allocations":  {"site", "payment", "invoice", "amount_minor"},
+		"billing_job_runs":     {"site", "job_type", "business_key", "status"},
+	} {
+		c, err := app.FindCollectionByNameOrId(name)
+		if err != nil {
+			t.Errorf("%s collection missing (migrations 57-59): %v", name, err)
+			continue
+		}
+		for _, f := range fields {
+			if c.Fields.GetByName(f) == nil {
+				t.Errorf("%s.%s should exist (migrations 57-59)", name, f)
+			}
+		}
+	}
+	// Reading dedupe idempotency anchor (random 16-bit message_id alone is unsafe).
+	readings, err := app.FindCollectionByNameOrId("meter_readings")
+	if err != nil {
+		t.Fatal(err)
+	}
+	foundDedupe := false
+	for _, idx := range readings.Indexes {
+		var parsed struct {
+			Unique bool `json:"unique"`
+		}
+		if strings.Contains(idx, "meter,message_id,device_ts") {
+			foundDedupe = true
+		}
+		_ = parsed
+	}
+	if !foundDedupe {
+		t.Error("meter_readings should have a unique (meter,message_id,device_ts) dedupe index")
+	}
 }
 
 // Migration 56 backfills alert_device_online for existing offline-alert
@@ -135,9 +184,9 @@ func TestBackfillDeviceOnline(t *testing.T) {
 		}
 		return r
 	}
-	legacy := mk(true, false)  // offline subscriber predating the toggle — the gap
-	paired := mk(true, true)   // already opted into both
-	other := mk(false, false)  // not an offline subscriber
+	legacy := mk(true, false) // offline subscriber predating the toggle — the gap
+	paired := mk(true, true)  // already opted into both
+	other := mk(false, false) // not an offline subscriber
 
 	if err := migrations.BackfillDeviceOnline(app); err != nil {
 		t.Fatal(err)

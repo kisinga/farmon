@@ -13,9 +13,10 @@ import (
 // ingestHook persists everything devices publish under `majiflow/{site}/{ctrl}/…`
 // (local-first) and tracks online/offline. It routes by topic:
 //   - state    → project the controller snapshot (the single source of truth):
-//                raw history + shadow + derived timeline + command reconcile
+//     raw history + shadow + derived timeline + command reconcile
 //   - status  ("1")               → controller online (retained birth)
 //   - identity (chip MAC)         → bind/flag hardware (duplicate-firmware tripwire)
+//
 // Anything else passes through untouched.
 //
 // Offline is NOT driven by the status topic: a device's Last-Will ("0") is published

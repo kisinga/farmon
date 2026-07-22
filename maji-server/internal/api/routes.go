@@ -153,11 +153,11 @@ func Register(se *core.ServeEvent, cfg config.Config, pub Publisher) {
 			logoURL = "/api/files/" + org.Collection().Id + "/" + org.Id + "/" + logo
 		}
 		return e.JSON(http.StatusOK, map[string]any{
-			"name":           org.GetString("name"),
-			"slug":           org.GetString("slug"),
-			"logo_url":       logoURL,
-			"brand_primary":  org.GetString("brand_primary"),
-			"brand_accent":   org.GetString("brand_accent"),
+			"name":          org.GetString("name"),
+			"slug":          org.GetString("slug"),
+			"logo_url":      logoURL,
+			"brand_primary": org.GetString("brand_primary"),
+			"brand_accent":  org.GetString("brand_accent"),
 		})
 	})
 

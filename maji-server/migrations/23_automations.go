@@ -49,8 +49,8 @@ func init() {
 			&core.NumberField{Name: "route_set_version", Min: ptrf(0), Max: ptrf(65535)},
 			// Trigger.
 			&core.SelectField{Name: "trigger_type", Values: []string{"time", "level"}, MaxSelect: 1, Required: true},
-			&core.NumberField{Name: "time_min", Min: ptrf(0), Max: ptrf(1439)},          // minutes since midnight
-			&core.NumberField{Name: "days_mask", Min: ptrf(0), Max: ptrf(127)},          // bit0=MON..bit6=SUN; 0=every day
+			&core.NumberField{Name: "time_min", Min: ptrf(0), Max: ptrf(1439)}, // minutes since midnight
+			&core.NumberField{Name: "days_mask", Min: ptrf(0), Max: ptrf(127)}, // bit0=MON..bit6=SUN; 0=every day
 			&core.NumberField{Name: "level_threshold_pct", Min: ptrf(0), Max: ptrf(100)},
 			// Sparse run-param override (only bits set in override_mask apply).
 			&core.NumberField{Name: "override_mask", Min: ptrf(0), Max: ptrf(255)},

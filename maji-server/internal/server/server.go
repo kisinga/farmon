@@ -14,7 +14,9 @@ import (
 	"github.com/kisinga/majiflow/internal/alerts"
 	"github.com/kisinga/majiflow/internal/api"
 	"github.com/kisinga/majiflow/internal/automations"
+	"github.com/kisinga/majiflow/internal/billing"
 	"github.com/kisinga/majiflow/internal/config"
+	"github.com/kisinga/majiflow/internal/metering"
 	"github.com/kisinga/majiflow/internal/mqtt"
 	"github.com/kisinga/majiflow/internal/telemetry"
 
@@ -84,7 +86,22 @@ func New(cfg config.Config) *pocketbase.PocketBase {
 		go alerts.RunSweeper(se.App)
 		go keepRealtimeAlive(se.App)
 
+		// Shengda meter UDP ingestion (cloud only — an edge box has no meters
+		// phoning home to it). Disabled when MAJI_METER_UDP_ADDR is unset.
+		if cfg.Mode == config.ModeCloud && cfg.MeterUDPAddr != "" {
+			if err := metering.StartListener(se.App, cfg); err != nil {
+				return err
+			}
+		}
+
+		// Tenant-billing jobs: cycles, invoice preparation, overdue marking,
+		// and the arrears→valve sweep (cloud only).
+		if cfg.Mode == config.ModeCloud {
+			go billing.RunScheduler(se.App)
+		}
+
 		api.Register(se, cfg, broker.Server)
+		api.RegisterBilling(se, cfg)
 
 		// Republish a controller's retained automation set on any change to the
 		// automations collection (DB is source of truth; device is a mirror).
