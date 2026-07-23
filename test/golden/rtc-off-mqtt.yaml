@@ -203,18 +203,18 @@ mqtt:
             // only fires when the key is present and numeric (a partial config never zeroes a
             // value), so it is safe even if `config` is absent (every is<float>() is then false).
             auto cfg = x["config"];
-            if (cfg["flow_watchdog_s"].is<float>()) { id(flow_watchdog_s).make_call().set_value(cfg["flow_watchdog_s"].as<float>()).perform(); }
-            if (cfg["flow_confirm_s"].is<float>()) { id(flow_confirm_s).make_call().set_value(cfg["flow_confirm_s"].as<float>()).perform(); }
-            if (cfg["flow_threshold_l_min"].is<float>()) { id(flow_threshold_l_min).make_call().set_value(cfg["flow_threshold_l_min"].as<float>()).perform(); }
-            if (cfg["claim_lease_s"].is<float>()) { id(claim_lease_s).make_call().set_value(cfg["claim_lease_s"].as<float>()).perform(); }
-            if (cfg["route_0_max_runtime"].is<float>()) { id(route_0_max_runtime).make_call().set_value(cfg["route_0_max_runtime"].as<float>()).perform(); }
-            if (cfg["route_0_target_duration_s"].is<float>()) { id(route_0_target_duration_s).make_call().set_value(cfg["route_0_target_duration_s"].as<float>()).perform(); }
-            if (cfg["route_0_flow_stall_enable"].is<float>()) { id(route_0_flow_stall_enable).make_call().set_value(cfg["route_0_flow_stall_enable"].as<float>()).perform(); }
-            if (cfg["route_0_target_volume_l"].is<float>()) { id(route_0_target_volume_l).make_call().set_value(cfg["route_0_target_volume_l"].as<float>()).perform(); }
-            if (cfg["route_0_source_min_pct"].is<float>()) { id(route_0_source_min_pct).make_call().set_value(cfg["route_0_source_min_pct"].as<float>()).perform(); }
-            if (cfg["tank1_cal_empty"].is<float>()) { id(tank1_cal_empty).make_call().set_value(cfg["tank1_cal_empty"].as<float>()).perform(); }
-            if (cfg["tank1_cal_full"].is<float>()) { id(tank1_cal_full).make_call().set_value(cfg["tank1_cal_full"].as<float>()).perform(); }
-            if (cfg["valve1_travel_s"].is<float>()) { id(valve1_travel_s).make_call().set_value(cfg["valve1_travel_s"].as<float>()).perform(); }
+            if (cfg["flow_watchdog_s"].is<float>()) { float v = cfg["flow_watchdog_s"].as<float>(); id(flow_watchdog_s).make_call().set_value(v < 5 ? 5 : (v > 120 ? 120 : v)).perform(); }
+            if (cfg["flow_confirm_s"].is<float>()) { float v = cfg["flow_confirm_s"].as<float>(); id(flow_confirm_s).make_call().set_value(v < 3 ? 3 : (v > 60 ? 60 : v)).perform(); }
+            if (cfg["flow_threshold_l_min"].is<float>()) { float v = cfg["flow_threshold_l_min"].as<float>(); id(flow_threshold_l_min).make_call().set_value(v < 0.1 ? 0.1 : (v > 20 ? 20 : v)).perform(); }
+            if (cfg["claim_lease_s"].is<float>()) { float v = cfg["claim_lease_s"].as<float>(); id(claim_lease_s).make_call().set_value(v < 30 ? 30 : (v > 600 ? 600 : v)).perform(); }
+            if (cfg["route_0_max_runtime"].is<float>()) { float v = cfg["route_0_max_runtime"].as<float>(); id(route_0_max_runtime).make_call().set_value(v < 1 ? 1 : (v > 120 ? 120 : v)).perform(); }
+            if (cfg["route_0_target_duration_s"].is<float>()) { float v = cfg["route_0_target_duration_s"].as<float>(); id(route_0_target_duration_s).make_call().set_value(v < 0 ? 0 : (v > 7200 ? 7200 : v)).perform(); }
+            if (cfg["route_0_flow_stall_enable"].is<float>()) { float v = cfg["route_0_flow_stall_enable"].as<float>(); id(route_0_flow_stall_enable).make_call().set_value(v < 0 ? 0 : (v > 1 ? 1 : v)).perform(); }
+            if (cfg["route_0_target_volume_l"].is<float>()) { float v = cfg["route_0_target_volume_l"].as<float>(); id(route_0_target_volume_l).make_call().set_value(v < 0 ? 0 : (v > 100000 ? 100000 : v)).perform(); }
+            if (cfg["route_0_source_min_pct"].is<float>()) { float v = cfg["route_0_source_min_pct"].as<float>(); id(route_0_source_min_pct).make_call().set_value(v < 0 ? 0 : (v > 100 ? 100 : v)).perform(); }
+            if (cfg["tank1_cal_empty"].is<float>()) { float v = cfg["tank1_cal_empty"].as<float>(); id(tank1_cal_empty).make_call().set_value(v < 0 ? 0 : (v > 200 ? 200 : v)).perform(); }
+            if (cfg["tank1_cal_full"].is<float>()) { float v = cfg["tank1_cal_full"].as<float>(); id(tank1_cal_full).make_call().set_value(v < 0 ? 0 : (v > 200 ? 200 : v)).perform(); }
+            if (cfg["valve1_travel_s"].is<float>()) { float v = cfg["valve1_travel_s"].as<float>(); id(valve1_travel_s).make_call().set_value(v < 1 ? 1 : (v > 30 ? 30 : v)).perform(); }
             const char* version = x["version"] | "";
             id(autos).set_config_version(version);
             // Fast-path hint: publish a snapshot now so the server confirms the applied
@@ -282,7 +282,7 @@ script:
           static const char* ORIGIN_TOK[] = {"SYSTEM", "MANUAL", "AUTOMATION"};
           static const char* ACTION_TOK[] = {"START", "STOP", "STOP_ALL", "FAULT"};
           static const char* RR_TOK[] = {"UNKNOWN", "POWERON", "EXT", "SW", "PANIC", "INT_WDT", "TASK_WDT", "WDT", "DEEPSLEEP", "BROWNOUT", "SDIO"};
-          static char buf[5724];
+          static char buf[6148];
           int n = 0;
           bool first = true;
           auto sep = [&]() -> const char* { const char* s = first ? "" : ","; first = false; return s; };
@@ -294,6 +294,18 @@ script:
           put(snprintf(buf+n, sizeof(buf)-n, "%s\"pump_relay\":%d", sep(), id(pump_relay).state ? 1 : 0));
           if (!std::isnan(id(flow1).state)) put(snprintf(buf+n, sizeof(buf)-n, "%s\"flow1\":%g", sep(), id(flow1).state));
           if (!std::isnan(id(flow1_total).state)) put(snprintf(buf+n, sizeof(buf)-n, "%s\"flow1_total\":%g", sep(), id(flow1_total).state));
+          put(snprintf(buf+n, sizeof(buf)-n, "%s\"flow_watchdog_s\":%g", sep(), id(flow_watchdog_s).state));
+          put(snprintf(buf+n, sizeof(buf)-n, "%s\"flow_confirm_s\":%g", sep(), id(flow_confirm_s).state));
+          put(snprintf(buf+n, sizeof(buf)-n, "%s\"flow_threshold_l_min\":%g", sep(), id(flow_threshold_l_min).state));
+          put(snprintf(buf+n, sizeof(buf)-n, "%s\"claim_lease_s\":%g", sep(), id(claim_lease_s).state));
+          put(snprintf(buf+n, sizeof(buf)-n, "%s\"route_0_max_runtime\":%g", sep(), id(route_0_max_runtime).state));
+          put(snprintf(buf+n, sizeof(buf)-n, "%s\"route_0_target_duration_s\":%g", sep(), id(route_0_target_duration_s).state));
+          put(snprintf(buf+n, sizeof(buf)-n, "%s\"route_0_flow_stall_enable\":%g", sep(), id(route_0_flow_stall_enable).state));
+          put(snprintf(buf+n, sizeof(buf)-n, "%s\"route_0_target_volume_l\":%g", sep(), id(route_0_target_volume_l).state));
+          put(snprintf(buf+n, sizeof(buf)-n, "%s\"route_0_source_min_pct\":%g", sep(), id(route_0_source_min_pct).state));
+          put(snprintf(buf+n, sizeof(buf)-n, "%s\"tank1_cal_empty\":%g", sep(), id(tank1_cal_empty).state));
+          put(snprintf(buf+n, sizeof(buf)-n, "%s\"tank1_cal_full\":%g", sep(), id(tank1_cal_full).state));
+          put(snprintf(buf+n, sizeof(buf)-n, "%s\"valve1_travel_s\":%g", sep(), id(valve1_travel_s).state));
           put(snprintf(buf+n, sizeof(buf)-n, "%s\"heap_free\":%u", sep(), (unsigned) esp_get_free_heap_size()));
           put(snprintf(buf+n, sizeof(buf)-n, "%s\"heap_min\":%u", sep(), (unsigned) esp_get_minimum_free_heap_size()));
           put(snprintf(buf+n, sizeof(buf)-n, "%s\"heap_total\":%u", sep(), (unsigned) heap_caps_get_total_size(MALLOC_CAP_DEFAULT)));

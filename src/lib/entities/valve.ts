@@ -147,6 +147,7 @@ ${closeHeader}
   step: 1
   initial_value: ${node.travel_time}
   optimistic: true
+  restore_value: true
   entity_category: config`,
       };
     },

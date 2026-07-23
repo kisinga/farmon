@@ -142,34 +142,29 @@ export class CommandLifecycleStore implements OnDestroy {
   }
 
   /**
-   * Write desired tunables / calibration to the server-owned config. This is the
-   * SINGLE config write path (config_set is gone, no back-compat): the dashboard
-   * upserts the controller's `desired` key→value bag into the `controller_config`
-   * collection, and a server Register hook recomputes the canonical payload + sha256
-   * `version` and republishes the retained /config message (the device applies it and
-   * round-trips the version back as the snapshot `config_version`). The client never
-   * hashes and never sends a per-key command — convergence is the server's
-   * desired-vs-applied reconcile, and the shadow heals the displayed value once the
-   * device re-publishes the applied numbers. One row per controller, joined on the
-   * `controller` text id (unique index); `desired` is the only field a client writes.
+   * Write desired tunables / calibration. This is the SINGLE config write path,
+   * delegated to the backend seam: on the cloud, BackendService upserts the
+   * controller's `desired` bag into `controller_config` (the server recomputes +
+   * republishes the retained /config and the device applies it); on-device,
+   * DeviceBackendService sends one `config_set` command per key over
+   * /local/command. Either way convergence shows when the shadow re-publishes
+   * the applied number — callers and the per-field phase keys
+   * (`${controller}/cfg/<key>`) are unchanged.
    */
   async writeDesiredConfig(controller: string, patch: Record<string, number>): Promise<void> {
-    if (Object.keys(patch).length === 0) return;
-    const pb = this.backend.pb;
-    const existing = await pb
-      .collection('controller_config')
-      .getFirstListItem(pb.filter('controller = {:c}', { c: controller }))
-      .catch(() => null);
-    if (existing) {
-      const desired = { ...(existing['desired'] as Record<string, number> | null ?? {}), ...patch };
-      await pb.collection('controller_config').update(existing.id, { desired });
-    } else {
-      await pb.collection('controller_config').create({
-        site: this.siteId,
-        controller,
-        desired: patch,
-      });
-    }
+    await this.backend.writeControllerConfig(this.siteId, controller, patch);
+  }
+
+  /**
+   * Re-target at a new site (the dashboard shell is reused across /site/:name
+   * navigations): drop the previous site's in-flight entries and held claims —
+   * stopping the re-asserts IS the actuator fail-safe (the device lease lapses)
+   * — while the tick keeps running for the new site.
+   */
+  switchSite(siteId: string): void {
+    this.siteId = siteId;
+    this.sustainedClaims.set(new Map());
+    this.entries.set(new Map());
   }
 
   ngOnDestroy(): void {

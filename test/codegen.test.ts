@@ -8,7 +8,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { parse as parseYaml } from "yaml";
-import { type Manifest, type ManifestNode, nodesByKind, parseTopology, topologyToManifestForController, reservedPins, collectTelemetryChannels, buildDashboardSpec } from "@core";
+import { type Manifest, type ManifestNode, nodesByKind, parseTopology, topologyToManifestForController, reservedPins, collectTelemetryChannels, collectTunableNumbers, buildDashboardSpec } from "@core";
 import { type BoardDef } from "@core";
 import { loadBoard } from "./helpers";
 import { validateAll } from "@core/rules";
@@ -244,16 +244,20 @@ assert(
 {
   // Sizing: the buffer formula reserves 10 * 180 B for the event ring on top of the
   // pre-events baseline (worst-case entry ~187 B: long ts/up + STOP_ALL + two 33 B
-  // escaped fields) — pin the emitted size against the formula so a future BUFSZ edit
-  // that drops the events headroom fails here.
+  // escaped fields), plus key.length + 17 B per runtime tunable echoed into readings
+  // (per-key sizing — tunable keys are node-id-derived with no length cap, so a flat
+  // rate would under-size long ids and the truncated snapshot would be dropped
+  // server-side). Pin the emitted size against the formula so a future BUFSZ edit
+  // that drops either headroom fails here.
   const m2 = mqttYaml.match(/static char buf\[(\d+)\];/);
   assert(!!m2, "Snapshot buffer size is pinned in the emitted script");
   const channels = collectTelemetryChannels(manifest).filter(
     (c) => !["system_state", "queue_depth", "safety_override"].includes(c.sensor) &&
       (c.kind === "state" || c.kind === "bool" || c.kind === "cover" || c.kind === "enum" || c.kind === "text"),
   );
-  const expected = Math.max(2048, channels.length * 44 + manifest.routes.length * 192 + 1024 + 16 * 150 + 10 * 180);
-  assert(Number(m2![1]) === expected, "Snapshot buffer includes the events headroom (10 events x 180 B)",
+  const tunableEchoBytes = collectTunableNumbers(manifest).reduce((sum, t) => sum + t.key.length + 17, 0);
+  const expected = Math.max(2048, channels.length * 44 + tunableEchoBytes + manifest.routes.length * 192 + 1024 + 16 * 150 + 10 * 180);
+  assert(Number(m2![1]) === expected, "Snapshot buffer includes the events + tunables headroom (10 events x 180 B, key.length + 17 B/tunable)",
     `got ${m2![1]}, want ${expected}`);
 }
 assert(
@@ -934,17 +938,20 @@ assert((mqttYamlSched.match(/id: sntp_time/g) ?? []).length === 1, "mqtt: exactl
 assert(mqttYamlSched.includes("id(autos).apply_set"), "mqtt: subscribes to the retained automation set");
 assert(!mqttYamlSched.includes("auto_time1_enabled"), "mqtt: no baked automation enable-switch dispatch");
 
-// config_set is gone (no backward compat): the one-shot imperative is replaced by
-// the server-owned retained desired-config message on the config topic. The command
-// handler must no longer dispatch a config_set action or read a key/value pair.
-assert(!mqttYamlSched.includes('strcmp(action, "config_set")'), "mqtt: no config_set command handler");
+// config_set is LOCAL-LANE-ONLY (on-device dashboard): the MQTT lane keeps remote
+// config server-mediated via the retained /config message (migration 37). The MQTT
+// command handler must NOT dispatch a config_set action — one arriving on MQTT
+// falls to the unknown-action gate.
+assert(!mqttYamlSched.includes('strcmp(action, "config_set")'), "mqtt: no config_set command handler (local-lane-only action)");
 // The retained /config handler applies each enumerated number from the `config` kv:
-// only when present + numeric (a partial config never zeroes an unlisted key).
+// only when present + numeric (a partial config never zeroes an unlisted key), and
+// clamped to the tunable's min/max — the SAME clamp the local config_set lane emits,
+// so one value converges identically on both lanes (route_0_source_min_pct: 0..100).
 assert(
   mqttYamlSched.includes('auto cfg = x["config"];') &&
     mqttYamlSched.includes('cfg["route_0_source_min_pct"].is<float>()') &&
-    mqttYamlSched.includes('id(route_0_source_min_pct).make_call().set_value(cfg["route_0_source_min_pct"].as<float>()).perform()'),
-  "mqtt: /config handler applies the matching route setpoint from the config kv",
+    mqttYamlSched.includes('id(route_0_source_min_pct).make_call().set_value(v < 0 ? 0 : (v > 100 ? 100 : v)).perform()'),
+  "mqtt: /config handler applies the matching route setpoint from the config kv, clamped like config_set",
 );
 // The opaque server version round-trips: stored verbatim (never hashed on-device) and
 // re-reported as the snapshot text `config_version`.
@@ -953,9 +960,9 @@ assert(
     mqttYamlSched.includes('\\"config_version\\":'),
   "mqtt: stores the opaque config version and round-trips it as config_version",
 );
-// No-snapshot-emit: the setpoint number's live value no longer echoes into readings
-// (the server owns the desired config; the snapshot carries only config_version).
-assert(!mqttYamlSched.includes("id(route_0_source_min_pct).state"), "mqtt: setpoint value no longer published in the snapshot");
+// Snapshot echo: the setpoint number's live value rides the snapshot readings
+// under its kv key (the app shadow shows current values with no separate read path).
+assert(mqttYamlSched.includes('\\"route_0_source_min_pct\\":%g'), "mqtt: setpoint value published in the snapshot readings");
 
 // Telemetry: no baked automation enable channels.
 const schedChannels = collectTelemetryChannels(schedManifest);

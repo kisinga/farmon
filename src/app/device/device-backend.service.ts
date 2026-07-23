@@ -5,6 +5,13 @@ import type { SiteFullPayload } from '../core/models/backend-api';
 import { deviceSitePayload } from './device-topology';
 
 /**
+ * The local-lane-only config write action: one tunable kv key per command, never
+ * sent over the cloud MQTT lane (the cloud config path is the server-owned
+ * /config republish — see the note on CommandEnvelope in src/lib/codegen-ids.ts).
+ */
+const CONFIG_SET_ACTION: CommandAction = 'config_set';
+
+/**
  * Mint a UUID v4 for the command envelope. `crypto.randomUUID` is
  * secure-context-only, and the device page is plain `http://192.168.x.x/`, so
  * fall back to `crypto.getRandomValues` (available in insecure contexts) when
@@ -29,6 +36,11 @@ function mintCommandId(): string {
  *    `/local/command`, minting the `command_id` client-side (in the cloud flow
  *    the server mints it; here the response merely echoes it). Outcomes still
  *    arrive via the snapshot, so the command-lifecycle store is unchanged.
+ *  - `writeControllerConfig` sends one `config_set` command per key over the
+ *    same envelope path (the cloud path's PocketBase `controller_config` upsert
+ *    has no meaning here — the device owns its config). The applied value comes
+ *    back in the snapshot `readings` under the kv key, so the field editors
+ *    converge exactly as they do on the cloud.
  *
  * Everything else (editor, boards, docs, billing) is unreachable in device mode
  * — the routes that use it are not part of the device build.
@@ -37,6 +49,16 @@ function mintCommandId(): string {
 export class DeviceBackendService extends BackendService {
   override async siteLoad(_id: string): Promise<SiteFullPayload> {
     return deviceSitePayload();
+  }
+
+  /** One `config_set` command per patch entry; `actor: 'local-ui'` tagging comes
+   *  free from the envelope. The device applies + persists each key and echoes
+   *  the outcome, so per-field phases resolve off the snapshot like any command.
+   *  The site id is unused — the device IS the site. */
+  override async writeControllerConfig(_siteId: string, controller: string, patch: Record<string, number>): Promise<void> {
+    for (const [key, value] of Object.entries(patch)) {
+      await this.sendCommand('', controller, CONFIG_SET_ACTION, { key, value });
+    }
   }
 
   override async sendCommand(
@@ -60,6 +82,8 @@ export class DeviceBackendService extends BackendService {
       route_id: args.routeId,
       node_id: args.nodeId,
       on: args.on,
+      key: args.key,
+      value: args.value,
       override_mask: args.override_mask,
       ov_source_min_pct: args.ov_source_min_pct,
       ov_dest_max_pct: args.ov_dest_max_pct,

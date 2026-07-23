@@ -5,7 +5,7 @@ import {
   collectTelemetryChannels, type TelemetryChannel,
   SYSTEM_STATE_TOKENS, STOP_REASON_TOKENS, FAULT_TOKENS, ORIGIN_TOKENS, EVENT_ACTION_TOKENS,
   COMMAND_TTL_S, ROUTE_START_RESULTS, ROUTE_STOP_RESULTS, NODE_SET_RESULTS,
-  collectTunableNumbers, boardSupportedTransports, effectiveTransport,
+  collectTunableNumbers, boardSupportedTransports, effectiveTransport, type TunableNumber,
 } from '@core';
 import type { GenerationMetadata } from "../backends/types";
 
@@ -31,14 +31,17 @@ const indent = (lines: string[], n: number) =>
  * the local-UI command glue (local-ui.ts) so its synchronous unknown-action gate
  * can never drift from the dispatch. allowOta=false drops firmware_update: the
  * local HTTP endpoint is unauthenticated LAN, while the MQTT lane is cert-pinned +
- * ACL'd — an OTA pull trigger must not ride it.
+ * ACL'd — an OTA pull trigger must not ride it. allowConfigSet adds config_set —
+ * the mirror image: it is LOCAL-LANE-ONLY (operator at the panel), while the MQTT
+ * lane keeps remote config server-mediated via the retained /config (migration 37).
  */
-export function commandActionNames(opts?: { allowOta?: boolean }): string[] {
+export function commandActionNames(opts?: { allowOta?: boolean; allowConfigSet?: boolean }): string[] {
   const base = [
     'route_start', 'route_stop', 'fault_reset', 'stop_all',
     'reset_faults', 'clear_queue', 'node_set', 'safety_override',
   ];
-  return (opts?.allowOta ?? true) ? [...base, 'firmware_update'] : base;
+  const withOta = (opts?.allowOta ?? true) ? [...base, 'firmware_update'] : base;
+  return opts?.allowConfigSet ? [...withOta, 'config_set'] : withOta;
 }
 
 /**
@@ -48,9 +51,15 @@ export function commandActionNames(opts?: { allowOta?: boolean }): string[] {
  * command calls record_outcome (rides the next snapshot) and the body ends with the
  * publish_snapshot fast-path. Early `return;` exits work in any enclosing void
  * lambda (the local glue wraps it in one).
+ *
+ * configSetTunables gates the config_set branch: pass the enumerated tunables
+ * (collectTunableNumbers) on the local lane, omit on MQTT — an MQTT config_set
+ * then falls to the unknown-action gate (rejected, no outcome), and the MQTT
+ * byte stream stays unchanged.
  */
-export function commandDispatchLines(opts?: { allowOta?: boolean }): string[] {
+export function commandDispatchLines(opts?: { allowOta?: boolean; configSetTunables?: TunableNumber[] }): string[] {
   const allowOta = opts?.allowOta ?? true;
+  const configSetTunables = opts?.configSetTunables;
   return [
     'const char* action = x["action"] | "";',
     'const char* command_id = x["command_id"] | "";',
@@ -125,6 +134,23 @@ export function commandDispatchLines(opts?: { allowOta?: boolean }): string[] {
     '} else if (strcmp(action, "safety_override") == 0) {',
     '  if (x["on"] | false) id(safety_override).turn_on(); else id(safety_override).turn_off();',
     '  id(control).record_outcome(command_id, "APPLIED", "");',
+    // config_set is LOCAL-LANE-ONLY (configSetTunables passed by the local-UI glue,
+    // omitted on MQTT): one tunable kv key per command, validated against the
+    // generated allow-list (ESPHome can't id() a number by a runtime string),
+    // clamped to the number's min/max, applied via the same make_call().set_value
+    // idiom as the /config handler. The numbers are restore_value: true, so the
+    // value persists across reboots; the cloud /config re-apply on (re)connect
+    // stays authoritative over a locally-changed value.
+    ...(configSetTunables ? [
+      '} else if (strcmp(action, "config_set") == 0) {',
+      '  const char* key = x["key"] | "";',
+      '  float value = x["value"] | 0.0f;',
+      '  bool applied = true;',
+      ...configSetTunables.map((t, i) =>
+        `  ${i === 0 ? 'if' : 'else if'} (strcmp(key, "${t.key}") == 0) { id(${t.key}).make_call().set_value(value < ${t.min} ? ${t.min} : (value > ${t.max} ? ${t.max} : value)).perform(); }`),
+      '  else { applied = false; }',
+      '  id(control).record_outcome(command_id, applied ? "APPLIED" : "REFUSED", applied ? "" : "UNKNOWN_KEY");',
+    ] : []),
     // firmware_update stays MQTT-only (allowOta): the local HTTP endpoint is
     // unauthenticated LAN, so an OTA pull trigger must not ride it (see
     // commandActionNames). With allowOta=false the branch falls to unknown-action.
@@ -205,18 +231,22 @@ export function generateMqtt(m: Manifest, metadata: GenerationMetadata, board: B
   // publishes and what the UI reads can never drift.
   const channels = collectTelemetryChannels(m);
   // The enumerated runtime tunables (level setpoints, route max-runtime, controller
-  // safety timings, pressure calibration). These are no longer set by an operator
-  // command — the server owns the desired config and delivers it RETAINED on the
-  // config topic; the device applies each number from the message's kv (see the
-  // config-apply lambda below). The allow-list is enumerated because ESPHome can't
-  // id() a number by a runtime string. The applied value re-publishes in the snapshot.
+  // safety timings, pressure calibration). On the cloud lane the server owns the
+  // desired config and delivers it RETAINED on the config topic; the device applies
+  // each number from the message's kv (see the config-apply lambda below). The
+  // allow-list is enumerated because ESPHome can't id() a number by a runtime
+  // string. The same allow-list gates config_set on the LOCAL lane (local-ui.ts).
+  // Each applied value re-publishes in the snapshot readings under its key.
   const tunables = collectTunableNumbers(m);
   // Per-tunable apply line: pull the desired value from the config kv (absent ⇒ leave
-  // the number at its current/default — a partial config never zeroes an unlisted key)
-  // and drive the entity. No restore_value on these numbers; the retained /config
-  // message is the single source of truth and re-applies on every (re)connect.
+  // the number at its current/default — a partial config never zeroes an unlisted key),
+  // clamp it to the tunable's min/max (the SAME clamp the local config_set lane emits —
+  // one value must converge identically on both lanes), and drive the entity. The
+  // numbers restore_value (a local config_set survives reboots); the retained /config
+  // re-apply on every (re)connect stays authoritative over any persisted value when
+  // the server is connected.
   const configApplyLines = tunables.map((t) =>
-    `if (cfg["${t.key}"].is<float>()) { id(${t.key}).make_call().set_value(cfg["${t.key}"].as<float>()).perform(); }`);
+    `if (cfg["${t.key}"].is<float>()) { float v = cfg["${t.key}"].as<float>(); id(${t.key}).make_call().set_value(v < ${t.min} ? ${t.min} : (v > ${t.max} ? ${t.max} : v)).perform(); }`);
 
   // SNTP wall clock — the single `time: sntp` (id: sntp_time) on every device.
   // Drives the command-TTL gate and the runtime automation engine's time triggers
@@ -297,9 +327,18 @@ export function generateMqtt(m: Manifest, metadata: GenerationMetadata, board: B
   // +events[]: the control-event ring (maji_ctl::MAX_EVENTS=10), ~180 B per entry worst
   // case (long ts/up + STOP_ALL + two 33 B escaped actor/reason fields). codegen.test.ts
   // pins this headroom against the emitted buffer size — keep the two in sync.
-  // Tunables no longer echo into readings (the server owns the desired config), so they
-  // are not sized here — only the one `config_version` text field rides the snapshot now.
-  const BUFSZ = Math.max(2048, (readingCh.length + textCh.length) * 44 + m.routes.length * 192 + 1024 + 16 * 150 + 10 * 180);
+  // +tunables: every runtime-tunable number echoes its live value into readings — the
+  // app shadow (cloud and on-device) reads the current value straight from the snapshot,
+  // no separate read path. Sized per KEY, not at a flat rate: tunable keys are
+  // node-id-derived (`${id}_cal_empty`, `${id}_travel_s`) and node ids have no length
+  // cap, so a flat per-entry budget under-sizes long ids and the truncated snapshot
+  // would be dropped server-side (readings never reach the shadow). Per emitted entry
+  // (`"%s\"<key>\":%g"`): 1 B separator + 2 B quotes + 1 B colon + the %g value. The
+  // clamped ranges (min ≥ 0, max ≤ 100000) render %g in ≤ 8 B ("0.999999"); the 13 B
+  // value budget covers that with slack for a scientific-notation form should a future
+  // tunable's range allow one — hence key.length + 17 per entry.
+  const tunableEchoBytes = tunables.reduce((sum, t) => sum + t.key.length + 17, 0);
+  const BUFSZ = Math.max(2048, (readingCh.length + textCh.length) * 44 + tunableEchoBytes + m.routes.length * 192 + 1024 + 16 * 150 + 10 * 180);
 
   const readingLine = (c: TelemetryChannel): string => {
     if (c.kind === 'bool') return `put(snprintf(buf+n, sizeof(buf)-n, "%s\\"${c.sensor}\\":%d", sep(), id(${c.ref}).state ? 1 : 0));`;
@@ -360,6 +399,11 @@ export function generateMqtt(m: Manifest, metadata: GenerationMetadata, board: B
     'long long ts = id(time_trusted) ? (long long) id(sntp_time).now().timestamp : 0;',
     'put(snprintf(buf+n, sizeof(buf)-n, "{\\"ts\\":%lld,\\"readings\\":{", ts));',
     ...readingCh.map(readingLine),
+    // Runtime tunables: the live number value rides readings under its kv key, so
+    // the app shadow (cloud and on-device) shows current values with no separate
+    // read path. Optimistic template numbers always have a state — no isnan guard.
+    ...tunables.map((t) =>
+      `put(snprintf(buf+n, sizeof(buf)-n, "%s\\"${t.key}\\":%g", sep(), id(${t.key}).state));`),
     `put(snprintf(buf+n, sizeof(buf)-n, "%s\\"${HEAP_FREE_SENSOR}\\":%u", sep(), (unsigned) esp_get_free_heap_size()));`,
     `put(snprintf(buf+n, sizeof(buf)-n, "%s\\"${HEAP_MIN_SENSOR}\\":%u", sep(), (unsigned) esp_get_minimum_free_heap_size()));`,
     // Managed-heap pool size — the deterministic, partition-aware denominator for the

@@ -1,4 +1,5 @@
 import { Component, inject, OnInit, signal, computed } from '@angular/core';
+import { NgTemplateOutlet } from '@angular/common';
 import { RouterOutlet, RouterLink, RouterLinkActive, Router, NavigationEnd } from '@angular/router';
 import { DomSanitizer, type SafeHtml } from '@angular/platform-browser';
 import { SwUpdate, VersionReadyEvent } from '@angular/service-worker';
@@ -15,7 +16,7 @@ import { filter } from 'rxjs';
 @Component({
   selector: 'app-root',
   standalone: true,
-  imports: [RouterOutlet, RouterLink, RouterLinkActive, ConfirmDialogComponent, AlertsCenterComponent],
+  imports: [RouterOutlet, RouterLink, RouterLinkActive, NgTemplateOutlet, ConfirmDialogComponent, AlertsCenterComponent],
   templateUrl: './app.html',
   styleUrl: './app.css',
 })
@@ -32,7 +33,7 @@ export class App implements OnInit {
   private tracking = inject(TrackingService);
 
   // Loads the operator feature flags at bootstrap so guards/nav never wait long.
-  private featureFlags = inject(FeatureFlagsService);
+  protected featureFlags = inject(FeatureFlagsService);
 
   /** Live SSE stream state — drives the global "Reconnecting…" banner. */
   protected connection = this.realtime.connection;

@@ -149,6 +149,13 @@ assert(onMqtt.includes(dispatchLine), "parity: MQTT handler carries the dispatch
 assert(pkg.includes(dispatchLine), "parity: local-UI glue carries the SAME dispatch body");
 assert(onMqtt.includes('"firmware_update"'), "parity: MQTT lane keeps firmware_update (cert-pinned)");
 assert(!pkg.includes('"firmware_update"'), "parity: local lane drops firmware_update (unauthenticated LAN)");
+// config_set is the mirror image: local-lane-only. The local gate + dispatch carry
+// it (allow-listed, min/max-clamped, make_call/set_value applied); the MQTT lane
+// has no branch for it — one arriving there falls to the unknown-action gate.
+assert(pkg.includes('strcmp(action, "config_set")'), "parity: local lane accepts config_set (on-device tunable write)");
+assert(!onMqtt.includes('strcmp(action, "config_set")'), "parity: MQTT lane rejects config_set (remote config stays server-mediated)");
+assert(pkg.includes('id(flow_watchdog_s).make_call().set_value('), "parity: config_set applies via the make_call/set_value idiom");
+assert(pkg.includes('"REFUSED", applied ? "" : "UNKNOWN_KEY"') || pkg.includes('applied ? "APPLIED" : "REFUSED"'), "parity: config_set records per-key outcome");
 assert(!pkg.includes("route_set_version"), "pkg: automation route_set_version is baked as a number, not a config key");
 
 // --- Assets header: placeholder table when the manifest is absent -------------

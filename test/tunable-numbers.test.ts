@@ -1,17 +1,21 @@
 /**
  * Drift guard: the runtime tunable-number enumeration MUST match exactly the
  * `number:` entities the firmware codegen emits — same ids and same bounds — and
- * the server-owned desired-config model MUST hold:
- *   - each tunable `number:` is STATELESS re config (no restore_value): the retained
- *     /config message is the single source of truth and re-applies on every connect.
- *   - no tunable key echoes into the snapshot `readings` block (the server owns the
- *     desired config; the device only round-trips one `config_version`).
+ * the tunable persistence/echo model MUST hold:
+ *   - each tunable `number:` declares restore_value: true, so a local config_set
+ *     (on-device dashboard, no server) survives reboots. The cloud stays
+ *     authoritative when connected: the retained /config message re-applies the
+ *     server's desired values on every (re)connect, overriding a persisted local
+ *     change.
+ *   - every tunable key echoes its live value into the snapshot `readings` block,
+ *     so the app shadow (cloud and on-device) shows current values with no
+ *     separate read path.
  *
  * This is the single-source-of-truth enforcement: collectTunableNumbers (read by the
- * firmware config-apply dispatch, the dashboard editors that write the desired bag,
- * and tunableKvKeys — the server's /config kv-key contract) and the generated YAML
- * cannot silently diverge, or the device would apply a key it doesn't expose, or the
- * UI would show a wrong range.
+ * firmware config-apply dispatch, the local config_set allow-list, the dashboard
+ * editors that write the desired bag, and tunableKvKeys — the server's /config
+ * kv-key contract) and the generated YAML cannot silently diverge, or the device
+ * would apply a key it doesn't expose, or the UI would show a wrong range.
  *
  * Usage: npm run test:tunables
  */
@@ -49,9 +53,9 @@ const emitted = new Map((doc.number ?? []).map((nm) => [nm.id, nm]));
 const tunables = collectTunableNumbers(manifest);
 const tunableKeys = new Set(tunables.map((t) => t.key));
 
-// The snapshot (mqtt.yaml) — the device's single source-of-truth message. The
-// readings block must NOT re-echo any tunable key (the server owns the desired
-// config; the device round-trips only one `config_version` in the text block).
+// The snapshot (mqtt.yaml) — the device's single source-of-truth message. Every
+// tunable key echoes its live value into the readings block (the app shadow, cloud
+// and on-device, reads current values straight from the snapshot).
 const mqttYaml = files.find((f) => f.relativePath.endsWith("mqtt.yaml"))?.content ?? "";
 
 console.log("Tunable-number drift guard");
@@ -80,25 +84,26 @@ assert(
   `kv [${kvKeys.join(",")}] vs tunables [${tunables.map((t) => t.key).join(",")}]`,
 );
 
-// Stateless re config: NO tunable number declares restore_value (decision 7). The
-// retained /config message is the single source of truth and re-applies the desired
-// value on every (re)connect; a persisted on-device value would shadow it.
-const restored = tunables
+// Persistent: EVERY tunable number declares restore_value: true — a local
+// config_set (on-device dashboard, no server) survives reboots. The cloud stays
+// authoritative when connected: the retained /config re-apply on every (re)connect
+// overrides the persisted value.
+const notRestored = tunables
   .filter((t) => emitted.has(t.key))
-  .filter((t) => emitted.get(t.key)!.restore_value === true)
+  .filter((t) => emitted.get(t.key)!.restore_value !== true)
   .map((t) => t.key);
-assert(restored.length === 0, "no tunable number: declares restore_value (server-owned config is the source)", restored.join(", "));
+assert(notRestored.length === 0, "every tunable number: declares restore_value (local config_set survives reboots)", notRestored.join(", "));
 
-// No-snapshot-emit: the readings block of the device snapshot must NOT echo any
-// tunable key (the server owns the desired config; only one `config_version` text
-// field round-trips). The readings block runs from `\"readings\":{` to `\"text\":{`;
-// intersection of tunable keys with keys emitted there MUST be empty.
+// Snapshot echo: the readings block of the device snapshot MUST carry every
+// tunable key's live value (the app shadow shows current values with no separate
+// read path). The readings block runs from `\"readings\":{` to `\"text\":{`;
+// every tunable key must appear there.
 const rStart = mqttYaml.indexOf('\\"readings\\":{');
 const rEnd = mqttYaml.indexOf('},\\"text\\":{');
 assert(rStart >= 0 && rEnd > rStart, "snapshot has a readings block then a text block");
 const readingsBlock = mqttYaml.slice(rStart, rEnd);
-const echoed = [...tunableKeys].filter((k) => readingsBlock.includes(`\\"${k}\\":`));
-assert(echoed.length === 0, "no tunable key appears in the snapshot readings (intersection empty)", echoed.join(", "));
+const notEchoed = [...tunableKeys].filter((k) => !readingsBlock.includes(`\\"${k}\\":`));
+assert(notEchoed.length === 0, "every tunable key echoes its live value in the snapshot readings", notEchoed.join(", "));
 
 // The one config field is the slimmed replacement: it rides the `text` block, never
 // the readings (text-only, never written to telemetry_raw), so the snapshot still

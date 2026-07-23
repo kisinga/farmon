@@ -54,13 +54,15 @@ function obs(o: Partial<ConfirmObservation> = {}): ConfirmObservation {
   assert(d.classify(obs({ reportedText: "FAULT" })).phase === "pending", "fault_reset still FAULT → pending");
 }
 
-// --- No per-command tunable convergence (config_set is gone) ----------------
-// Runtime tunables + calibration are no longer a one-shot operator command: the
-// dashboard writes the desired config to the DB and the server delivers it retained,
-// so config convergence is the server's desired-vs-applied config_version reconcile,
-// NOT a per-command confirmation here. `config_set` is removed from the CommandAction
-// union (codegen-ids.ts) — confirmDescriptor("config_set", ...) is now a compile error,
-// so there is intentionally no descriptor case (and no test) for it.
+// --- No per-command tunable convergence (config_set is local-lane-only) --------
+// On the CLOUD dashboard, runtime tunables + calibration are not a one-shot
+// operator command: the dashboard writes the desired config to the DB and the
+// server delivers it retained, so config convergence is the server's
+// desired-vs-applied config_version reconcile, NOT a per-command confirmation
+// here. `config_set` exists in the CommandAction union again, but only for the
+// on-device (local-lane) write path — the cloud command store never dispatches
+// it, so there is intentionally no descriptor case (and no test) for it; it
+// falls through to the fire-and-forget default if ever called.
 
 // --- Dead-man (sustained node_set on) — THE regression guard ---------------
 {

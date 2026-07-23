@@ -473,10 +473,43 @@ export class DashboardStore implements OnDestroy {
     });
   }
 
-  ngOnDestroy(): void {
+  /**
+   * Full teardown + state clear: every subscription, the freshness clock, and
+   * every site-scoped signal back to its initial value. ngOnDestroy uses it,
+   * and so does the dashboard shell's in-place site switch (the router reuses
+   * the component across /site/:name navigations, so the component-provided
+   * store is NOT destroyed) — init() for the next site must start from
+   * nothing, not from the previous site's live feeds.
+   */
+  reset(): void {
     for (const u of this.unsubs) void u();
     this.unsubs = [];
     if (this.clock) { clearInterval(this.clock); this.clock = 0; }
+    this.siteId = '';
+    this.maxRunsHours = 0;
+    this.runsReqSeq++; // invalidate any in-flight run fetch from the old site
+    this.lastResyncAt = 0;
+    this.offlineMs = resolveOfflineMs(null);
+    this.owners = new Set();
+    this.people = new Map();
+    this.spec.set({ widgets: [], controllers: [] });
+    this.shadow.set(new Map());
+    this.events.set([]);
+    this.commandOutcomes.set(new Map());
+    this.commands.set(new Map());
+    this.configEvents.set([]);
+    this.runs.set([]);
+    this.runsWindowHours.set(0);
+    this.feedRuns.set([]);
+    this.deviceEvents.set([]);
+    this.controllers.set(new Map());
+    this.timing.set(null);
+    this.loading.set(true);
+    this.error.set(null);
+  }
+
+  ngOnDestroy(): void {
+    this.reset();
   }
 }
 

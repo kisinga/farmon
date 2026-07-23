@@ -2,6 +2,7 @@ import { Component, inject, signal } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 import { SitesStore } from '../../core/stores/sites.store';
 import { AuthStore } from '../../core/services/auth.store';
+import { FeatureFlagsService } from '../../core/services/feature-flags.service';
 import { siteColor, initials } from '../../core/util/site-colors';
 import type { SiteListEntry } from '../../core/models/backend-api';
 
@@ -66,6 +67,7 @@ import type { SiteListEntry } from '../../core/models/backend-api';
 export class HomeComponent {
   private auth = inject(AuthStore);
   private sitesStore = inject(SitesStore);
+  private flags = inject(FeatureFlagsService);
   private router = inject(Router);
 
   protected loading = signal(true);
@@ -73,6 +75,19 @@ export class HomeComponent {
   protected sites = signal<SiteListEntry[] | null>(null);
 
   constructor() {
+    void this.route();
+  }
+
+  /** Role-aware redirect: partners land on their org home when the
+   *  partner_portal flag is on, admins (and flag-off partners) on /overview,
+   *  customers on their sites below. Awaits the flags bootstrap so a flag-off
+   *  partner is never bounced through a gated route. */
+  private async route(): Promise<void> {
+    await this.flags.ready;
+    if (this.auth.isPartner() && this.flags.isEnabled('partner_portal')) {
+      void this.router.navigate(['/partner']);
+      return;
+    }
     if (this.auth.isManager()) {
       void this.router.navigate(['/overview']);
       return;

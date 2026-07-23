@@ -3,9 +3,11 @@ import { HashLocationStrategy, LocationStrategy } from '@angular/common';
 import { BackendService } from '../core/services/backend.service';
 import { RealtimeService } from '../core/services/realtime.service';
 import { AutomationsService } from '../pages/automations/automations.service';
+import { DashboardLayoutService } from '../widgets/layout.service';
 import { DeviceBackendService } from './device-backend.service';
 import { DeviceRealtimeService } from './device-realtime.service';
 import { DeviceAutomationsService } from './device-automations.service';
+import { DeviceLayoutService } from './device-layout.service';
 
 /**
  * The device-mode seam: swap the dashboard's only two network surfaces for the
@@ -13,7 +15,9 @@ import { DeviceAutomationsService } from './device-automations.service';
  * `/local/state` SSE stream, projected through the same explodeSnapshot path the
  * PocketBase feed uses); writes flow through DeviceBackendService (`/local/command`
  * fetch + the baked topology); automations flow through DeviceAutomationsService
- * (`/local/automations` wire blob). Everything downstream — DashboardStore, the
+ * (`/local/automations` wire blob); dashboard layouts persist to localStorage
+ * via DeviceLayoutService (the device has no `dashboard_layouts` collection).
+ * Everything downstream — DashboardStore, the
  * command lifecycle, every widget — is untouched.
  *
  * HashLocationStrategy: the controller serves the app from flash and only knows
@@ -30,4 +34,5 @@ export const deviceProviders: (Provider | EnvironmentProviders)[] = [
   { provide: RealtimeService, useClass: DeviceRealtimeService },
   { provide: BackendService, useClass: DeviceBackendService },
   { provide: AutomationsService, useClass: DeviceAutomationsService },
+  { provide: DashboardLayoutService, useClass: DeviceLayoutService },
 ];

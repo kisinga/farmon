@@ -1,7 +1,6 @@
-import { Component, computed, inject, signal } from '@angular/core';
-import { NgTemplateOutlet } from '@angular/common';
+import { Component, computed, inject, signal, type OnDestroy, type Signal } from '@angular/core';
 import { ActivatedRoute, RouterLink } from '@angular/router';
-import { buildDashboardSpec, createEmptySiteTopology, parseTopology, COMMAND_TTL_S, type CommandAction, type CommandPhase, type DashboardWidget, type ActuatorControl, type RuntimeState } from '@core';
+import { buildDashboardSpec, createEmptySiteTopology, parseTopology, routeLabel, describeState, FAULT_MEANINGS, STOP_REASON_MEANINGS, COMMAND_TTL_S, type CommandAction, type CommandPhase, type DashboardWidget, type ActuatorControl, type RuntimeState } from '@core';
 import { BackendService } from '../../core/services/backend.service';
 import { AuthStore } from '../../core/services/auth.store';
 import { FeatureFlagsService } from '../../core/services/feature-flags.service';
@@ -15,40 +14,60 @@ import { UsageTotalsComponent } from './widgets/usage-totals.component';
 import { SiteControlsComponent } from './widgets/site-controls.component';
 import { ControllerHealthComponent } from './widgets/controller-health.component';
 import { HealthHistoryComponent } from './widgets/health-history.component';
+import { BillingOutstandingComponent } from './widgets/billing-outstanding.component';
+import { MeterValveComponent } from './widgets/meter-valve.component';
 import { LiveMapComponent } from './canvas/live-map.component';
 import { CONTROLLER_PALETTE } from '../../core/util/site-colors';
 import { DEVICE_MODE } from '../../core/tokens/device-mode';
 import type { SiteTopology } from '../../core/models/topology.model';
 import type { RouteControl, StopSpecOverride } from '@core';
-
-/** A widget section as `sections()` produces it. */
-interface DashSection { id: string; label: string; widgets: DashboardWidget[] }
+import { WidgetGridComponent } from '../../widgets/widget-grid.component';
+import { filterByEntitlement, filterForBuild, type WidgetDef } from '../../widgets/registry';
+import { resolveLayout, type LayoutItem } from '../../widgets/layout';
+import { CapabilitiesService, type CapabilitiesState } from '../../widgets/capabilities.service';
+import { DashboardLayoutService } from '../../widgets/layout.service';
+import { WIDGET_DEFS } from './widget-defs';
+import { buildDefaultLayout, WIDGET_ZONE } from './default-layout';
+import { resolveRender, type WidgetRender } from './widgets';
 
 /**
- * Customer dashboard for a site (`/site/:name/dashboard`, where `:name` is the
- * site id). Builds the chart spec in the browser from the saved topology, then
- * renders live widgets from the shadow + transition log, a per-controller
- * command bar, and a manual-control panel. Runtime state group only — it must
- * not import the editor services (WorkspaceService / SystemEditorService).
+ * The site dashboard shell (`/site/:name/dashboard`): the runtime stores
+ * and widget components laid out as a widget grid. The layout is
+ * `resolveLayout(stored, buildDefaultLayout(spec))` — the stored layout (when
+ * one exists) wins on order/width/visibility, the auto-derived default fills
+ * the rest. Edit mode (the Customize toggle, ≥640px only) stages
+ * reorder/resize/hide edits in a draft and saves them as the caller's personal
+ * layout — or the shared site default for owners.
+ *
+ * The presentation is state-driven: an attention banner surfaces faults,
+ * offline controllers and a live safety override above the grid (absent when
+ * the system is calm), and the derived default orders zones Routes → Map →
+ * Status & controls → Usage → System → Trends (default-layout.ts): the daily
+ * reporting questions (consumption, activity) outrank live trend charts,
+ * which are diagnostics — default-hidden like the old dashboard's collapsed
+ * flow section. The map is desktop-only; on phone the node cards
+ * (tanks/valves/pumps) stand in for it, while on desktop they're hidden —
+ * the map already shows their state (the old MAP_ABSORBS rule, now a picker
+ * toggle).
+ *
+ * One shell serves both builds. The device build (served from the controller's
+ * flash) swaps the network surfaces via device.providers.ts (realtime/backend/
+ * automations/layout) and drops the cloud-only widgets through the registry's
+ * `cloudOnly` flag (`filterForBuild`) — history charts, usage totals and
+ * health history have no backing endpoint on the device. Billing/Docs in the
+ * header are cloud-backed too and hide on DEVICE_MODE.
  */
 @Component({
   selector: 'app-dashboard',
   standalone: true,
-  imports: [NgTemplateOutlet, RouterLink, DashboardCardComponent, RouteCardComponent, UsageTotalsComponent, SiteControlsComponent, ControllerHealthComponent, HealthHistoryComponent, LiveMapComponent],
+  imports: [RouterLink, WidgetGridComponent, DashboardCardComponent, RouteCardComponent, UsageTotalsComponent, SiteControlsComponent, ControllerHealthComponent, HealthHistoryComponent, LiveMapComponent, BillingOutstandingComponent, MeterValveComponent],
   providers: [DashboardStore, TelemetryStore, CommandLifecycleStore],
   host: { class: 'flex-1 overflow-auto' },
-  styles: [`
-    /* Flow-grid reveal: compositor-only (opacity + transform) so it costs nothing to
-       paint, replays whenever @if re-inserts the grid. No JS, no layout thrash. */
-    @keyframes dash-reveal { from { opacity: 0; transform: translateY(-6px) } to { opacity: 1; transform: translateY(0) } }
-    .dash-reveal { animation: dash-reveal 420ms cubic-bezier(0.16, 1, 0.3, 1) }
-    @media (prefers-reduced-motion: reduce) { .dash-reveal { animation: none } }
-  `],
   template: `
     <div class="max-w-6xl mx-auto w-full px-4 sm:px-6 py-5 sm:py-6">
       <!-- Top bar: site name + online count on the left; on the right the health
            pill (expands to the full per-controller panel) and the quiet utility
-           actions - Automations, Setup (operator-gated), and Docs. -->
+           actions — Automations, Setup (operator-gated), Billing and Docs. -->
       <div class="flex flex-wrap items-center gap-x-3 gap-y-1.5 mb-5 sm:mb-6">
         <div class="flex items-baseline gap-2 min-w-0 flex-1">
           <h1 class="app-title text-lg sm:text-xl font-bold leading-tight truncate min-w-0">{{ siteName() || 'Dashboard' }}</h1>
@@ -61,14 +80,11 @@ interface DashSection { id: string; label: string; widgets: DashboardWidget[] }
           <span class="badge badge-sm gap-1 shrink-0" [class]="controlEnabled() ? 'badge-warning' : 'badge-info'">{{ controlEnabled() ? 'Controlling' : 'Read-only' }}</span>
         }
         <app-controller-health />
-        <!-- Automations + Setup: quiet icon actions slotted in beside Docs (they
-             render with display:contents, so they sit directly in this flex row).
-             Automations works in device mode too (the device serves its own
-             /local/automations); the Setup section and Docs are cloud-backed
-             (PocketBase collections / doc builder) — hidden in the device build. -->
         @if (siteId) {
           <app-site-controls [siteId]="siteId" [canControl]="canControl()" />
         }
+        <!-- Billing + Docs are cloud-backed (PocketBase collections / doc
+             builder) — hidden in the device build. -->
         @if (!deviceMode) {
           @if (billingEnabled()) {
             <a class="btn btn-sm btn-ghost gap-1.5 shrink-0" [routerLink]="['/site', siteId, 'billing']"
@@ -90,13 +106,28 @@ interface DashSection { id: string; label: string; widgets: DashboardWidget[] }
             <span class="hidden sm:inline">Docs</span>
           </button>
         }
+        <!-- Customize: enters layout edit mode. Per-user layouts are self-service,
+             so any signed-in viewer gets it; hidden below sm — phone is read-only. -->
+        @if (!editing()) {
+          <button class="btn btn-sm btn-ghost gap-1.5 shrink-0 hidden sm:inline-flex" (click)="startCustomize()"
+                  title="Reorder, resize and hide widgets" aria-label="Customize dashboard layout">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
+            </svg>
+            <span class="hidden md:inline">Customize</span>
+          </button>
+        }
         </div>
       </div>
+
+      @if (saveMsg()) { <div class="text-xs text-success mb-3">{{ saveMsg() }}</div> }
 
       @if (store.loading()) {
         <div class="flex items-center justify-center py-24"><span class="loading loading-spinner loading-lg"></span></div>
       } @else if (store.error()) {
         <div class="alert alert-error text-sm">{{ store.error() }}</div>
+      } @else if (loadError()) {
+        <div class="alert alert-error text-sm">{{ loadError() }}</div>
       } @else {
         <!-- Admin-viewing-a-customer-site banner: read-only by default, with an
              explicit Take control. Commands sent after taking control are
@@ -125,286 +156,123 @@ interface DashSection { id: string; label: string; widgets: DashboardWidget[] }
           </div>
         }
 
-        <!-- Routes - the live control surface. Shown to everyone (status reads
-             even in admin read-only); the toggle is disabled, not hidden, when
-             control isn't held. Each card animates water when its route flows
-             and toggles start/stop on click. -->
-        @if (hasRoutes()) {
-          <!-- One controller's actions (Stop all + the more menu), shared by the
-               Routes header (single-controller sites) and each controller's own
-               row (multi-controller) so the two placements can't drift. -->
-          <ng-template #ctrlActions let-cid="cid">
-            <button class="btn btn-xs btn-error btn-outline gap-1" [disabled]="sysBusy(cid,'stop_all')" (click)="sysCmd(cid,'stop_all')">
-              @if (sysBusy(cid,'stop_all')) { <span class="loading loading-spinner loading-xs"></span> }
-              Stop all
-            </button>
-            <details class="dropdown dropdown-end">
-              <summary class="btn btn-xs btn-ghost" title="More controller actions">⋯</summary>
-              <ul class="dropdown-content menu menu-sm z-10 mt-1 w-40 rounded-box bg-base-100 ring-1 ring-base-300/40 shadow-lg p-1">
-                <li><button [disabled]="sysBusy(cid,'reset_faults')" (click)="sysCmd(cid,'reset_faults')">Reset faults</button></li>
-                <li><button [disabled]="sysBusy(cid,'clear_queue')" (click)="sysCmd(cid,'clear_queue')">Clear queue</button></li>
-              </ul>
-            </details>
-          </ng-template>
-
-          <section class="mb-6">
-            <!-- Section header. A single-controller site hosts Stop all / ⋯ right
-                 here - its per-controller row would otherwise be a lone presence dot
-                 and the buttons stranded across an empty strip. Online state already
-                 lives in the page-header pill, so no dot is repeated. Multi-controller
-                 sites keep the dot + name + actions on each controller's row below. -->
-            <div class="flex flex-wrap items-center gap-2 mb-3">
-              <span class="w-1 h-3.5 rounded-full bg-primary/70 shrink-0"></span>
-              <h2 class="section-label">Routes</h2>
-              <span class="grow"></span>
-              @if (monitorCount() > 0 && anyRunnable()) {
-                <button type="button"
-                  class="btn btn-xs btn-ghost gap-1 px-2 text-base-content/50 hover:text-base-content"
-                  [attr.aria-expanded]="showMonitor()"
-                  [attr.aria-label]="(showMonitor() ? 'Hide' : 'Show') + ' monitor-only routes'"
-                  [title]="showMonitor() ? 'Hide monitor-only routes' : ('Show ' + monitorCount() + ' monitor-only route' + (monitorCount() === 1 ? '' : 's') + ' (no actuator to control)')"
-                  (click)="toggleMonitorRoutes()">
-                  @if (showMonitor()) {
-                    <svg class="h-3.5 w-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c6.5 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.5 13.5 0 0 0 2 12s3.5 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/><path d="m2 2 20 20"/></svg>
-                  } @else {
-                    <svg class="h-3.5 w-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
-                  }
-                  <span class="tabular-nums">{{ monitorCount() }}</span>
-                </button>
-              }
-              @if (soloController(); as cid) {
-                @if (canControl()) {
-                  <ng-container [ngTemplateOutlet]="ctrlActions" [ngTemplateOutletContext]="{ cid }" />
-                }
-              }
-            </div>
-            @if (adminViewing() && !controlEnabled()) {
-              <p class="text-[11px] text-base-content/50 -mt-2 mb-3">Viewing read-only — <button type="button" class="link link-primary font-medium" (click)="controlEnabled.set(true)">take control</button> to operate.</p>
-            }
-            <!-- One route card, reused by the controllable grid and the revealed
-                 monitor-only grid (so their binding can't drift). -->
-            <ng-template #routeCard let-r="r" let-cid="cid">
-              <app-route-card
-                [route]="r"
-                [state]="routeState(cid, r.routeId)"
-                [flowRate]="routeFlow(cid, r)"
-                [progress]="routeProgress(cid, r)"
-                [fillMs]="fillMs()"
-                [online]="store.presence(cid).online"
-                [phase]="routePhase(cid, r.routeId)?.phase ?? null"
-                [phaseReason]="routePhase(cid, r.routeId)?.reason ?? ''"
-                [controllable]="canControl()"
-                (action)="routeCmd(cid, $event, r)"
-                (run)="routeRun(cid, $event, r)"
-              />
-            </ng-template>
-            @for (g of routeGroups(); track g.c.controller) {
-              @if (g.runnable.length || (showMonitor() && g.monitor.length)) {
-                <div class="mb-4 last:mb-0">
-                  @if (showController()) {
-                    <div class="flex items-center gap-2 mb-2">
-                      <span class="w-2 h-2 rounded-full shrink-0" [class]="store.presence(g.c.controller).online ? 'bg-success' : 'bg-base-content/30'"
-                        [title]="store.presence(g.c.controller).online ? 'Online' : ('Offline · ' + lastSeenText(g.c.controller))"></span>
-                      <span class="text-xs font-semibold text-base-content/60">{{ g.c.name }}</span>
-                      <span class="grow"></span>
-                      @if (canControl()) {
-                        <ng-container [ngTemplateOutlet]="ctrlActions" [ngTemplateOutletContext]="{ cid: g.c.controller }" />
-                      }
-                    </div>
-                  }
-                  @if (g.runnable.length) {
-                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-                      @for (r of g.runnable; track r.routeId) {
-                        <ng-container [ngTemplateOutlet]="routeCard" [ngTemplateOutletContext]="{ r, cid: g.c.controller }" />
-                      }
-                    </div>
-                  }
-                  @if (showMonitor() && g.monitor.length) {
-                    <div class="flex items-center gap-2 mt-3 mb-2">
-                      <span class="text-[11px] font-medium uppercase tracking-wide text-base-content/40 shrink-0">Monitor only</span>
-                      <span class="grow border-t border-base-300/30"></span>
-                    </div>
-                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-                      @for (r of g.monitor; track r.routeId) {
-                        <ng-container [ngTemplateOutlet]="routeCard" [ngTemplateOutletContext]="{ r, cid: g.c.controller }" />
-                      }
-                    </div>
-                  }
-                </div>
-              }
-            }
-          </section>
-        }
-
-        <!-- System view — directly below the route controls, where the swap it
-             controls actually happens. The Map/Cards toggle sits in this header
-             so it's obvious it governs what's right below (the live map, or the
-             valve/tank cards it stands in for). Map draws the whole topology and
-             lights the running route's path. -->
-        @if (topology()) {
-          <section class="mb-6">
-            <div class="flex items-center gap-2 mb-3">
-              <!-- Map mode is self-titled here; cards mode keeps each sub-section's
-                   own label (Tank levels / Valves) below, so no title here. -->
-              @if (useCanvas()) {
-                <h2 class="section-label">System map</h2>
-              }
-              <span class="grow"></span>
-              <div class="join shrink-0" role="group" aria-label="System view">
-                <button type="button" class="join-item btn btn-sm gap-1.5" [class.btn-active]="useCanvas()"
-                        [attr.aria-pressed]="useCanvas()" (click)="useCanvas.set(true)" title="Live system map">
-                  <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
-                  </svg>
-                  <span>Map</span>
-                </button>
-                <button type="button" class="join-item btn btn-sm gap-1.5" [class.btn-active]="!useCanvas()"
-                        [attr.aria-pressed]="!useCanvas()" (click)="useCanvas.set(false)" title="Status cards">
-                  <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M4 5a1 1 0 011-1h5a1 1 0 011 1v5a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM13 5a1 1 0 011-1h5a1 1 0 011 1v5a1 1 0 01-1 1h-5a1 1 0 01-1-1V5zM4 14a1 1 0 011-1h5a1 1 0 011 1v5a1 1 0 01-1 1H5a1 1 0 01-1-1v-5zM13 14a1 1 0 011-1h5a1 1 0 011 1v5a1 1 0 01-1 1h-5a1 1 0 01-1-1v-5z" />
-                  </svg>
-                  <span>Cards</span>
-                </button>
-              </div>
-            </div>
-            @if (useCanvas()) {
-              <app-live-map [topology]="topology()" [runtime]="store.nodeRuntime()" [activePath]="store.activePath()" />
-            } @else {
-              @for (section of systemSections(); track section.id) {
-                <div class="mb-4 last:mb-0">
-                  <h2 class="section-label mb-3">{{ section.label }}</h2>
-                  <div [class]="gridFor(section.id, section.widgets.length)">
-                  @for (w of section.widgets; track w.id) {
-                    <app-dashboard-card
-                      [widget]="w"
-                      [dense]="denseSection(section.id)"
-                      [controllerLabel]="showController() ? ctrlName(w.controller) : ''"
-                      [controllerColor]="ctrlColor(w.controller)"
-                      [row]="store.rowFor(w)"
-                      [state]="cardState(w)"
-                      [series]="telemetry.seriesFor(w)"
-                      [span]="telemetry.spanFor(w)"
-                      [items]="store.activityFor(w.controller)"
-                      [actuatable]="isActuatable(w)"
-                      [held]="actuatorHeld(w)"
-                      [phase]="actuatorPhase(w)?.phase ?? null"
-                      [phaseReason]="actuatorPhase(w)?.reason ?? ''"
-                      [actuatorKind]="actuatorFor(w)?.kind ?? ''"
-                      [historyLoaded]="telemetry.loadedFor(w)"
-                      (toggle)="toggleWidgetActuator(w)"
-                      (spanChange)="onSpanChange(w, $event)"
-                      (expand)="onExpand(w)"
-                    />
-                  }
-                  </div>
-                </div>
-              }
-            }
-          </section>
+        <!-- Attention: the state-driven "needs your eyes NOW" signals — faults,
+             offline controllers, a live safety override. Absent when calm. -->
+        @for (a of attention(); track a.text) {
+          <div class="alert mb-3 text-sm py-2" role="alert"
+               [class]="a.tone === 'error' ? 'alert-error' : a.tone === 'warning' ? 'alert-warning' : 'alert-info'">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+            </svg>
+            <span class="flex-1">{{ a.text }}</span>
+          </div>
         }
 
         @if (note()) { <div class="text-xs text-base-content/50 mb-3">{{ note() }}</div> }
 
-        <!-- Body: the remaining card sections (flow / pressure / activity). The
-             valve + tank-level sections live in the System view above (as the map,
-             or as cards); only when there's no topology do they fall through here. -->
-        <!-- One card section (header + responsive grid), reused by the live-trends
-             layout and the Activity log in the Reporting zone below. -->
-        <ng-template #cardSection let-section>
-          <section class="mb-6">
-            <!-- Flow trends collapse by default: the Water-usage chart below is the headline
-                 graph; flow rate is on-demand detail. Section order is unchanged — this only
-                 hides the Flow grid behind its header toggle (same idiom as monitor routes). -->
-            @if (section.id === 'flow') {
-              <button type="button"
-                class="flex items-center gap-2 mb-3 w-full text-left group"
-                [attr.aria-expanded]="flowExpanded()"
-                [attr.aria-label]="(flowExpanded() ? 'Hide' : 'Show') + ' flow rate charts'"
-                [title]="flowExpanded() ? 'Hide flow rate charts' : ('Show ' + section.widgets.length + ' flow rate chart' + (section.widgets.length === 1 ? '' : 's'))"
-                (click)="toggleFlowCharts()">
-                <h2 class="section-label">{{ section.label }}</h2>
-                <span class="text-[11px] tabular-nums text-base-content/35">{{ section.widgets.length }}</span>
-                <span class="grow"></span>
-                <svg class="h-4 w-4 shrink-0 text-base-content/40 transition-transform group-hover:text-base-content/70" [class.rotate-180]="flowExpanded()" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+        <!-- Edit mode: toolbar (save / site default / reset / cancel) above the
+             widget picker, which lists every layout item by name — hidden ones
+             included — and toggles visibility. The grid itself does drag-reorder,
+             width cycling and hiding. Edits stage in the draft signal until Save. -->
+        @if (editing()) {
+          <div class="mb-4 rounded-box ring-1 ring-base-300/40 bg-base-200/30 p-3">
+            <div class="flex flex-wrap items-center gap-2 mb-3">
+              <h2 class="section-label">Customize dashboard</h2>
+              <span class="grow"></span>
+              <button class="btn btn-xs btn-primary" [disabled]="saveBusy()" (click)="saveLayout('user')">
+                @if (saveBusy()) { <span class="loading loading-spinner loading-xs"></span> }
+                Save
               </button>
-            } @else {
-              <h2 class="section-label mb-3">{{ section.label }}</h2>
-            }
-            @if (section.id !== 'flow' || flowExpanded()) {
-            <div [class]="gridFor(section.id, section.widgets.length) + (section.id === 'flow' ? ' dash-reveal' : '')">
-              @for (w of section.widgets; track w.id) {
-                <app-dashboard-card
-                  [widget]="w"
-                  [dense]="denseSection(section.id)"
-                  [controllerLabel]="showController() ? ctrlName(w.controller) : ''"
-                  [controllerColor]="ctrlColor(w.controller)"
-                  [row]="store.rowFor(w)"
-                  [state]="cardState(w)"
-                  [series]="telemetry.seriesFor(w)"
-                  [span]="telemetry.spanFor(w)"
-                  [items]="store.activityFor(w.controller)"
-                  [actuatable]="isActuatable(w)"
-                  [held]="actuatorHeld(w)"
-                  [phase]="actuatorPhase(w)?.phase ?? null"
-                  [phaseReason]="actuatorPhase(w)?.reason ?? ''"
-                  [actuatorKind]="actuatorFor(w)?.kind ?? ''"
-                  [historyLoaded]="telemetry.loadedFor(w)"
-                  (toggle)="toggleWidgetActuator(w)"
-                  (spanChange)="onSpanChange(w, $event)"
-                  (expand)="onExpand(w)"
-                />
+              @if (isSiteOwner() && !deviceMode) {
+                <button class="btn btn-xs btn-outline" [disabled]="saveBusy()" (click)="saveLayout('site')"
+                        title="Make this layout the default for everyone on this site">Set as site default</button>
+              }
+              <button class="btn btn-xs btn-ghost" [disabled]="saveBusy()" (click)="resetLayout()"
+                      title="Forget all saved layouts and use the automatic one">Reset to default</button>
+              <button class="btn btn-xs btn-ghost" [disabled]="saveBusy()" (click)="cancelEdit()">Cancel</button>
+            </div>
+            @if (saveError()) { <div class="alert alert-error text-sm mb-3">{{ saveError() }}</div> }
+            <p class="text-xs text-base-content/50 mb-2">Drag widgets to reorder them; use the width and hide buttons on each widget. Select a greyed-out widget below to bring it back.</p>
+            <div class="flex flex-wrap gap-1.5">
+              @for (item of gridItems(); track item.instanceId) {
+                <button type="button" class="btn btn-xs" [class.btn-outline]="!item.hidden" [class.opacity-40]="item.hidden"
+                        [attr.aria-pressed]="!item.hidden"
+                        [title]="(item.hidden ? 'Show' : 'Hide') + ' ' + labelFor(item)"
+                        (click)="toggleHidden(item)">
+                  {{ labelFor(item) }}
+                </button>
               }
             </div>
+          </div>
+        }
+
+        <!-- The widget grid: items render in layout order at their layout width;
+             hidden items are skipped (edit mode manages them via the picker
+             above). The parent template below owns what each instance renders. -->
+        <app-widget-grid [items]="gridItems()" [itemTemplate]="cell" [editing]="editing()" (itemsChange)="onItemsChange($event)" />
+        <ng-template #cell let-item>
+          @if (renderFor(item); as r) {
+            @switch (r.kind) {
+              @case ('map') {
+                <app-live-map [topology]="topology()" [runtime]="store.nodeRuntime()" [activePath]="store.activePath()" />
+              }
+              @case ('route') {
+                <app-route-card
+                  [route]="r.route"
+                  [state]="routeState(r.controller.controller, r.route.routeId)"
+                  [flowRate]="routeFlow(r.controller.controller, r.route)"
+                  [progress]="routeProgress(r.controller.controller, r.route)"
+                  [fillMs]="fillMs()"
+                  [online]="store.presence(r.controller.controller).online"
+                  [phase]="routePhase(r.controller.controller, r.route.routeId)?.phase ?? null"
+                  [phaseReason]="routePhase(r.controller.controller, r.route.routeId)?.reason ?? ''"
+                  [controllable]="canControl()"
+                  (action)="routeCmd(r.controller.controller, $event, r.route)"
+                  (run)="routeRun(r.controller.controller, $event, r.route)"
+                />
+              }
+              @case ('telemetry') {
+                <app-dashboard-card
+                  [widget]="r.widget"
+                  [dense]="denseWidget(r.widget)"
+                  [controllerLabel]="showController() ? ctrlName(r.widget.controller) : ''"
+                  [controllerColor]="ctrlColor(r.widget.controller)"
+                  [row]="store.rowFor(r.widget)"
+                  [state]="cardState(r.widget)"
+                  [series]="telemetry.seriesFor(r.widget)"
+                  [span]="telemetry.spanFor(r.widget)"
+                  [items]="store.activityFor(r.widget.controller)"
+                  [actuatable]="isActuatable(r.widget)"
+                  [held]="actuatorHeld(r.widget)"
+                  [phase]="actuatorPhase(r.widget)?.phase ?? null"
+                  [phaseReason]="actuatorPhase(r.widget)?.reason ?? ''"
+                  [actuatorKind]="actuatorFor(r.widget)?.kind ?? ''"
+                  [historyLoaded]="telemetry.loadedFor(r.widget)"
+                  (toggle)="toggleWidgetActuator(r.widget)"
+                  (spanChange)="onSpanChange(r.widget, $event)"
+                  (expand)="onExpand(r.widget)"
+                />
+              }
+              @case ('usage') {
+                <app-usage-totals [spec]="store.spec()" />
+              }
+              @case ('health') {
+                <app-health-history [siteId]="siteId" />
+              }
+              @case ('billing-outstanding') {
+                <app-billing-outstanding [siteId]="siteId" />
+              }
+              @case ('meter-valve') {
+                <app-meter-valve [siteId]="siteId" />
+              }
             }
-          </section>
-        </ng-template>
-
-        <!-- Live trends (flow / pressure). -->
-        @for (section of layout(); track section.id) {
-          <ng-container [ngTemplateOutlet]="cardSection" [ngTemplateOutletContext]="{ $implicit: section }" />
-        }
-
-        <!-- Reporting zone: usage summary above the activity detail log. The usage
-             summary is cloud-only (the /usage facade has no device endpoint); the
-             activity log renders in both modes — device mode feeds it from the
-             snapshot's on-device event ring. -->
-        @if (hasRoutes() && !deviceMode) {
-          <section class="mb-6">
-            <h2 class="section-label mb-3">Water usage</h2>
-            <app-usage-totals [spec]="store.spec()" />
-          </section>
-        }
-        @for (section of activitySections(); track section.id) {
-          <ng-container [ngTemplateOutlet]="cardSection" [ngTemplateOutletContext]="{ $implicit: section }" />
-        }
-
-        <!-- Device health history — diagnostic, so it sits at the foot of the
-             Reporting zone, collapsed by default (same idiom as the flow charts /
-             monitor routes). WiFi / RAM / temp / uptime read the same telemetry tiers
-             as the trend charts; the panel lazy-loads on first open. Cloud-only:
-             the device keeps no telemetry tiers. -->
-        @if (!deviceMode) {
-        <section class="mb-6">
-          <button type="button"
-            class="flex items-center gap-2 mb-3 w-full text-left group"
-            [attr.aria-expanded]="healthExpanded()"
-            [attr.aria-label]="(healthExpanded() ? 'Hide' : 'Show') + ' device health history'"
-            [title]="healthExpanded() ? 'Hide device health history' : 'Show WiFi, RAM, temperature and uptime over time'"
-            (click)="toggleHealth()">
-            <h2 class="section-label">Device health</h2>
-            <span class="grow"></span>
-            <svg class="h-4 w-4 shrink-0 text-base-content/40 transition-transform group-hover:text-base-content/70" [class.rotate-180]="healthExpanded()" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
-          </button>
-          @if (healthExpanded()) {
-            <app-health-history class="dash-reveal" [siteId]="siteId" />
           }
-        </section>
-        }
+        </ng-template>
       }
     </div>
   `,
 })
-export class DashboardComponent {
+export class DashboardComponent implements OnDestroy {
   private route = inject(ActivatedRoute);
   private backend = inject(BackendService);
   private auth = inject(AuthStore);
@@ -412,16 +280,18 @@ export class DashboardComponent {
   protected store = inject(DashboardStore);
   protected telemetry = inject(TelemetryStore);
   protected lifecycle = inject(CommandLifecycleStore);
+  private capabilitiesService = inject(CapabilitiesService);
+  private layouts = inject(DashboardLayoutService);
 
   /** Device-mode build (served from the controller's flash): the cloud-only
-   *  surfaces — history charts, water usage, health history, setup, docs — are
-   *  hidden; automations (the device serves its own /local/automations), routes,
-   *  tank levels, the live map, command tracking and the Activity feed (the
-   *  snapshot's on-device event ring) stay. */
+   *  surfaces — history charts, water usage, health history, billing, docs,
+   *  the site-default layout — are hidden; the registry's `cloudOnly` filter
+   *  drops the chart/usage/health widgets. Routes, tank levels, valves/pumps,
+   *  the live map, command tracking and the Activity feed (the snapshot's
+   *  on-device event ring) stay. */
   protected deviceMode = inject(DEVICE_MODE);
 
-  /** Tenant-billing header link: feature-flag gated (the per-site capability is
-   *  only known once the billing page itself loads and probes it). */
+  /** Tenant-billing header link: feature-flag gated (same as the old dashboard). */
   protected billingEnabled = computed(() => this.flags.isEnabled('billing_module'));
 
   protected siteId = '';
@@ -436,41 +306,194 @@ export class DashboardComponent {
     const secs = (this.topology() as { timing?: { update_interval?: number } } | null)?.timing?.update_interval;
     return (secs && secs > 0 ? secs : 10) * 1000;
   });
-  /** Live SCADA map vs. the card grid, toggled in the System view header. Defaults
-   *  to the map on tablet/desktop but to cards on mobile (the map's pan/zoom is
-   *  awkward on a small touch screen); `<640px` is Tailwind's `sm` breakpoint.
-   *  `typeof window` guards SSR — the server has no viewport, so it renders cards. */
-  protected useCanvas = signal(typeof window !== 'undefined' && window.matchMedia('(min-width: 640px)').matches);
 
-  /** Card sections the system map stands in for when the canvas is on. The map
-   *  draws the whole topology, so it replaces both the actuator controls and the
-   *  tank-level cards — those nodes (and their live level) render on the map. */
-  private static readonly MAP_ABSORBS = new Set(['valves', 'levels']);
+  // --- Layout (registry + capabilities + stored layout) ---------------------
 
-  /** The sections shown inside the System view's cards mode (valves + tank levels)
-   *  — the card alternative to the live map. The map stands in for exactly these. */
-  protected systemSections = computed<DashSection[]>(() =>
-    this.sections().filter((section) => DashboardComponent.MAP_ABSORBS.has(section.id)));
+  /** The site's capability state; empty until loaded and on failure, so
+   *  entitled widgets fail CLOSED (hidden) rather than flashing in. */
+  private capState: Signal<CapabilitiesState> = signal<CapabilitiesState>('loading');
+  /** The registry filtered to what this site is entitled to and what this build
+   *  serves (cloud-only widgets drop out on the device build). */
+  private entitledDefs = computed<WidgetDef[]>(() => {
+    const s = this.capState();
+    return filterForBuild(filterByEntitlement(WIDGET_DEFS, Array.isArray(s) ? s : []), this.deviceMode);
+  });
+  /** The stored layout (cache first for instant paint, then the PB row). */
+  private storedLayout = signal<LayoutItem[] | null>(null);
 
-  /** The live-trend body sections (flow, pressure). The map-absorbed sections render
-   *  in the System view above; `activity` moves down into the Reporting zone with the
-   *  usage totals (it's a look-back log, not a live trend). Without a topology there's
-   *  no System view, so the absorbed sections fall through here (activity still does not). */
-  protected layout = computed<DashSection[]>(() => {
-    // Device mode renders no history charts (flow/pressure read the telemetry
-    // tiers, which don't exist on the device) — echarts never loads.
-    if (this.deviceMode) return [];
-    const secs = this.sections().filter((s) => s.id !== 'activity');
-    if (!this.topology()) return secs;
-    return secs.filter((section) => !DashboardComponent.MAP_ABSORBS.has(section.id));
+  /** Phone form factor (<640px), read once like the old dashboard's cards-on-
+   *  mobile default (SSR defaults to mobile): the map starts hidden there —
+   *  the cards are the phone's monitoring surface. */
+  private readonly mobile = signal(
+    typeof window === 'undefined' ? true : window.matchMedia('(max-width: 639.98px)').matches,
+  );
+
+  /** The effective layout AND the per-instance render instruction, resolved in
+   *  ONE pass: the stored layout wins where it has entries, the auto-derived
+   *  default fills the rest; entitlement-filtered defs drop out; and an
+   *  instance whose subject vanished (`resolveRender` → null, e.g. a stored
+   *  entry for a since-removed route) drops OUT of the layout instead of
+   *  occupying a dead grid cell (invisible slot in view mode, ghost chrome in
+   *  edit mode). Zone labels are re-derived from the widget id at render
+   *  time — a function of the widget, never stored state. */
+  private resolved = computed(() => {
+    const defs = this.entitledDefs();
+    const allowed = new Set(defs.map((d) => d.id));
+    const spec = this.store.spec();
+    const derived = buildDefaultLayout(spec, defs, { mobile: this.mobile() });
+    const items: LayoutItem[] = [];
+    const renders = new Map<string, WidgetRender>();
+    for (const i of resolveLayout(this.storedLayout(), derived)) {
+      if (!allowed.has(i.widgetId)) continue;
+      const r = resolveRender(i, spec, defs);
+      if (!r) continue;
+      const item = { ...i, section: WIDGET_ZONE[i.widgetId] };
+      items.push(item);
+      renders.set(item.instanceId, r);
+    }
+    return { items, renders };
+  });
+  protected layout = computed<LayoutItem[]>(() => this.resolved().items);
+
+  // --- Attention (state-driven, above everything) ---------------------------
+
+  /** What needs the operator's eyes RIGHT NOW: faults, offline controllers,
+   *  a live safety override. Empty when the system is calm — no chrome begging
+   *  for attention when nothing is wrong. Rendered above the grid. */
+  protected attention = computed<{ tone: 'error' | 'warning' | 'info'; text: string }[]>(() => {
+    const out: { tone: 'error' | 'warning' | 'info'; text: string }[] = [];
+    for (const c of this.store.spec().controllers) {
+      if (!this.store.presence(c.controller).online) {
+        out.push({ tone: 'info', text: `${c.name} is offline — controls are disabled; showing the last known state.` });
+      }
+      if (this.store.overrideOn(c.controller)) {
+        out.push({ tone: 'warning', text: `Safety override is ON on ${c.name} — level gates and watchdogs are bypassed. Turn it off in Setup when you're done.` });
+      }
+      for (const r of c.routes) {
+        const st = this.store.routeState(c.controller, r.routeId);
+        if (st?.token === 'FAULT') {
+          const reason = st.reason ? describeState({ ...FAULT_MEANINGS, ...STOP_REASON_MEANINGS }, st.reason).label : '';
+          out.push({ tone: 'error', text: `Fault on ${routeLabel(r, r.routeId)}${reason ? ` — ${reason}` : ''}. Reset it from the route card.` });
+        }
+      }
+    }
+    return out;
   });
 
-  /** The activity log section(s), rendered at the bottom of the Reporting zone
-   *  (below the usage totals: summary above detail). Renders in device mode too —
-   *  the cloud merges its audit collections, the device feeds the same row UI
-   *  from the snapshot's on-device event ring (DashboardStore.activityFor). */
-  protected activitySections = computed<DashSection[]>(() =>
-    this.sections().filter((s) => s.id === 'activity'));
+  /** instanceId → render instruction, from the same pass that built the layout
+   *  (dead instances are already excluded, so a miss renders nothing). */
+  private renderMap = computed(() => this.resolved().renders);
+  protected renderFor(item: LayoutItem): WidgetRender | null {
+    return this.renderMap().get(item.instanceId) ?? null;
+  }
+
+  // --- Edit mode (layout customization) -------------------------------------
+
+  /** Edit mode on/off. Edits stage in {@link draft} until Save. */
+  protected editing = signal(false);
+  /** The in-progress layout while editing; null outside edit mode. */
+  protected draft = signal<LayoutItem[] | null>(null);
+  /** What the grid renders: the draft while editing, else the resolved layout. */
+  protected gridItems = computed<LayoutItem[]>(() => this.draft() ?? this.layout());
+  /** Site co-owner ids from the site record — gates "Set as site default"
+   *  (the collection rules enforce it server-side too). */
+  private siteOwners = signal<string[]>([]);
+  protected isSiteOwner = computed(() => {
+    const me = this.auth.user()?.id;
+    return !!me && this.siteOwners().includes(me);
+  });
+  protected saveBusy = signal(false);
+  /** Brief inline confirmation after a save/reset; auto-clears. */
+  protected saveMsg = signal<string | null>(null);
+  /** Save/reset failure — edits are kept, shown inside the edit panel. */
+  protected saveError = signal<string | null>(null);
+  private saveMsgTimer = 0;
+
+  protected startCustomize(): void {
+    this.draft.set(this.layout());
+    this.saveError.set(null);
+    this.editing.set(true);
+  }
+
+  protected cancelEdit(): void {
+    this.draft.set(null);
+    this.saveError.set(null);
+    this.editing.set(false);
+  }
+
+  protected onItemsChange(items: LayoutItem[]): void {
+    this.draft.set(items);
+  }
+
+  /** The picker's show/hide toggle for one widget. */
+  protected toggleHidden(item: LayoutItem): void {
+    const d = this.draft();
+    if (!d) return;
+    this.draft.set(d.map((i) => (i.instanceId === item.instanceId ? { ...i, hidden: !i.hidden } : i)));
+  }
+
+  /** A widget's human label in the picker (its card/route title, else the def's). */
+  protected labelFor(item: LayoutItem): string {
+    const r = this.renderFor(item);
+    if (!r) return item.instanceId;
+    switch (r.kind) {
+      case 'telemetry': return r.widget.title;
+      case 'route': return routeLabel(r.route, r.route.routeId);
+      default: return r.def.title;
+    }
+  }
+
+  /** Save the draft — 'user' = the caller's personal layout (self-service);
+   *  'site' = the shared site default (owners only, UI- and server-side). On
+   *  error the draft is kept so no edit is lost. */
+  protected async saveLayout(scope: 'user' | 'site'): Promise<void> {
+    const d = this.draft();
+    if (!d || this.saveBusy()) return;
+    this.gen++; // a layout load started earlier must not overwrite what we save
+    this.saveBusy.set(true);
+    this.saveError.set(null);
+    try {
+      await this.layouts.save(this.siteId, d, scope);
+      this.storedLayout.set(d);
+      this.draft.set(null);
+      this.editing.set(false);
+      this.flash(scope === 'site' ? 'Saved as the site default layout.' : 'Layout saved.');
+    } catch (e) {
+      this.saveError.set(`Could not save — your edits are still here. ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      this.saveBusy.set(false);
+    }
+  }
+
+  /** Forget all saved layouts (the caller's, plus the site default for owners)
+   *  and fall back to the auto-derived one. */
+  protected async resetLayout(): Promise<void> {
+    if (this.saveBusy()) return;
+    this.gen++; // a layout load started earlier must not overwrite the reset
+    this.saveBusy.set(true);
+    this.saveError.set(null);
+    try {
+      await this.layouts.reset(this.siteId, this.isSiteOwner());
+      // Re-resolve what remains (a site default may still apply for non-owners).
+      const gen = this.gen;
+      const fresh = await this.layouts.load(this.siteId);
+      if (gen !== this.gen) return; // the site switched mid-reset
+      this.storedLayout.set(fresh);
+      this.draft.set(null);
+      this.editing.set(false);
+      this.flash('Reset to the automatic layout.');
+    } catch (e) {
+      this.saveError.set(`Could not reset — ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      this.saveBusy.set(false);
+    }
+  }
+
+  private flash(msg: string): void {
+    this.saveMsg.set(msg);
+    clearTimeout(this.saveMsgTimer);
+    this.saveMsgTimer = setTimeout(() => this.saveMsg.set(null), 4000) as unknown as number;
+  }
 
   /** Building/opening the site documentation. */
   protected docBusy = signal(false);
@@ -516,13 +539,6 @@ export class DashboardComponent {
 
   /** Only label widgets by controller when the site actually has more than one. */
   protected showController = computed(() => this.store.spec().controllers.length > 1);
-  /** The id of the only controller when a site has exactly one (else null). Lets the
-   *  Routes header host that controller's Stop all / ⋯ instead of leaving a lone
-   *  presence dot stranded in an otherwise-empty per-controller row. */
-  protected soloController = computed(() => {
-    const cs = this.store.spec().controllers;
-    return cs.length === 1 ? cs[0].controller : null;
-  });
   protected ctrlName(id: string): string { return this.ctrlMeta().get(id)?.name ?? id; }
   protected ctrlColor(id: string): string { return this.ctrlMeta().get(id)?.color ?? '#94a3b8'; }
 
@@ -532,115 +548,7 @@ export class DashboardComponent {
   );
   protected totalControllers = computed(() => this.store.spec().controllers.length);
 
-  protected lastSeenText(controller: string): string {
-    const seen = this.store.presence(controller).lastSeen;
-    return seen ? this.ago(seen) : 'never seen';
-  }
-
-  private ago(ts: number): string {
-    const s = Math.max(0, Math.round((this.store.now() - ts) / 1000));
-    if (s < 60) return 'just now';
-    const m = Math.round(s / 60);
-    if (m < 60) return `${m}m ago`;
-    return `${Math.round(m / 60)}h ago`;
-  }
-
-  /** Section a widget belongs to — drives the grouped layout below. Valves and
-   *  pumps are the manual controls, so they share one section (kept out of the
-   *  read-only status strip); structural `actuatorFor` (not online/control)
-   *  decides, so cards don't jump sections when a device drops offline. */
-  private category(w: DashboardWidget): 'status' | 'levels' | 'valves' | 'flow' | 'pressure' | 'activity' {
-    if (w.kind === 'timeline') return 'activity';
-    if (w.kind === 'valve' || this.actuatorFor(w)) return 'valves'; // valves + pumps = controls
-    switch (w.kind) {
-      case 'tank':     return 'levels';
-      case 'flow':     return 'flow';
-      case 'line':     return 'pressure'; // remaining line charts are pressure/filter (psi)
-      case 'stat':     return w.unit === 'L' ? 'flow' : 'status'; // stray flow totals vs queue depth
-      default:         return 'status'; // badges: system state, last stop, override
-    }
-  }
-
-  /** Widgets grouped into ordered, labelled sections (empty sections dropped). */
-  protected sections = computed(() => {
-    // 'status' (system / last stop / queue / safety override) is relocated to the
-    // header bar + its per-controller panel, so it is intentionally not a section.
-    const labels: Record<string, string> = {
-      levels: 'Tank levels', valves: 'Valves',
-      flow: 'Flow rate history', pressure: 'Pressure', activity: 'Activity',
-    };
-    const order = ['levels', 'valves', 'flow', 'pressure', 'activity'] as const;
-    const byCat = new Map<string, DashboardWidget[]>();
-    for (const w of this.store.spec().widgets) {
-      const cat = this.category(w);
-      const arr = byCat.get(cat) ?? [];
-      arr.push(w);
-      byCat.set(cat, arr);
-    }
-    return order.filter((c) => byCat.has(c)).map((c) => {
-      const widgets = byCat.get(c)!;
-      let label = labels[c];
-      if (c === 'valves') {
-        const hasValve = widgets.some((w) => w.kind === 'valve');
-        const hasPump = widgets.some((w) => w.kind !== 'valve'); // pumps grouped here
-        label = hasValve && hasPump ? 'Valves & pumps' : hasPump ? 'Pumps' : 'Valves';
-      }
-      return { id: c, label, widgets };
-    });
-  });
-
-  // --- Routes (the live control surface) -----------------------------------
-  protected hasRoutes = computed(() => this.store.spec().controllers.some((c) => c.routes.length > 0));
-
-  /** Operator's choice to reveal monitor-only (non-controllable) routes. Collapsed by
-   *  default, remembered per site; only surfaced when such routes exist. */
-  protected showMonitorRoutes = signal(false);
-  private monitorKey(): string { return `mf:routes:monitor:${this.siteId}`; }
-  protected toggleMonitorRoutes(): void {
-    const v = !this.showMonitorRoutes();
-    this.showMonitorRoutes.set(v);
-    try { localStorage.setItem(this.monitorKey(), v ? '1' : '0'); } catch { /* private mode */ }
-  }
-
-  /** Flow-rate trend charts collapse by default — the Water-usage chart is the headline
-   *  graph, flow rate is on-demand detail. Remembered per site; section order unchanged. */
-  protected flowExpanded = signal(false);
-  private flowKey(): string { return `mf:trends:flow:${this.siteId}`; }
-  protected toggleFlowCharts(): void {
-    const v = !this.flowExpanded();
-    this.flowExpanded.set(v);
-    try { localStorage.setItem(this.flowKey(), v ? '1' : '0'); } catch { /* private mode */ }
-  }
-
-  /** Device-health history collapses by default — it's diagnostic, not the headline.
-   *  Remembered per site; lazy-loads its series only once opened. */
-  protected healthExpanded = signal(false);
-  private healthKey(): string { return `mf:health:history:${this.siteId}`; }
-  protected toggleHealth(): void {
-    const v = !this.healthExpanded();
-    this.healthExpanded.set(v);
-    try { localStorage.setItem(this.healthKey(), v ? '1' : '0'); } catch { /* private mode */ }
-  }
-  /** Monitor-only = no actuator to control (a flow meter and/or level, but no valve or
-   *  pump). Missing caps (non-spec literals) default to controllable, so nothing hides
-   *  by accident. */
-  private isMonitorOnly(r: RouteControl): boolean { return r.caps !== undefined && !r.caps.runnable; }
-  /** Each controller's routes split into controllable + monitor-only, once per spec
-   *  change (the template reads these instead of re-filtering every change detection). */
-  protected routeGroups = computed(() =>
-    this.store.spec().controllers.map((c) => ({
-      c,
-      runnable: c.routes.filter((r) => !this.isMonitorOnly(r)),
-      monitor: c.routes.filter((r) => this.isMonitorOnly(r)),
-    })));
-  /** Total monitor-only routes across controllers — drives the header toggle + its badge. */
-  protected monitorCount = computed(() => this.routeGroups().reduce((n, g) => n + g.monitor.length, 0));
-  /** Whether any controllable route exists. If none, monitor-only routes show
-   *  unconditionally (hiding them all would leave an empty Routes section). */
-  protected anyRunnable = computed(() => this.routeGroups().some((g) => g.runnable.length > 0));
-  /** Effective reveal state: the operator's toggle, or forced on when there's nothing else. */
-  protected showMonitor = computed(() => this.showMonitorRoutes() || !this.anyRunnable());
-
+  // --- Routes (the live control surface) ------------------------------------
   /** A route's live state for its card (token + reason + origin; empty when never seen). */
   protected routeState(controller: string, routeId: number): { token: string; reason: string; origin?: string; initiator?: { label: string; support: boolean; title: string } } {
     const s = this.store.routeState(controller, routeId);
@@ -679,25 +587,9 @@ export class DashboardComponent {
     return this.lifecycle.phaseFor(this.routeKey(controller, routeId));
   }
 
-  // --- Widget section layout -----------------------------------------------
-  /** Valves render as a dense glyph grid; everything else as full cards. */
-  protected denseSection(id: string): boolean { return id === 'valves'; }
-  protected gridFor(id: string, count = 0): string {
-    if (id === 'valves') return 'grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2';
-    // Activity is a single full-width log per controller — span the section like
-    // every other one (label left, timestamp right) so its width matches the page.
-    if (id === 'activity') return 'grid grid-cols-1 gap-3';
-    // Pick the column count to the widget count so a sparse section fills its
-    // row instead of leaving empty columns (1 → capped, 2 → halves, 3+ → thirds).
-    if (count === 1) return 'grid grid-cols-1 gap-3 max-w-md';
-    if (count === 2) return 'grid grid-cols-1 sm:grid-cols-2 gap-3';
-    return 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3';
-  }
-
   // --- Inline actuator control --------------------------------------------
   // A valve/pump widget reads the same sensor its actuator reports on, so the
   // status card *is* the control: click to hold open / run (claim) or release.
-  // This replaces the separate manual-control button cluster.
   /** `${controller}/${reportedSensor}` → the actuator it drives. */
   private actuatorMap = computed(() => {
     const m = new Map<string, ActuatorControl>();
@@ -714,9 +606,7 @@ export class DashboardComponent {
     const a = this.actuatorFor(w);
     return a ? this.store.nodeRuntime().get(a.id)?.state ?? null : null;
   }
-  /** Toggleable now: an actuator exists, control is held, and the device is online.
-   *  (Manual holds are a normal control under "take control" — NOT gated by operator
-   *  mode; only calibration + safety override live behind that.) */
+  /** Toggleable now: an actuator exists, control is held, and the device is online. */
   protected isActuatable(w: DashboardWidget): boolean {
     return this.canControl() && !!this.actuatorFor(w) && this.store.presence(w.controller).online;
   }
@@ -736,34 +626,103 @@ export class DashboardComponent {
     const a = this.actuatorFor(w);
     if (a && this.canControl()) void this.lifecycle.toggleClaim(this.nodeKey(w.controller, a.id), w.controller, a);
   }
-
-  constructor() {
-    this.siteId = this.route.snapshot.paramMap.get('name') ?? '';
-    if (this.siteId) {
-      try { this.showMonitorRoutes.set(localStorage.getItem(this.monitorKey()) === '1'); } catch { /* private mode */ }
-      try { this.flowExpanded.set(localStorage.getItem(this.flowKey()) === '1'); } catch { /* private mode */ }
-      try { this.healthExpanded.set(localStorage.getItem(this.healthKey()) === '1'); } catch { /* private mode */ }
-      void this.load();
-    }
+  /** Valve/pump control cards render dense (the glyph grid look); charts full. */
+  protected denseWidget(w: DashboardWidget): boolean {
+    return w.kind === 'valve' || !!this.actuatorFor(w);
   }
 
-  private async load(): Promise<void> {
-    const { site, topology } = await this.backend.siteLoad(this.siteId);
-    this.siteName.set(site.friendlyName);
-    // Admin/partner looking at a site they're not a co-owner of → start read-only.
-    const me = this.auth.user()?.id;
-    this.adminViewing.set(this.auth.isManager() && !(!!me && (site.owners?.includes(me) ?? false)));
-    const topo = topology ? parseTopology(topology) : createEmptySiteTopology();
-    this.topology.set(topo);
-    const spec = buildDashboardSpec(topo);
-    await this.store.init(this.siteId, spec, { update_interval: topo.timing.update_interval }, site.owners ?? [], site.people ?? []);
-    // Backfill history for the charted widgets (line + flow rate). Each uses its
-    // own remembered span (telemetry.load defaults to the widget's stored span).
-    // Device mode has no history endpoint — nothing to backfill.
-    if (!this.deviceMode) {
-      for (const w of spec.widgets) {
-        if (w.kind === 'line' || w.kind === 'flow') void this.telemetry.load(this.siteId, w);
+  /**
+   * Boot generation: a monotonically increasing counter bumped on every site
+   * switch AND on every layout save/reset. Every async resolution (the layout
+   * load, the site load) applies its result only when the generation it
+   * started under is still current — a late resolution can never overwrite a
+   * newer save or land on the wrong site.
+   */
+  private gen = 0;
+
+  /** siteLoad failure — rendered where the store's own error shows. */
+  protected loadError = signal<string | null>(null);
+
+  private paramSub: { unsubscribe(): void } | null = null;
+
+  constructor() {
+    // Route REUSE: navigating /site/A/dashboard → /site/B/dashboard keeps this
+    // component alive, so the site id comes from the param observable, and
+    // every change re-boots the whole page — stores included — for the new site.
+    this.paramSub = this.route.paramMap.subscribe((params) => this.boot(params.get('name') ?? ''));
+  }
+
+  ngOnDestroy(): void {
+    this.paramSub?.unsubscribe();
+    clearTimeout(this.saveMsgTimer);
+  }
+
+  /**
+   * (Re)boot the dashboard for a site: tear down the previous site's state —
+   * the component-provided stores (their ngOnDestroy does NOT fire on route
+   * reuse), any unsaved layout draft, every per-site signal — then run the
+   * load sequence for the new site. Runs on construction and on every
+   * /site/:name change.
+   */
+  private boot(siteId: string): void {
+    this.gen++; // invalidate every in-flight async resolution from the old site
+    this.store.reset();
+    this.telemetry.reset();
+    this.lifecycle.switchSite(siteId);
+    this.siteId = siteId;
+    this.siteName.set('');
+    this.note.set(null);
+    this.topology.set(null);
+    this.loadError.set(null);
+    this.adminViewing.set(false);
+    this.controlEnabled.set(false);
+    this.siteOwners.set([]);
+    this.runStartLevel.clear();
+    this.cancelEdit(); // drop any unsaved layout draft (and its save error)
+    this.saveMsg.set(null);
+    clearTimeout(this.saveMsgTimer);
+    this.storedLayout.set(null);
+    if (!siteId) return;
+    this.capState = this.capabilitiesService.capabilities(siteId);
+    // Cache first for instant paint, then the PB row replaces it (or clears
+    // it — a layout deleted elsewhere must not resurrect from the cache).
+    this.storedLayout.set(this.layouts.cached(siteId));
+    const gen = this.gen;
+    void this.layouts.load(siteId).then((l) => {
+      if (gen === this.gen) this.storedLayout.set(l);
+    });
+    void this.load(gen);
+  }
+
+  private async load(gen: number): Promise<void> {
+    try {
+      const { site, topology } = await this.backend.siteLoad(this.siteId);
+      if (gen !== this.gen) return; // a newer boot superseded this load
+      this.siteName.set(site.friendlyName);
+      // Admin/partner looking at a site they're not a co-owner of → start read-only.
+      const me = this.auth.user()?.id;
+      this.adminViewing.set(this.auth.isManager() && !(!!me && (site.owners?.includes(me) ?? false)));
+      this.siteOwners.set(site.owners ?? []);
+      const topo = topology ? parseTopology(topology) : createEmptySiteTopology();
+      this.topology.set(topo);
+      const spec = buildDashboardSpec(topo);
+      await this.store.init(this.siteId, spec, { update_interval: topo.timing.update_interval }, site.owners ?? [], site.people ?? []);
+      if (gen !== this.gen) return;
+      // Backfill history for the charted widgets (line + flow rate). Each uses its
+      // own remembered span (telemetry.load defaults to the widget's stored span).
+      // Device mode has no history endpoint — nothing to backfill.
+      if (!this.deviceMode) {
+        for (const w of spec.widgets) {
+          if (w.kind === 'line' || w.kind === 'flow') void this.telemetry.load(this.siteId, w);
+        }
       }
+    } catch (e) {
+      if (gen !== this.gen) return; // the newer boot owns the error surface now
+      // Without this the spinner would stay up forever: store.init (which owns
+      // the loading flag) either never ran or already cleared it on its own
+      // failure path — clearing again is harmless.
+      this.store.loading.set(false);
+      this.loadError.set(e instanceof Error ? e.message : String(e));
     }
   }
 
@@ -780,13 +739,6 @@ export class DashboardComponent {
 
   // --- Command dispatch — every control routes through the lifecycle store, which
   //     tracks the command by command_id and exposes the phase the cards render. --
-
-  private sysKey(controller: string, action: CommandAction): string {
-    return `${controller}/sys/${action}`;
-  }
-  protected sysBusy(controller: string, action: CommandAction): boolean {
-    return this.lifecycle.isBusy(this.sysKey(controller, action));
-  }
 
   /** Warn (only) when the target reads offline — the per-control phase is the
    *  primary feedback; this keeps the "expires in ~Nm" copy for a dark device. */
@@ -813,13 +765,6 @@ export class DashboardComponent {
     if (!this.canControl()) return;
     if (route.caps && !route.caps.runnable) return; // no actuator: not runnable
     await this.lifecycle.dispatch(this.routeKey(controller, route.routeId), controller, 'route_start', { route, stopSpec });
-    this.offlineNote(controller);
-  }
-
-  /** Fan-out / system command (stop_all, reset_faults, clear_queue). */
-  protected async sysCmd(controller: string, action: CommandAction): Promise<void> {
-    if (!this.canControl()) return;
-    await this.lifecycle.dispatch(this.sysKey(controller, action), controller, action);
     this.offlineNote(controller);
   }
 }

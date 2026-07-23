@@ -102,6 +102,8 @@ func New(cfg config.Config) *pocketbase.PocketBase {
 
 		api.Register(se, cfg, broker.Server)
 		api.RegisterBilling(se, cfg)
+		api.RegisterCapabilities(se)
+		api.RegisterPartner(se)
 
 		// Republish a controller's retained automation set on any change to the
 		// automations collection (DB is source of truth; device is a mirror).

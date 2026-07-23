@@ -438,6 +438,44 @@ export class BackendService {
     }
   }
 
+  // --- Controller config (runtime tunables / calibration) -----------------
+
+  /**
+   * Write desired tunables / calibration to the server-owned config. This is the
+   * cloud half of the SINGLE config write path (the device build overrides it with
+   * per-key `config_set` commands over /local/command): upsert the controller's
+   * `desired` key→value bag into the `controller_config` collection, and a server
+   * Register hook recomputes the canonical payload + sha256 `version` and
+   * republishes the retained /config message (the device applies it and round-trips
+   * the version back as the snapshot `config_version`). The client never hashes and
+   * never sends a per-key command — convergence is the server's desired-vs-applied
+   * reconcile, and the shadow heals the displayed value once the device re-publishes
+   * the applied numbers. One row per controller, joined on the `controller` text id
+   * (unique index); `desired` is the only field a client writes. The caller passes
+   * the site id for the first-write create (a designed-but-never-provisioned
+   * controller has no `controllers` registry row to read it from — that lookup
+   * used to 404 the first write).
+   */
+  async writeControllerConfig(siteId: string, controller: string, patch: Record<string, number>): Promise<void> {
+    if (Object.keys(patch).length === 0) return;
+    const existing = await this.pb
+      .collection('controller_config')
+      .getFirstListItem(this.pb.filter('controller = {:c}', { c: controller }))
+      .catch(() => null);
+    if (existing) {
+      const desired = { ...(existing['desired'] as Record<string, number> | null ?? {}), ...patch };
+      await this.pb.collection('controller_config').update(existing.id, { desired });
+    } else {
+      // First-ever write for this controller: the new row needs its `site` for
+      // the collection rules — the caller has it (the route param).
+      await this.pb.collection('controller_config').create({
+        site: siteId,
+        controller,
+        desired: patch,
+      });
+    }
+  }
+
   // --- Boards (DB catalog) ------------------------------------------------
   //
   // The `boards` collection is the source of truth. Records are keyed by

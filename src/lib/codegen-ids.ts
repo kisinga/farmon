@@ -285,7 +285,8 @@ export type CommandAction =
   | 'reset_faults'     // (no args)
   | 'clear_queue'      // (no args)
   | 'node_set'         // { node_id, on } — manual claim/release of any actuator
-  | 'safety_override'; // { on } — toggle the commissioning bypass switch (see note)
+  | 'safety_override'  // { on } — toggle the commissioning bypass switch (see note)
+  | 'config_set';      // { key, value } — LOCAL-LANE-ONLY runtime tunable write (see note)
 
 /**
  * Commands older than this many seconds (now - issued_at, by the device's SNTP
@@ -323,10 +324,18 @@ export type CommandEnvelope = { command_id: string; issued_at: number; actor?: s
   // and lets a pump run without an owning route. Enabling it is dangerous — gate
   // behind a hard confirm. Reverts to OFF on device reboot.
   | { action: 'safety_override'; on: boolean }
-  // Runtime tunables / calibration are NOT set by an operator command anymore: the
-  // dashboard writes the desired config to the DB, the server recomputes the retained
-  // /config message (configTopic), and the device applies each number entity from it.
-  // The old one-shot `config_set` command is gone (no back-compat).
+  // config_set: LOCAL-LANE-ONLY runtime tunable write ({ key, value } — one tunable
+  // kv key per command). Accepted ONLY on the on-device dashboard's /local/command
+  // endpoint (unauthenticated LAN, operator standing at the panel); the MQTT lane
+  // rejects it — remote config stays server-mediated via the retained /config
+  // message (config_set was retired from MQTT in migration 37 and stays retired
+  // there). The device validates key against the generated tunable allow-list,
+  // clamps value to the number's min/max, applies it, and persists it
+  // (restore_value) — the local tier is complete on its own. The cloud stays
+  // authoritative when connected: the next cloud connect or config push re-applies
+  // the server's desired /config over a locally-changed value. config_version is
+  // untouched (it is the server hash; drift reconcile is a server concern).
+  | { action: 'config_set'; key: string; value: number }
   // firmware_update: pull-OTA. NOT an operator /command action — it is published
   // only by the server's /firmware/deploy endpoint, so it is absent from the generic
   // commandActions allow-list. The device fetches the image at `url` and flashes it

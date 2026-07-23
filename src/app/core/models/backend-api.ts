@@ -32,6 +32,8 @@ export interface SiteCatalogItem {
   tankLowPct: number;
   tankHighPct: number;
   offlineTimeoutS: number;
+  /** Last server-side change (autodate) — the partner home's "last activity". */
+  updated: string;
 }
 
 // --- Devices (registered controllers) + global config ---

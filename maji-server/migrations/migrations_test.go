@@ -96,6 +96,27 @@ func TestMigrationsApplyCleanly(t *testing.T) {
 			t.Errorf("notification_incidents.%s should exist (migration 41)", f)
 		}
 	}
+	// Partner read of incidents came from 49/55 (62 only checkpoints the rule —
+	// its up is a byte-identical no-op; see 62_incidents_partner_read.go).
+	// Writes must stay admin-only.
+	if incidents.ListRule == nil || !strings.Contains(*incidents.ListRule, "site.partner.id ?= @request.auth.partner") {
+		t.Error("notification_incidents ListRule should include the partner clause (migrations 49/55)")
+	}
+	if incidents.ViewRule == nil || !strings.Contains(*incidents.ViewRule, "site.partner.id ?= @request.auth.partner") {
+		t.Error("notification_incidents ViewRule should include the partner clause (migrations 49/55)")
+	}
+	if incidents.CreateRule == nil || !strings.Contains(*incidents.CreateRule, `"admin"`) || strings.Contains(*incidents.CreateRule, "partner") {
+		t.Error("notification_incidents CreateRule should stay admin-only")
+	}
+
+	// 63: the org-scoping partner clause is partner-role-only everywhere — a
+	// customer's users.partner also points at the org, so without the role guard
+	// the clause leaked the whole org's sites (and site children) to any customer.
+	for _, c := range []*core.Collection{sites, incidents} {
+		if c.ListRule == nil || !strings.Contains(*c.ListRule, `(@request.auth.role = "partner" && @request.auth.partner != "" &&`) {
+			t.Errorf("%s ListRule partner clause should be partner-role-guarded (migration 63)", c.Name)
+		}
+	}
 
 	// 57–59: tenant-billing core + Shengda metering + financial spine.
 	for name, fields := range map[string][]string{
@@ -144,6 +165,26 @@ func TestMigrationsApplyCleanly(t *testing.T) {
 	}
 	if !foundDedupe {
 		t.Error("meter_readings should have a unique (meter,message_id,device_ts) dedupe index")
+	}
+
+	// 61_dashboard_layouts: per-site dashboard layout blobs for the dashboard rework.
+	layouts, err := app.FindCollectionByNameOrId("dashboard_layouts")
+	if err != nil {
+		t.Fatalf("dashboard_layouts collection missing (migration 61): %v", err)
+	}
+	for _, f := range []string{"key", "site", "user", "layout"} {
+		if layouts.Fields.GetByName(f) == nil {
+			t.Errorf("dashboard_layouts.%s should exist (migration 61)", f)
+		}
+	}
+	foundLayoutKey := false
+	for _, idx := range layouts.Indexes {
+		if strings.Contains(idx, "key,site,user") {
+			foundLayoutKey = true
+		}
+	}
+	if !foundLayoutKey {
+		t.Error("dashboard_layouts should have a unique (key,site,user) index")
 	}
 }
 

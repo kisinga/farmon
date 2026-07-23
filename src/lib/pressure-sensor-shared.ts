@@ -202,6 +202,7 @@ export function emitPressureCalNumbers(
   step: 0.1
   initial_value: ${fmt(cal.p_empty_psi)}
   optimistic: true
+  restore_value: true
   entity_category: config
 
 - platform: template
@@ -213,6 +214,7 @@ export function emitPressureCalNumbers(
   step: 0.1
   initial_value: ${fmt(cal.p_full_psi)}
   optimistic: true
+  restore_value: true
   entity_category: config`,
   };
 }

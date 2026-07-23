@@ -45,6 +45,12 @@ export class BrandingService {
     }
   }
 
+  /** Re-fetch and re-apply the caller's org branding — called after the
+   *  partner edits their org profile so their own shell updates immediately. */
+  refresh(): Promise<void> {
+    return this.load();
+  }
+
   private async load(): Promise<void> {
     if (!this.auth.isAuthenticated()) {
       this.clear();

@@ -79,6 +79,19 @@ export class TelemetryStore {
     await this.load(siteId, widget, hours);
   }
 
+  /**
+   * Clear every loaded series — the dashboard shell's in-place site switch
+   * (the router reuses the component, so this component-provided store is NOT
+   * destroyed). Widget ids are site-scoped, so the old site's history must not
+   * show under the new site's URL. In-flight loads are invalidated via
+   * `reqSeq`; remembered spans survive (per-widget user prefs in localStorage).
+   */
+  reset(): void {
+    this.series.set(new Map());
+    this.loaded.set(new Set());
+    this.reqSeq.clear();
+  }
+
   /** Load history for a widget at the given span (defaults to its remembered span).
    *  Fans out two tier reads in parallel — the `telemetry_5min` rollup over the whole
    *  span and a `telemetry_raw` tail over the last {@link RAW_TAIL_MS} — and merges

@@ -13,9 +13,10 @@ const SYNC_TOL = 0.05;
  *
  * The physical inputs are a lens over the device's psi anchors: editing them
  * derives `cal_empty`/`cal_full` (deriveTankCalibration), which Save writes as desired
- * config into the server-owned `controller_config` (one upsert, behind a hard confirm
- * — config_set is gone; the server republishes the retained /config and the device
- * applies it). The device's actual anchors + live level are
+ * config through the command-lifecycle store's single write path (one patch, behind a
+ * hard confirm — a PocketBase `controller_config` upsert on the cloud, one `config_set`
+ * command per key over /local/command on-device). The device's actual anchors + live
+ * level are
  * shown for comparison; "Match device" pulls the physical model back from the
  * device's current calibration (the inverse) so a raw/out-of-band change reconciles.
  * Physical params are never written back to the topology.
@@ -64,30 +65,35 @@ const SYNC_TOL = 0.05;
           <rect x="39" y="89" width="12" height="8" rx="1.5" stroke-width="1.4" class="fill-base-200" />
         </svg>
 
-        <div class="flex-1 grid grid-cols-[1fr_auto] items-center gap-x-3 gap-y-2.5 content-center">
-          <label [attr.for]="'h-' + cal().nodeId" class="text-[11px] text-base-content/70">Tank height</label>
+        <div class="flex-1 grid grid-cols-[1fr_auto] items-center gap-x-3 gap-y-3 sm:gap-y-2.5 content-center">
+          <label [attr.for]="'h-' + cal().nodeId" class="text-xs sm:text-[11px] text-base-content/70">Tank height</label>
           <span class="flex items-center gap-1.5">
-            <input [id]="'h-' + cal().nodeId" type="number" min="0" step="0.05" class="input input-sm input-bordered w-20 text-right tabular-nums no-spin"
+            <input [id]="'h-' + cal().nodeId" type="number" min="0" step="0.05" class="input input-bordered input-md sm:input-sm w-24 sm:w-20 text-right tabular-nums no-spin"
               [value]="height()" [disabled]="!canEdit()" (input)="edit('height', $event)" />
             <span class="text-[11px] text-base-content/40 w-7">m</span>
           </span>
 
-          <label [attr.for]="'d-' + cal().nodeId" class="text-[11px] text-base-content/70 cursor-help"
+          <label [attr.for]="'d-' + cal().nodeId" class="text-xs sm:text-[11px] text-base-content/70 cursor-help"
             title="Vertical drop from the tank outlet down to the sensor — this column stays full of water and offsets the empty reading.">Sensor drop</label>
           <span class="flex items-center gap-1.5">
-            <input [id]="'d-' + cal().nodeId" type="number" min="0" step="0.05" class="input input-sm input-bordered w-20 text-right tabular-nums no-spin"
+            <input [id]="'d-' + cal().nodeId" type="number" min="0" step="0.05" class="input input-bordered input-md sm:input-sm w-24 sm:w-20 text-right tabular-nums no-spin"
               [value]="drop()" [disabled]="!canEdit()" (input)="edit('drop', $event)" />
             <span class="text-[11px] text-base-content/40 w-7">m</span>
           </span>
 
-          <span class="text-[11px] text-base-content/70 cursor-help"
+          <span class="text-xs sm:text-[11px] text-base-content/70 cursor-help"
             title="Sensor full-scale rating (datasheet). Baked into the firmware — change it in the editor and re-flash, not here.">Sensor max</span>
           <span class="flex items-center gap-1.5">
-            <span class="w-20 text-right tabular-nums text-sm text-base-content/60">{{ maxPsi() }}</span>
+            <span class="w-24 sm:w-20 text-right tabular-nums text-sm text-base-content/60">{{ maxPsi() }}</span>
             <span class="text-[11px] text-base-content/40 w-7">psi</span>
           </span>
         </div>
       </div>
+
+      <!-- Touch has no tooltips: the [title] hints above, in print, on phone only. -->
+      <p class="sm:hidden text-[11px] leading-snug text-base-content/45">
+        Sensor drop is the vertical pipe from the tank outlet down to the sensor — that column stays full and offsets the empty reading. Sensor max is the datasheet rating, baked into the firmware.
+      </p>
 
       <!-- The model as a picture: the empty→full range (neutral) inside the sensor's
            0…max, the live pressure riding it in the same cyan as the Live readout (so
@@ -126,13 +132,13 @@ const SYNC_TOL = 0.05;
       }
 
       @if (canEdit()) {
-        <div class="flex items-center gap-2">
-          <button class="btn btn-sm btn-primary gap-1" [disabled]="!dirty() || !valid() || saving()" (click)="save()">
+        <div class="flex max-sm:flex-col items-stretch sm:items-center gap-2">
+          <button class="btn btn-md sm:btn-sm btn-primary gap-1" [disabled]="!dirty() || !valid() || saving()" (click)="save()">
             @if (saving()) { <span class="loading loading-spinner loading-xs"></span> }
             Save calibration
           </button>
           @if (dirty()) {
-            <button class="btn btn-sm btn-ghost" (click)="discard()">Discard</button>
+            <button class="btn btn-md sm:btn-sm btn-ghost" (click)="discard()">Discard</button>
           }
           @if (phase(); as ph) {
             @switch (ph.phase) {
@@ -142,8 +148,9 @@ const SYNC_TOL = 0.05;
               @default {}
             }
           }
-          <span class="grow"></span>
-          <button class="btn btn-xs btn-ghost text-base-content/50" (click)="loadDesign()"
+          @if (saveError()) { <span class="text-xs text-error">{{ saveError() }}</span> }
+          <span class="grow max-sm:hidden"></span>
+          <button class="btn btn-sm sm:btn-xs btn-ghost text-base-content/50" (click)="loadDesign()"
             title="Fill the fields from the topology design values">Use design values</button>
         </div>
       }
@@ -169,6 +176,8 @@ export class TankCalibrationComponent {
    *  spec, not a field edit, so it never appears here. */
   private edits = signal<{ height?: number; drop?: number }>({});
   protected saving = signal(false);
+  /** Last save failure, shown in the Save row; the edits are kept. */
+  protected saveError = signal<string | null>(null);
 
   /** The physical model the editor sits on when there are no edits: the device's
    *  live calibration (its psi anchors run back through the inverse), falling back
@@ -285,9 +294,9 @@ export class TankCalibrationComponent {
     this.edits.set({ height: cal.tankHeightM, drop: cal.sensorDropM });
   }
 
-  /** Write the derived anchors as desired config (one upsert into controller_config),
-   *  behind a hard confirm. The server recomputes + republishes the retained /config
-   *  and the device applies both anchors; convergence shows once the shadow re-reports. */
+  /** Write the derived anchors as desired config through the backend seam (a
+   *  controller_config upsert on the cloud; one config_set command per key
+   *  on-device), behind a hard confirm. Convergence shows once the shadow re-reports. */
   protected async save(): Promise<void> {
     if (!this.canEdit() || !this.dirty() || !this.valid()) return;
     const ok = await this.confirm.confirm({
@@ -298,6 +307,7 @@ export class TankCalibrationComponent {
     });
     if (!ok) return;
     this.saving.set(true);
+    this.saveError.set(null);
     try {
       const cal = this.cal(), c = this.controller(), d = this.derived();
       await this.lifecycle.writeDesiredConfig(c, {
@@ -305,6 +315,9 @@ export class TankCalibrationComponent {
         [cal.calFullKey]: round2(d.p_full_psi),
       });
       this.edits.set({}); // device now drives the display; convergence shows on the next snapshot
+    } catch (e) {
+      // Edits are kept (the divergence note stays up) — surface it and allow a retry.
+      this.saveError.set(`Could not save — ${e instanceof Error ? e.message : String(e)}`);
     } finally {
       this.saving.set(false);
     }

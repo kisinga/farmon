@@ -39,6 +39,7 @@ function toCatalogItem(r: RecordModel): SiteCatalogItem {
     tankLowPct: getNumber(r, 'tank_low_pct'),
     tankHighPct: getNumber(r, 'tank_high_pct'),
     offlineTimeoutS: getNumber(r, 'offline_timeout_s'),
+    updated: getString(r, 'updated'),
   };
 }
 

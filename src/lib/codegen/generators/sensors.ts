@@ -9,7 +9,9 @@ export function generateSensors(m: Manifest, collected: CollectedCodegen): strin
   // Tanks with intrinsic level monitoring
   const tanksWithLevel = m.nodes.filter(n => n.kind === 'tank' && n['level_monitored']);
 
-  // Route max-runtime numbers — adjustable from HA, persisted across reboots.
+  // Route max-runtime numbers — adjustable from the server (retained /config) and
+  // on-device (config_set on the local UI). restore_value persists the last set
+  // value across reboots; the cloud re-apply on (re)connect stays authoritative.
   // Surfaced in minutes (operator-facing); firmware multiplies by 60 to get
   // seconds when consuming. Manifest's max_runtime_seconds remains the seconds
   // source of truth; we round when seeding the entity.
@@ -24,6 +26,7 @@ export function generateSensors(m: Manifest, collected: CollectedCodegen): strin
   step: 1
   initial_value: ${Math.max(1, Math.round(r.max_runtime_seconds / 60))}
   optimistic: true
+  restore_value: true
   entity_category: config
   update_interval: never`);
 
@@ -44,6 +47,7 @@ export function generateSensors(m: Manifest, collected: CollectedCodegen): strin
   step: 1
   initial_value: 0
   optimistic: true
+  restore_value: true
   entity_category: config
   update_interval: never`);
     if (routeVolumeEligible(r)) {
@@ -58,6 +62,7 @@ export function generateSensors(m: Manifest, collected: CollectedCodegen): strin
   step: 1
   initial_value: 0
   optimistic: true
+  restore_value: true
   entity_category: config
   update_interval: never`);
     }
@@ -74,14 +79,17 @@ export function generateSensors(m: Manifest, collected: CollectedCodegen): strin
   step: 1
   initial_value: 1
   optimistic: true
+  restore_value: true
   entity_category: config
   update_interval: never`);
     }
   });
 
-  // Per-route safety thresholds — adjustable from HA, persisted across reboots.
-  // Emitted only when the route's tank endpoint actually has a level reading;
-  // otherwise the entity would be dead UI. A value of 0 means "skip this check".
+  // Per-route safety thresholds — adjustable from the server (/config) and on-device
+  // (config_set), persisted across reboots via restore_value (cloud re-apply stays
+  // authoritative when connected). Emitted only when the route's tank endpoint
+  // actually has a level reading; otherwise the entity would be dead UI.
+  // A value of 0 means "skip this check".
   const safetyThresholdBlocks: string[] = [];
   m.routes.forEach((r, i) => {
     const names = routeEntityNames(r);
@@ -97,6 +105,7 @@ export function generateSensors(m: Manifest, collected: CollectedCodegen): strin
   step: 1
   initial_value: ${r.source_min_pct}
   optimistic: true
+  restore_value: true
   entity_category: config
   update_interval: never`);
     }
@@ -112,12 +121,14 @@ export function generateSensors(m: Manifest, collected: CollectedCodegen): strin
   step: 1
   initial_value: ${r.dest_max_pct}
   optimistic: true
+  restore_value: true
   entity_category: config
   update_interval: never`);
     }
   });
 
-  // Global safety timing — adjustable from HA. Values are operator-facing
+  // Global safety timing — adjustable from the server (/config) and on-device
+  // (config_set), persisted via restore_value. Values are operator-facing
   // units (seconds, L/min); firmware converts to its internal representation
   // (ms for time-based fields) at read time.
   const safetyBlocks = [
@@ -136,12 +147,14 @@ export function generateSensors(m: Manifest, collected: CollectedCodegen): strin
   step: ${p.step}
   initial_value: ${p.initial}
   optimistic: true
+  restore_value: true
   entity_category: config
   update_interval: never`);
 
   // Tunable numbers use `update_interval: never`: they rarely change, so they
-  // publish on set (command) and on connect, not on a needless periodic poll.
-  // Still settable — the MQTT command topic stays subscribed.
+  // publish on set (retained /config apply, or config_set on the local lane) and
+  // on connect, not on a needless periodic poll. Their live values also ride the
+  // snapshot readings (mqtt.ts).
   const numberBlocks = [...runtimeBlocks, ...targetStopBlocks, ...safetyThresholdBlocks, ...safetyBlocks, ...(collected.sections['number'] ?? [])];
   const binarySensorBlocks = [...(collected.sections['binary_sensor'] ?? [])];
   binarySensorBlocks.push(`\

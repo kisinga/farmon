@@ -1,6 +1,6 @@
 import { gunzipSync, gzipSync } from 'fflate';
 import type { Manifest } from '@core';
-import { routeSetVersion } from '@core';
+import { routeSetVersion, collectTunableNumbers } from '@core';
 import { commandActionNames, commandDispatchLines } from './mqtt';
 
 /**
@@ -47,6 +47,10 @@ import { commandActionNames, commandDispatchLines } from './mqtt';
  *                             bad JSON / unknown action. Outcomes flow back via the
  *                             snapshot, as on MQTT.
  *                             firmware_update is NOT exposed here (unauthenticated LAN).
+ *                             config_set IS exposed here ONLY: { key, value } writes one
+ *                             runtime tunable (clamped to its min/max, persisted via
+ *                             restore_value); the MQTT lane rejects it — remote config
+ *                             stays server-mediated via the retained /config.
  *   POST /local/automations — raw automation wire blob (application/octet-stream):
  *                             validated with the pure kernel on a scratch table, then
  *                             id(autos).apply_set on the main loop (which persists to
@@ -65,7 +69,10 @@ export function generateLocalUiYaml(m: Manifest): string {
   // in mqtt.ts). No TTL read here: id(sntp_time)/id(time_trusted) are main-loop
   // state and must not be touched cross-thread. The action allow-list comes
   // from the same emitter as the dispatch body, so the two can't drift.
-  const actionGate = commandActionNames({ allowOta: false })
+  // allowConfigSet: the local lane accepts config_set (operator at the panel);
+  // the MQTT lane rejects it (remote config stays server-mediated, migration 37).
+  const tunables = collectTunableNumbers(m);
+  const actionGate = commandActionNames({ allowOta: false, allowConfigSet: true })
     .map(a => `strcmp(action, "${a}") != 0`)
     .join(' && ');
   const commandGlue = [
@@ -86,12 +93,13 @@ export function generateLocalUiYaml(m: Manifest): string {
     '  // Accepted: dispatch on the main loop (the route engine / claims / automation',
     '  // table are loop-thread only — see the no-lock note in maji_automations.h). The',
     '  // body is the SAME one the MQTT handler runs (commandDispatchLines in mqtt.ts,',
-    '  // allowOta=false) — including the issued_at TTL gate — re-parsed inside a void',
-    '  // lambda so its early returns compile.',
+    '  // allowOta=false + the tunable allow-list for config_set) — including the',
+    '  // issued_at TTL gate — re-parsed inside a void lambda so its early returns',
+    '  // compile.',
     '  id(local_ui).defer_to_loop([body]() {',
     '    json::parse_json(body, [&](JsonObject x) -> bool {',
     '      [&]() {',
-    ...commandDispatchLines({ allowOta: false }).map(l => (l === '' ? '' : '        ' + l)),
+    ...commandDispatchLines({ allowOta: false, configSetTunables: tunables }).map(l => (l === '' ? '' : '        ' + l)),
     '      }();',
     '      return true;',
     '    });',
@@ -157,6 +165,10 @@ export function generateLocalUiYaml(m: Manifest): string {
 #                              otherwise; outcomes ride the snapshot.
 #                              firmware_update is NOT exposed here — this endpoint is
 #                              unauthenticated LAN HTTP, the MQTT lane is cert-pinned.
+#                              config_set IS exposed here ONLY: { key, value } writes
+#                              one runtime tunable (allow-listed, clamped to min/max,
+#                              persisted via restore_value); the MQTT lane rejects it —
+#                              remote config stays server-mediated via /config.
 #   POST /local/automations  — raw automation wire blob (application/octet-stream):
 #                              validated with the pure kernel, then applied via
 #                              id(autos).apply_set on the main loop (persists to NVS).

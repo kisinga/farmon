@@ -2,19 +2,22 @@
  * Runtime-tunable device numbers — the single enumeration of every ESPHome
  * `number:` entity the server-owned desired config drives at runtime.
  *
- * One definition, three consumers: the firmware config-apply (each number set from
- * the retained /config kv) + value publish ([codegen/generators/mqtt.ts]), the
- * dashboard operator editors (which write the desired value to the DB), and a
- * drift-guard test that asserts this list matches exactly the `number:` ids and
- * bounds the codegen emits — so the runtime/UI view can never silently diverge
- * from what the device actually exposes.
+ * One definition, four consumers: the firmware config-apply (each number set from
+ * the retained /config kv), the local-lane config_set dispatch (key allow-list +
+ * min/max clamp — [codegen/generators/mqtt.ts]), the dashboard operator editors
+ * (which write the desired value to the DB), and a drift-guard test that asserts
+ * this list matches exactly the `number:` ids and bounds the codegen emits — so
+ * the runtime/UI view can never silently diverge from what the device actually
+ * exposes.
  *
- * Each `number:` is `entity_category: config` and stateless re config: it does NOT
- * restore_value — the server + the retained /config message are the single source of
- * truth, so the device re-applies the desired value from /config on every (re)connect.
- * The applied value publishes in the snapshot under the same id, and the dashboard
- * reads it from the shadow. `tunableKvKeys()` is the ordered kv-key contract the
- * server packs the /config payload from.
+ * Each `number:` is `entity_category: config`, `optimistic: true` AND
+ * `restore_value: true`: a local config_set (on-device dashboard, no server)
+ * applies immediately and persists across reboots — the local tier is complete
+ * on its own. The cloud stays authoritative when connected: the retained /config
+ * message re-applies the server's desired values on every (re)connect, overriding
+ * any locally-changed value. The live value publishes in the snapshot readings
+ * under the same id, and the dashboard reads it from the shadow. `tunableKvKeys()`
+ * is the ordered kv-key contract the server packs the /config payload from.
  */
 import type { Manifest } from './manifest.types';
 import { SYSTEM_ENTITY_NAMES, routeEntityNames } from './entity-names';
@@ -159,6 +162,14 @@ export function collectTunableNumbers(m: Manifest): TunableNumber[] {
     out.push({
       key: valveTravelTimeId({ id: node.id }), scope: 'node', tier: 'calibration', field: 'travel_time',
       label: `${node.name} Travel Time (s)`, unit: 's', min: 1, max: 30, step: 1,
+      // Coupling guard: this number feeds ONLY the kernel's PREPARING→RUNNING
+      // flow-expect window (maji_control route_travel_ms_); the time_based cover's
+      // open/close durations are the compile-time `${valve_travel_time}` substitution
+      // (ESPHome's time_based cover durations are not templatable — they accept no
+      // lambda — so the cover can't read this number at runtime). A value below the
+      // baked drive time makes the kernel expect flow before the valve finishes
+      // opening → spurious NO_FLOW fault.
+      hint: `Keep at or above the cover's baked drive time (${m.timing.valve_travel_time} s): the controller starts expecting flow this many seconds after the valve starts moving, but the valve hardware keeps driving for the baked time — set lower and a slow valve faults as NO_FLOW before it finishes opening.`,
       default: typeof travel === 'number' ? travel : 15, nodeId: node.id, nodeName: node.name,
     });
   }

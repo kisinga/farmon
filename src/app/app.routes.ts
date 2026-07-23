@@ -5,6 +5,7 @@ import { featureGuard } from './core/guards/feature.guard';
 
 const ADMIN = { roles: ['admin'] };
 const MANAGER = { roles: ['admin', 'partner'] };
+const PARTNER = { roles: ['partner'], feature: 'partner_portal' };
 
 /**
  * Cloud routes. The `device` build configuration swaps this whole file for
@@ -58,6 +59,30 @@ export const routes: Routes = [
     canActivate: [authGuard],
     loadComponent: () =>
       import('./pages/account/account-page.component').then((m) => m.AccountPageComponent),
+  },
+  {
+    // Partner only (feature-flag gated): the org fleet aggregate.
+    path: 'partner',
+    canActivate: [roleGuard, featureGuard],
+    data: PARTNER,
+    loadComponent: () =>
+      import('./pages/partner/partner-home.component').then((m) => m.PartnerHomeComponent),
+  },
+  {
+    // Partner only: self-serve organization profile (name, brand colors, logo).
+    path: 'partner/org',
+    canActivate: [roleGuard, featureGuard],
+    data: PARTNER,
+    loadComponent: () =>
+      import('./pages/partner/partner-org.component').then((m) => m.PartnerOrgComponent),
+  },
+  {
+    // Partner only: guided customer onboarding (account + optional first site).
+    path: 'partner/customers/new',
+    canActivate: [roleGuard, featureGuard],
+    data: PARTNER,
+    loadComponent: () =>
+      import('./pages/partner/partner-customer-wizard.component').then((m) => m.PartnerCustomerWizardComponent),
   },
   {
     // Admin/partner: sites catalog.
@@ -118,7 +143,8 @@ export const routes: Routes = [
   {
     // Customer + admin: the site dashboard (separate component — runtime state
     // only, no editor services). Declared before the editor's `site/:name` so
-    // the more specific path wins.
+    // the more specific path wins. One shell serves both builds — the device
+    // build routes the same path to the same component (app.routes.device.ts).
     path: 'site/:name/dashboard',
     canActivate: [authGuard],
     loadComponent: () =>

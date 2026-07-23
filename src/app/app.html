@@ -2,19 +2,13 @@
   <!-- Global top bar (hidden on the public landing/login, which carry their own) -->
   @if (!isPublic()) {
   <header class="navbar relative z-20 bg-base-100 border-b border-base-300/60 shadow-lg shadow-black/30 px-4 min-h-[var(--header-h)] h-[var(--header-h)]">
-    <div class="navbar-start gap-3">
-      <a routerLink="/home" class="flex items-center gap-2.5 shrink-0 hover:opacity-80 transition-opacity">
-        @if (branding.logoUrl(); as logo) {
-          <img [src]="logo" alt="" class="w-7 h-7 object-contain" />
-        } @else {
-          <span class="w-7 h-7 block" [innerHTML]="logoSvg"></span>
-        }
-        <span class="font-bold text-base tracking-tight">{{ branding.name() || 'MajiFlow' }}</span>
-      </a>
-    </div>
-
-    <div class="navbar-center hidden md:flex gap-1">
+    <!-- Role-based nav links, shared by the desktop center row and the mobile
+         hamburger (single source — the two must never drift). -->
+    <ng-template #navLinks>
       @if (auth.isManager()) {
+        @if (auth.isPartner() && featureFlags.isEnabled('partner_portal')) {
+          <a routerLink="/partner" routerLinkActive="btn-active" class="btn btn-ghost btn-sm">Partner</a>
+        }
         <a routerLink="/overview" routerLinkActive="btn-active" class="btn btn-ghost btn-sm">Sites</a>
         <a routerLink="/customers" routerLinkActive="btn-active" class="btn btn-ghost btn-sm">Customers</a>
         <a routerLink="/devices" routerLinkActive="btn-active" class="btn btn-ghost btn-sm">Devices</a>
@@ -26,6 +20,34 @@
       } @else if (auth.isAuthenticated()) {
         <a routerLink="/home" routerLinkActive="btn-active" class="btn btn-ghost btn-sm">My Sites</a>
       }
+    </ng-template>
+
+    <div class="navbar-start gap-1 sm:gap-3">
+      <!-- Mobile nav: the center links collapse into a hamburger below md. -->
+      @if (auth.isAuthenticated()) {
+        <div class="dropdown md:hidden">
+          <button tabindex="0" class="btn btn-ghost btn-square" aria-label="Menu" title="Menu">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h16" />
+            </svg>
+          </button>
+          <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box shadow-lg border border-base-300/40 z-50 w-52 mt-2 p-1.5">
+            <ng-container *ngTemplateOutlet="navLinks" />
+          </ul>
+        </div>
+      }
+      <a routerLink="/home" class="flex items-center gap-2.5 shrink-0 min-w-0 hover:opacity-80 transition-opacity">
+        @if (branding.logoUrl(); as logo) {
+          <img [src]="logo" alt="" class="w-7 h-7 object-contain" />
+        } @else {
+          <span class="w-7 h-7 block shrink-0" [innerHTML]="logoSvg"></span>
+        }
+        <span class="font-bold text-base tracking-tight truncate">{{ branding.name() || 'MajiFlow' }}</span>
+      </a>
+    </div>
+
+    <div class="navbar-center hidden md:flex gap-1">
+      <ng-container *ngTemplateOutlet="navLinks" />
     </div>
 
     <div class="navbar-end gap-1">
@@ -35,18 +57,28 @@
       @if (auth.isAdmin()) {
         <a routerLink="/settings" routerLinkActive="btn-active" class="btn btn-ghost btn-sm btn-square" title="Settings" aria-label="Settings">
           <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+            <path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 001.066-2.573c.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
             <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
           </svg>
         </a>
       }
       @if (auth.user(); as u) {
         <div class="dropdown dropdown-end">
-          <button tabindex="0" class="btn btn-ghost btn-sm gap-1.5">
-            <span class="text-xs text-base-content/70 max-w-[160px] truncate">{{ u.email }}</span>
-            <span class="badge badge-xs badge-ghost uppercase">{{ u.role }}</span>
+          <button tabindex="0" class="btn btn-ghost btn-sm gap-1.5 btn-square sm:w-auto" aria-label="Account menu" title="Account">
+            <!-- Person icon everywhere; the email/role chip is desktop-only (it
+                 crowded the bar on phones and pushed buttons into overlap). -->
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 sm:hidden" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+            </svg>
+            <span class="text-xs text-base-content/70 max-w-[160px] truncate hidden sm:inline">{{ u.email }}</span>
+            <span class="badge badge-xs badge-ghost uppercase hidden sm:inline-flex">{{ u.role }}</span>
           </button>
-          <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box shadow-lg border border-base-300/40 z-50 w-44 mt-2 p-1.5">
+          <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box shadow-lg border border-base-300/40 z-50 w-52 mt-2 p-1.5">
+            <!-- Identity header: the phone home for the email/role the bar hides. -->
+            <li class="menu-title sm:hidden">
+              <span class="truncate">{{ u.email }}</span>
+              <span class="badge badge-xs badge-ghost uppercase">{{ u.role }}</span>
+            </li>
             <li><a routerLink="/account">Account</a></li>
             <li><button (click)="logout()">Sign out</button></li>
           </ul>
