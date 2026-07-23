@@ -74,7 +74,7 @@ interface TariffDraft {
                 </select>
               </label>
             </div>
-            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div class="grid grid-cols-1 sm:grid-cols-4 gap-3">
               <label class="flex flex-col gap-1">
                 <span class="text-[11px] font-medium text-base-content/50">Due day</span>
                 <input type="number" min="1" max="28" class="input input-sm input-bordered"
@@ -89,6 +89,11 @@ interface TariffDraft {
                 <span class="text-[11px] font-medium text-base-content/50">Warn days</span>
                 <input type="number" min="0" class="input input-sm input-bordered"
                        [value]="warnDays()" (input)="warnDays.set(num($event))" />
+              </label>
+              <label class="flex flex-col gap-1">
+                <span class="text-[11px] font-medium text-base-content/50" title="Sends per downlink command before it is marked failed and you are alerted">Cmd attempts</span>
+                <input type="number" min="1" class="input input-sm input-bordered"
+                       [value]="cmdMaxAttempts()" (input)="cmdMaxAttempts.set(num($event))" />
               </label>
             </div>
             <p class="text-[11px] text-base-content/40 -mt-1">
@@ -243,6 +248,7 @@ export class BillingSettingsComponent {
   protected dueDay = signal(5);
   protected graceDays = signal(7);
   protected warnDays = signal(3);
+  protected cmdMaxAttempts = signal(3);
   protected autoValve = signal(false);
 
   protected tariffs = signal<Tariff[]>([]);
@@ -277,6 +283,7 @@ export class BillingSettingsComponent {
         if (settings.due_day) this.dueDay.set(settings.due_day);
         this.graceDays.set(settings.grace_days);
         this.warnDays.set(settings.warn_days);
+        this.cmdMaxAttempts.set(settings.cmd_max_attempts > 0 ? settings.cmd_max_attempts : 3);
         this.autoValve.set(settings.auto_valve_enabled);
       }
       this.tariffs.set(tariffs);
@@ -297,6 +304,7 @@ export class BillingSettingsComponent {
         due_day: this.dueDay(),
         grace_days: this.graceDays(),
         warn_days: this.warnDays(),
+        cmd_max_attempts: this.cmdMaxAttempts(),
         auto_valve_enabled: this.autoValve(),
         currency: this.currency(),
       });

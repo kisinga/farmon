@@ -7,7 +7,8 @@ import (
 
 // meter_commands hardening (metering package defect fixes):
 //   - attempts: how many times the command has actually been sent; the
-//     listener caps ack-timeout retries at MAJI_METER_CMD_MAX_ATTEMPTS.
+//     listener caps ack-timeout retries at billing_settings.cmd_max_attempts
+//     (per-site; default 3).
 //   - ack_raw: hex of the raw ack payload, kept for live-device validation
 //     of the valve-command echo.
 //   - idx_meter_commands_pending_valve: partial unique index so a second

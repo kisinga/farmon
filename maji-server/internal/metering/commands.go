@@ -127,6 +127,26 @@ func expireStale(app core.App, ttl time.Duration, now time.Time) error {
 	return nil
 }
 
+// defaultCmdMaxAttempts applies when a site has no billing_settings row or a
+// non-positive cmd_max_attempts.
+const defaultCmdMaxAttempts = 3
+
+// maxCmdAttempts reads the per-site send-attempts cap from billing_settings
+// (cmd_max_attempts). It is evaluated per command — DB-level policy that
+// takes effect immediately, no restart. Falls back to the default when the
+// site has no settings row or a non-positive value.
+func maxCmdAttempts(app core.App, siteID string) int {
+	if siteID != "" {
+		s, err := app.FindFirstRecordByFilter("billing_settings", "site = {:s}", dbx.Params{"s": siteID})
+		if err == nil && s != nil {
+			if n := s.GetInt("cmd_max_attempts"); n > 0 {
+				return n
+			}
+		}
+	}
+	return defaultCmdMaxAttempts
+}
+
 // ExpireOrphanedSent sweeps commands left in 'sent' by a server restart (the
 // pending-ack table is in-memory, so a restart strands them: nothing will
 // ever requeue or ack them). Each is marked expired with a meter_events row.

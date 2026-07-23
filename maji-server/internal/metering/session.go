@@ -200,8 +200,8 @@ func (l *listener) resolveAck(f Frame, src *net.UDPAddr) {
 
 // requeueExpiredAcks returns timed-out commands to the queue; they are
 // retried at the meter's next contact (spec §3.3 step 4). A command that has
-// exhausted MeterCmdMaxAttempts is failed instead, with a critical event and
-// a best-effort alert to the site owners.
+// exhausted the site's billing_settings.cmd_max_attempts is failed instead,
+// with a critical event and a best-effort alert to the site owners.
 func (l *listener) requeueExpiredAcks() {
 	now := time.Now()
 	for _, p := range l.pending {
@@ -213,7 +213,7 @@ func (l *listener) requeueExpiredAcks() {
 		if err != nil || cmd == nil {
 			continue
 		}
-		if max := l.cfg.MeterCmdMaxAttempts; max > 0 && cmd.GetInt("attempts") >= max {
+		if max := maxCmdAttempts(l.app, cmd.GetString("site")); cmd.GetInt("attempts") >= max {
 			cmd.Set("status", "failed")
 			cmd.Set("error", "ack timeout: max attempts reached")
 			if err := l.app.Save(cmd); err != nil {

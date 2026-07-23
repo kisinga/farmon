@@ -41,6 +41,8 @@ export interface BillingSettings {
   due_day: number;
   grace_days: number;
   warn_days: number;
+  /** Sends per downlink command before it fails and the owners are alerted (0/unset = 3). */
+  cmd_max_attempts: number;
   auto_valve_enabled: boolean;
   currency: string;
 }

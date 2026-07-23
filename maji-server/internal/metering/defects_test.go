@@ -100,7 +100,7 @@ func TestRequeueExpiredAcksBelowCap(t *testing.T) {
 	meter := seedMeter(t, app, site.Id, fixtureIMEI, fixtureSN, "open")
 	cmd := markSent(t, app, mustEnqueue(t, app, meter, CmdValveClose), 1)
 
-	l := &listener{app: app, cfg: config.Config{MeterCmdMaxAttempts: 3}, pending: map[string]*pendingAck{
+	l := &listener{app: app, cfg: config.Config{}, pending: map[string]*pendingAck{
 		meter.Id: {cmdID: cmd.Id, meterID: meter.Id, deadline: time.Now().Add(-time.Second)},
 	}}
 	l.requeueExpiredAcks()
@@ -125,7 +125,7 @@ func TestRequeueExpiredAcksAtCap(t *testing.T) {
 	meter := seedMeter(t, app, site.Id, fixtureIMEI, fixtureSN, "open")
 	cmd := markSent(t, app, mustEnqueue(t, app, meter, CmdValveClose), 3)
 
-	l := &listener{app: app, cfg: config.Config{MeterCmdMaxAttempts: 3}, pending: map[string]*pendingAck{
+	l := &listener{app: app, cfg: config.Config{}, pending: map[string]*pendingAck{
 		meter.Id: {cmdID: cmd.Id, meterID: meter.Id, deadline: time.Now().Add(-time.Second)},
 	}}
 	l.requeueExpiredAcks()
@@ -143,6 +143,39 @@ func TestRequeueExpiredAcksAtCap(t *testing.T) {
 	ev := findEvent(t, app, meter.Id, "command_failed")
 	if got := ev.GetString("severity"); got != "critical" {
 		t.Errorf("event severity = %q, want critical", got)
+	}
+}
+
+// The attempts cap is per-site policy (billing_settings.cmd_max_attempts):
+// a site with a higher cap keeps requeueing where the default would fail.
+func TestRequeueExpiredAcksSiteCapOverride(t *testing.T) {
+	app := setupDefectTest(t)
+	site := seedSite(t, app)
+	meter := seedMeter(t, app, site.Id, fixtureIMEI, fixtureSN, "open")
+	cmd := markSent(t, app, mustEnqueue(t, app, meter, CmdValveClose), 3)
+
+	settingsColl, err := app.FindCollectionByNameOrId("billing_settings")
+	if err != nil {
+		t.Fatal(err)
+	}
+	settings := core.NewRecord(settingsColl)
+	settings.Set("site", site.Id)
+	settings.Set("cmd_max_attempts", 5)
+	if err := app.Save(settings); err != nil {
+		t.Fatal(err)
+	}
+
+	l := &listener{app: app, cfg: config.Config{}, pending: map[string]*pendingAck{
+		meter.Id: {cmdID: cmd.Id, meterID: meter.Id, deadline: time.Now().Add(-time.Second)},
+	}}
+	l.requeueExpiredAcks()
+
+	rec, err := app.FindRecordById("meter_commands", cmd.Id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := rec.GetString("status"); got != "queued" {
+		t.Fatalf("status at default cap but below site cap = %q, want queued", got)
 	}
 }
 

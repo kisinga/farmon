@@ -44,9 +44,18 @@ services:
       # Broker bind addresses inside the container (rarely changed; app defaults apply).
       MAJI_MQTT_TCP: ${MAJI_MQTT_TCP:-:1883}
       MAJI_MQTT_WS: ${MAJI_MQTT_WS:-:8082}
+      # Shengda meter listener (cloud billing; empty MAJI_METER_UDP_ADDR = disabled).
+      MAJI_METER_UDP_ADDR: ${MAJI_METER_UDP_ADDR:-}
+      MAJI_METER_CMD_WINDOW_MS: ${MAJI_METER_CMD_WINDOW_MS:-8000}
+      MAJI_METER_CMD_TTL_H: ${MAJI_METER_CMD_TTL_H:-48}
+      MAJI_METER_TZ: ${MAJI_METER_TZ:-UTC+3}
+      # Dev/testing ONLY — never set in prod: email allowlist that enables the
+      # persona switcher (see AGENTS.md "Dev persona switcher"). Empty = off.
+      MAJI_PERSONA_EMAILS: ${MAJI_PERSONA_EMAILS:-}
     ports:
       - "8090:8090"   # HTTP: SPA + /api + /_/  (Coolify routes this to your domain)
       - "8883:8883"   # TLS MQTT (device-facing; serves when MAJI_MQTT_TLS_ENABLED=true)
+      - "5683:5683/udp"  # Shengda meter uplinks (billing; the listener binds only when MAJI_METER_UDP_ADDR is set — Coolify: expose as raw UDP)
       # Plain 1883 is intentionally NOT published — managed/cloud stays TLS-only, no
       # plaintext on the internet. For a local/LAN on-prem box that wants plain 1883,
       # copy docker-compose.override.example.yml → docker-compose.override.yml (Compose

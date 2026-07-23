@@ -70,10 +70,6 @@ type Config struct {
 	// MeterCmdTTLH is how many hours a queued/sent command lives before it is
 	// marked expired (vendor cache semantics).
 	MeterCmdTTLH int
-	// MeterCmdMaxAttempts caps how many times a command is sent while waiting
-	// for its ack; beyond the cap it is marked failed and the site owners are
-	// alerted.
-	MeterCmdMaxAttempts int
 	// MeterTZ is the timezone string sent in time-calibration replies
 	// (e.g. "UTC+3"); the device displays/schedules against it.
 	MeterTZ string
@@ -89,25 +85,24 @@ type Config struct {
 // TLS); an edge box overrides them via env to its own LAN broker.
 func Load(mode Mode) Config {
 	return Config{
-		Mode:                mode,
-		SPADir:              env("MAJI_SPA_DIR", ""),
-		DeviceUIDir:         env("MAJI_DEVICE_UI_DIR", ""),
-		MQTTTCPAddr:         env("MAJI_MQTT_TCP", ":1883"),
-		MQTTWSAddr:          env("MAJI_MQTT_WS", ":8082"),
-		MQTTTLSEnabled:      envBool("MAJI_MQTT_TLS_ENABLED", false),
-		MQTTTLSAddr:         env("MAJI_MQTT_TLS", ":8883"),
-		MQTTTLSCert:         env("MAJI_MQTT_TLS_CERT", ""),
-		MQTTTLSKey:          env("MAJI_MQTT_TLS_KEY", ""),
-		MQTTPublicHost:      env("MAJI_MQTT_PUBLIC_HOST", "mqtt.majiflow.io"),
-		MQTTPublicPort:      envInt("MAJI_MQTT_PUBLIC_PORT", 8883),
-		MQTTPublicTLS:       envBool("MAJI_MQTT_PUBLIC_TLS", true),
-		HTTPPublicURL:       env("MAJI_HTTP_PUBLIC_URL", ""),
-		MeterUDPAddr:        env("MAJI_METER_UDP_ADDR", ""),
-		MeterCmdWindowMs:    envInt("MAJI_METER_CMD_WINDOW_MS", 8000),
-		MeterCmdTTLH:        envInt("MAJI_METER_CMD_TTL_H", 48),
-		MeterCmdMaxAttempts: envInt("MAJI_METER_CMD_MAX_ATTEMPTS", 3),
-		MeterTZ:             env("MAJI_METER_TZ", "UTC+3"),
-		PersonaEmails:       envList("MAJI_PERSONA_EMAILS"),
+		Mode:             mode,
+		SPADir:           env("MAJI_SPA_DIR", ""),
+		DeviceUIDir:      env("MAJI_DEVICE_UI_DIR", ""),
+		MQTTTCPAddr:      env("MAJI_MQTT_TCP", ":1883"),
+		MQTTWSAddr:       env("MAJI_MQTT_WS", ":8082"),
+		MQTTTLSEnabled:   envBool("MAJI_MQTT_TLS_ENABLED", false),
+		MQTTTLSAddr:      env("MAJI_MQTT_TLS", ":8883"),
+		MQTTTLSCert:      env("MAJI_MQTT_TLS_CERT", ""),
+		MQTTTLSKey:       env("MAJI_MQTT_TLS_KEY", ""),
+		MQTTPublicHost:   env("MAJI_MQTT_PUBLIC_HOST", "mqtt.majiflow.io"),
+		MQTTPublicPort:   envInt("MAJI_MQTT_PUBLIC_PORT", 8883),
+		MQTTPublicTLS:    envBool("MAJI_MQTT_PUBLIC_TLS", true),
+		HTTPPublicURL:    env("MAJI_HTTP_PUBLIC_URL", ""),
+		MeterUDPAddr:     env("MAJI_METER_UDP_ADDR", ""),
+		MeterCmdWindowMs: envInt("MAJI_METER_CMD_WINDOW_MS", 8000),
+		MeterCmdTTLH:     envInt("MAJI_METER_CMD_TTL_H", 48),
+		MeterTZ:          env("MAJI_METER_TZ", "UTC+3"),
+		PersonaEmails:    envList("MAJI_PERSONA_EMAILS"),
 	}
 }
 
