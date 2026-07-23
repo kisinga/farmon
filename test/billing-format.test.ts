@@ -9,8 +9,13 @@ import {
   formatMoney,
   parseMoneyToMinor,
   mlToLitres,
+  litresToMl,
   formatLitres,
   fmtDate,
+  PENDING_COPY,
+  pbMessage,
+  bpsToPercent,
+  percentToBps,
 } from "../src/app/pages/billing/billing-format";
 
 let passed = 0;
@@ -64,11 +69,53 @@ for (const minor of [0, 1, 50, 8500, 123456, 99999999]) {
   assert(formatLitres(500).endsWith("L"), "formatLitres suffix");
 }
 
+// --- Litres → millilitres (form boundary, inverse of mlToLitres) --------------
+{
+  assert(litresToMl(0) === 0, "0 L");
+  assert(litresToMl(12500) === 12500000, "12,500 L → 12,500,000 ml");
+  assert(litresToMl(1.5) === 1500, "fractional litres");
+  assert(litresToMl(0.0004) === 0, "sub-ml rounds to 0");
+  for (const ml of [0, 500, 12500000, 999]) {
+    assert(mlToLitres(litresToMl(mlToLitres(ml))) === mlToLitres(ml), `round-trips ${ml} ml at litre precision`);
+  }
+}
+
 // --- fmtDate ------------------------------------------------------------------
 {
   assert(fmtDate("") === "", "empty → ''");
   assert(fmtDate("not a date") === "", "invalid → ''");
   assert(fmtDate("2026-03-01T00:00:00Z") !== "", "valid ISO renders");
+}
+
+// --- PENDING_COPY: mandated wording, pinned ------------------------------------
+{
+  assert(
+    PENDING_COPY === "pending — applies at next meter contact (up to 24h)",
+    "PENDING_COPY matches the mandated string",
+    `got "${PENDING_COPY}"`,
+  );
+}
+
+// --- pbMessage: PocketBase error extraction -------------------------------------
+{
+  assert(
+    pbMessage({ data: { message: "site not entitled" }, message: "Something went wrong." }) === "site not entitled",
+    "prefers err.data.message",
+  );
+  assert(pbMessage(new Error("boom")) === "boom", "falls back to Error.message");
+  assert(pbMessage("raw") === "raw", "falls back to String(err)");
+}
+
+// --- Basis points ↔ percent (tariff tax form) ------------------------------------
+{
+  assert(bpsToPercent(1600) === 16, "1600 bps → 16%");
+  assert(bpsToPercent(0) === 0, "0 bps → 0%");
+  assert(bpsToPercent(50) === 0.5, "50 bps → 0.5%");
+  assert(percentToBps(16) === 1600, "16% → 1600 bps");
+  assert(percentToBps(0.5) === 50, "0.5% → 50 bps");
+  for (const bps of [0, 1, 50, 1600, 10000]) {
+    assert(percentToBps(bpsToPercent(bps)) === bps, `round-trips ${bps} bps`);
+  }
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

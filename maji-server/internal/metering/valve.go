@@ -36,5 +36,11 @@ func EnqueueValve(app core.App, meter *core.Record, close bool, queuedBy, role s
 	if close {
 		cmdType = CmdValveClose
 	}
-	return EnqueueCommand(app, meter, cmdType, nil, queuedBy, role)
+	rec, err := EnqueueCommand(app, meter, cmdType, nil, queuedBy, role)
+	if err != nil && isUniqueViolation(err) {
+		// Lost the race with another enqueue between the pre-check and the
+		// save: the pending-valve partial unique index rejected the insert.
+		return nil, ErrValvePending
+	}
+	return rec, err
 }

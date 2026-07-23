@@ -923,3 +923,28 @@ func requireSiteAccess(e *core.RequestEvent, siteID string) error {
 	}
 	return apis.NewForbiddenError("you do not own this site", nil)
 }
+
+// requireSiteOwnership is requireSiteAccess WITHOUT the partner branch: only
+// admins and site co-owners pass. Billing routes use it because the billing
+// collection rules are owner-only — partners manage site setup, not finances,
+// and must never see billing data.
+func requireSiteOwnership(e *core.RequestEvent, siteID string) error {
+	if e.Auth == nil {
+		return apis.NewUnauthorizedError("authentication required", nil)
+	}
+	if siteID == "" {
+		return apis.NewBadRequestError("site is required", nil)
+	}
+	if IsAdmin(e.Auth) {
+		return nil
+	}
+	site, err := e.App.FindRecordById("sites", siteID)
+	if err != nil {
+		return apis.NewNotFoundError("site not found", nil)
+	}
+	// owner is a set of co-owners (multi-relation); access is granted to any of them.
+	if slices.Contains(site.GetStringSlice("owner"), e.Auth.Id) {
+		return nil
+	}
+	return apis.NewForbiddenError("you do not own this site", nil)
+}

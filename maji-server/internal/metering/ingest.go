@@ -46,10 +46,12 @@ func (l *listener) ingestUplink(f Frame, raw []byte, src *net.UDPAddr) {
 	if hasReading {
 		dup, err := l.readingExists(meter.Id, f.ID, ts)
 		if err != nil {
-			// Dedupe is the only guard against replay; on DB error skip
-			// persistence rather than relying on the unique index to catch it.
+			// Pre-check failed — persist anyway; the dedupe unique index is
+			// the authoritative guard and persistReading swallows its
+			// violation. Skipping here would silently lose readings.
 			log.Printf("metering: dedupe check meter %s: %v", meter.Id, err)
-		} else if !dup {
+		}
+		if !dup {
 			l.persistReading(meter, f, objs, raw, srcIP, now, litres, ts)
 		}
 	}
@@ -154,6 +156,13 @@ func (l *listener) persistReading(meter *core.Record, f Frame, objs Objects, raw
 	rec.Set("raw_cbor", objectsJSON(objs))
 	rec.Set("raw_hex", hex.EncodeToString(raw))
 	if err := l.app.Save(rec); err != nil {
+		// A dedupe-index violation means the pre-check missed a replay (e.g.
+		// concurrent packets); swallow it like a known duplicate.
+		if isUniqueViolation(err) {
+			log.Printf("metering: duplicate reading for meter %s (msg %d @ %s); skipped",
+				meter.Id, f.ID, ts.Format(time.RFC3339))
+			return
+		}
 		log.Printf("metering: save reading: %v", err)
 	}
 }

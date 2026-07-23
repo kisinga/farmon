@@ -104,6 +104,8 @@ func New(cfg config.Config) *pocketbase.PocketBase {
 		api.RegisterBilling(se, cfg)
 		api.RegisterCapabilities(se)
 		api.RegisterPartner(se)
+		// Dev-only persona switcher (inert 404 unless MAJI_PERSONA_EMAILS is set).
+		api.RegisterPersona(se, cfg)
 
 		// Republish a controller's retained automation set on any change to the
 		// automations collection (DB is source of truth; device is a mirror).

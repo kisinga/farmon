@@ -1,8 +1,10 @@
 import { Component, inject, signal } from '@angular/core';
+import { FormsModule } from '@angular/forms';
 import { ConfirmService } from '../../core/services/confirm.service';
 import { BillingService, type Tariff } from './billing.service';
 import { BillingShellComponent } from './billing-shell.component';
-import { formatMoney, parseMoneyToMinor, fmtDate } from './billing-format';
+import { BillingBannerComponent, BillingEmptyStateComponent, BillingPageErrorComponent } from './billing-ui';
+import { formatMoney, parseMoneyToMinor, fmtDate, bpsToPercent, percentToBps, pbMessage } from './billing-format';
 
 /** IANA zones offered in the picker — East Africa first, Nairobi the default. */
 const TIMEZONES = [
@@ -14,14 +16,17 @@ const TIMEZONES = [
   'UTC',
 ];
 
-/** Tariff modal draft: money fields in KES major units (converted on save). */
+/** Currencies the billing surfaces can format (formatMoney takes any ISO code). */
+const CURRENCIES = ['KES', 'UGX', 'TZS', 'USD'];
+
+/** Tariff modal draft: money fields in major units, tax in PERCENT (converted on save). */
 interface TariffDraft {
   id?: string;
   name: string;
   rate_per_kl: string;
   standing_charge: string;
   minimum_charge: string;
-  tax_bps: number;
+  tax_percent: number | null;
   effective_from: string;
   effective_until: string;
   status: string;
@@ -31,20 +36,23 @@ interface TariffDraft {
  * Billing settings: the one-row-per-site billing_settings record (create-if-
  * missing on save) plus tariff CRUD-lite. The auto-valve toggle arms the
  * arrears → disconnection automation, so it carries explicit warning copy.
+ *
+ * Tax is entered in percent (16) — nobody thinks in basis points; the bps
+ * conversion happens at the form boundary via bpsToPercent/percentToBps.
  */
 @Component({
   selector: 'app-billing-settings',
   standalone: true,
+  imports: [FormsModule, BillingBannerComponent, BillingEmptyStateComponent, BillingPageErrorComponent],
   host: { class: 'block' },
   template: `
     @if (loading()) {
       <div class="flex items-center justify-center py-24"><span class="loading loading-spinner loading-lg"></span></div>
+    } @else if (pageError(); as pe) {
+      <app-billing-page-error [text]="pe" (retry)="reload()" />
     } @else {
       @if (status(); as st) {
-        <div role="alert" class="alert text-sm py-2 mb-4" [class]="st.ok ? 'alert-success' : 'alert-error'">
-          <span>{{ st.text }}</span>
-          <button class="btn btn-ghost btn-xs" (click)="status.set(null)">Dismiss</button>
-        </div>
+        <app-billing-banner [kind]="st.ok ? 'success' : 'error'" [text]="st.text" (dismissed)="status.set(null)" />
       }
 
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
@@ -52,13 +60,21 @@ interface TariffDraft {
         <section>
           <h2 class="section-label mb-3">Billing policy</h2>
           <div class="surface px-5 py-4 flex flex-col gap-3">
-            <label class="flex flex-col gap-1">
-              <span class="text-[11px] font-medium text-base-content/50">Timezone</span>
-              <select class="select select-sm select-bordered" [value]="timezone()" (change)="timezone.set($any($event.target).value)">
-                @for (tz of timezones; track tz) { <option [value]="tz">{{ tz }}</option> }
-              </select>
-            </label>
-            <div class="grid grid-cols-3 gap-3">
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <label class="flex flex-col gap-1">
+                <span class="text-[11px] font-medium text-base-content/50">Timezone</span>
+                <select class="select select-sm select-bordered" [value]="timezone()" (change)="timezone.set($any($event.target).value)">
+                  @for (tz of timezones; track tz) { <option [value]="tz">{{ tz }}</option> }
+                </select>
+              </label>
+              <label class="flex flex-col gap-1">
+                <span class="text-[11px] font-medium text-base-content/50">Currency</span>
+                <select class="select select-sm select-bordered" [value]="currency()" (change)="currency.set($any($event.target).value)">
+                  @for (c of currencies; track c) { <option [value]="c">{{ c }}</option> }
+                </select>
+              </label>
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <label class="flex flex-col gap-1">
                 <span class="text-[11px] font-medium text-base-content/50">Due day</span>
                 <input type="number" min="1" max="28" class="input input-sm input-bordered"
@@ -110,20 +126,18 @@ interface TariffDraft {
             <button class="btn btn-xs btn-primary" (click)="openTariff()">+ Add tariff</button>
           </div>
           @if (tariffs().length === 0) {
-            <div class="rounded-2xl border border-dashed border-base-300/50 py-8 text-center">
-              <p class="text-sm text-base-content/50">No tariffs yet — invoices can't be prepared without an active tariff.</p>
-            </div>
+            <app-billing-empty-state title="No tariffs yet" hint="Invoices can't be prepared without an active tariff." />
           } @else {
             <div class="surface divide-y divide-base-300/20">
               @for (t of tariffs(); track t.id) {
-                <div class="flex items-center gap-3 px-5 py-2.5">
+                <div class="flex items-center gap-3 px-4 py-2.5">
                   <div class="flex-1 min-w-0">
                     <p class="text-sm font-medium truncate">{{ t.name }}</p>
                     <p class="text-[11px] text-base-content/50">
                       {{ money(t.rate_per_kl_minor) }}/kl
                       @if (t.standing_charge_minor) { <span> · standing {{ money(t.standing_charge_minor) }}</span> }
                       @if (t.minimum_charge_minor) { <span> · min {{ money(t.minimum_charge_minor) }}</span> }
-                      @if (t.tax_bps) { <span> · tax {{ t.tax_bps / 100 }}%</span> }
+                      @if (t.tax_bps) { <span> · tax {{ taxPercent(t.tax_bps) }}%</span> }
                     </p>
                     <p class="text-[11px] text-base-content/40">
                       from {{ date(t.effective_from) || '—' }}{{ t.effective_until ? ' until ' + date(t.effective_until) : ' · open-ended' }}
@@ -147,53 +161,60 @@ interface TariffDraft {
       <dialog class="modal modal-open" style="position: fixed;">
         <div class="modal-box max-w-sm">
           <h3 class="font-bold text-lg mb-4">{{ d.id ? 'Edit tariff' : 'New tariff' }}</h3>
-          <label class="flex flex-col mb-3">
-            <span class="label-text mb-1">Name</span>
-            <input class="input input-bordered w-full" placeholder="e.g. Residential 2026" [value]="d.name" (input)="d.name = $any($event.target).value" />
-          </label>
-          <label class="flex flex-col mb-3">
-            <span class="label-text mb-1">Rate per kilolitre (KES/kl)</span>
-            <input class="input input-bordered w-full" placeholder="e.g. 85.00" [value]="d.rate_per_kl" (input)="d.rate_per_kl = $any($event.target).value" />
-          </label>
-          <div class="grid grid-cols-2 gap-3 mb-3">
-            <label class="flex flex-col">
-              <span class="label-text mb-1">Standing charge (KES)</span>
-              <input class="input input-bordered w-full" placeholder="0.00" [value]="d.standing_charge" (input)="d.standing_charge = $any($event.target).value" />
+          <form #tariffForm="ngForm" (ngSubmit)="saveTariff()">
+            <label class="flex flex-col mb-3">
+              <span class="label-text mb-1">Name <span class="text-error">*</span></span>
+              <input class="input input-bordered w-full" placeholder="e.g. Residential 2026" name="tariffName" required
+                     #tariffNameCtrl="ngModel" [(ngModel)]="d.name" />
+              @if (tariffNameCtrl.touched && tariffNameCtrl.hasError('required')) {
+                <span class="text-error text-[11px] mt-1">Name is required.</span>
+              }
             </label>
-            <label class="flex flex-col">
-              <span class="label-text mb-1">Minimum charge (KES)</span>
-              <input class="input input-bordered w-full" placeholder="0.00" [value]="d.minimum_charge" (input)="d.minimum_charge = $any($event.target).value" />
+            <label class="flex flex-col mb-3">
+              <span class="label-text mb-1">Rate per kilolitre ({{ currency() }}/kl)</span>
+              <input class="input input-bordered w-full" inputmode="decimal" placeholder="e.g. 85.00" name="ratePerKl" [(ngModel)]="d.rate_per_kl" />
             </label>
-          </div>
-          <label class="flex flex-col mb-3">
-            <span class="label-text mb-1">Tax (basis points — 1600 = 16%)</span>
-            <input type="number" min="0" class="input input-bordered w-full" [value]="d.tax_bps" (input)="d.tax_bps = +$any($event.target).value || 0" />
-          </label>
-          <div class="grid grid-cols-2 gap-3 mb-3">
-            <label class="flex flex-col">
-              <span class="label-text mb-1">Effective from</span>
-              <input type="date" class="input input-bordered w-full" [value]="d.effective_from" (input)="d.effective_from = $any($event.target).value" />
+            <div class="grid grid-cols-2 gap-3 mb-3">
+              <label class="flex flex-col">
+                <span class="label-text mb-1">Standing charge ({{ currency() }})</span>
+                <input class="input input-bordered w-full" inputmode="decimal" placeholder="0.00" name="standingCharge" [(ngModel)]="d.standing_charge" />
+              </label>
+              <label class="flex flex-col">
+                <span class="label-text mb-1">Minimum charge ({{ currency() }})</span>
+                <input class="input input-bordered w-full" inputmode="decimal" placeholder="0.00" name="minimumCharge" [(ngModel)]="d.minimum_charge" />
+              </label>
+            </div>
+            <label class="flex flex-col mb-3">
+              <span class="label-text mb-1">Tax (%)</span>
+              <input type="number" min="0" step="any" inputmode="decimal" class="input input-bordered w-full" placeholder="e.g. 16"
+                     name="taxPercent" [(ngModel)]="d.tax_percent" />
             </label>
+            <div class="grid grid-cols-2 gap-3 mb-3">
+              <label class="flex flex-col">
+                <span class="label-text mb-1">Effective from <span class="text-error">*</span></span>
+                <input type="date" class="input input-bordered w-full" name="effectiveFrom" required [(ngModel)]="d.effective_from" />
+              </label>
+              <label class="flex flex-col">
+                <span class="label-text mb-1">Effective until (optional)</span>
+                <input type="date" class="input input-bordered w-full" name="effectiveUntil" [(ngModel)]="d.effective_until" />
+              </label>
+            </div>
             <label class="flex flex-col">
-              <span class="label-text mb-1">Effective until (optional)</span>
-              <input type="date" class="input input-bordered w-full" [value]="d.effective_until" (input)="d.effective_until = $any($event.target).value" />
+              <span class="label-text mb-1">Status</span>
+              <select class="select select-bordered w-full" name="tariffStatus" [(ngModel)]="d.status">
+                <option value="active">active</option>
+                <option value="retired">retired</option>
+              </select>
             </label>
-          </div>
-          <label class="flex flex-col">
-            <span class="label-text mb-1">Status</span>
-            <select class="select select-bordered w-full" [value]="d.status" (change)="d.status = $any($event.target).value">
-              <option value="active">active</option>
-              <option value="retired">retired</option>
-            </select>
-          </label>
-          @if (tariffError()) { <p class="text-error text-xs mt-2">{{ tariffError() }}</p> }
-          <div class="modal-action">
-            <button class="btn btn-ghost" (click)="tariffDraft.set(null)" [disabled]="busy()">Cancel</button>
-            <button class="btn btn-primary" [disabled]="!d.name.trim() || busy()" (click)="saveTariff()">
-              @if (busy()) { <span class="loading loading-spinner loading-xs"></span> }
-              Save
-            </button>
-          </div>
+            @if (tariffError()) { <p class="text-error text-xs mt-2">{{ tariffError() }}</p> }
+            <div class="modal-action">
+              <button type="button" class="btn btn-ghost" (click)="tariffDraft.set(null)" [disabled]="busy()">Cancel</button>
+              <button type="submit" class="btn btn-primary" [disabled]="tariffForm.invalid || busy()">
+                @if (busy()) { <span class="loading loading-spinner loading-xs"></span> }
+                Save
+              </button>
+            </div>
+          </form>
         </div>
         <div class="modal-backdrop" (click)="tariffDraft.set(null)"></div>
       </dialog>
@@ -206,26 +227,35 @@ export class BillingSettingsComponent {
   private confirm = inject(ConfirmService);
 
   protected readonly timezones = TIMEZONES;
+  protected readonly currencies = CURRENCIES;
   protected money = formatMoney;
   protected date = fmtDate;
+  protected taxPercent = bpsToPercent;
 
   protected loading = signal(true);
+  protected pageError = signal('');
   protected busy = signal(false);
   protected status = signal<{ ok: boolean; text: string } | null>(null);
 
   // Policy form fields (defaults match a fresh site).
   protected timezone = signal('Africa/Nairobi');
+  protected currency = signal('KES');
   protected dueDay = signal(5);
   protected graceDays = signal(7);
   protected warnDays = signal(3);
   protected autoValve = signal(false);
-  private currency = 'KES';
 
   protected tariffs = signal<Tariff[]>([]);
   protected tariffDraft = signal<TariffDraft | null>(null);
   protected tariffError = signal('');
 
   constructor() {
+    void this.load();
+  }
+
+  protected reload(): void {
+    this.loading.set(true);
+    this.pageError.set('');
     void this.load();
   }
 
@@ -243,15 +273,15 @@ export class BillingSettingsComponent {
       ]);
       if (settings) {
         if (settings.timezone) this.timezone.set(settings.timezone);
+        if (settings.currency) this.currency.set(settings.currency);
         if (settings.due_day) this.dueDay.set(settings.due_day);
         this.graceDays.set(settings.grace_days);
         this.warnDays.set(settings.warn_days);
         this.autoValve.set(settings.auto_valve_enabled);
-        if (settings.currency) this.currency = settings.currency;
       }
       this.tariffs.set(tariffs);
     } catch (e) {
-      this.status.set({ ok: false, text: e instanceof Error ? e.message : String(e) });
+      this.pageError.set(pbMessage(e));
     } finally {
       this.loading.set(false);
     }
@@ -268,11 +298,11 @@ export class BillingSettingsComponent {
         grace_days: this.graceDays(),
         warn_days: this.warnDays(),
         auto_valve_enabled: this.autoValve(),
-        currency: this.currency,
+        currency: this.currency(),
       });
       this.status.set({ ok: true, text: 'Billing policy saved.' });
     } catch (e) {
-      this.status.set({ ok: false, text: e instanceof Error ? e.message : String(e) });
+      this.status.set({ ok: false, text: pbMessage(e) });
     } finally {
       this.busy.set(false);
     }
@@ -289,7 +319,7 @@ export class BillingSettingsComponent {
             rate_per_kl: (t.rate_per_kl_minor / 100).toFixed(2),
             standing_charge: (t.standing_charge_minor / 100).toFixed(2),
             minimum_charge: (t.minimum_charge_minor / 100).toFixed(2),
-            tax_bps: t.tax_bps,
+            tax_percent: bpsToPercent(t.tax_bps),
             effective_from: t.effective_from ? t.effective_from.slice(0, 10) : '',
             effective_until: t.effective_until ? t.effective_until.slice(0, 10) : '',
             status: t.status || 'active',
@@ -299,7 +329,7 @@ export class BillingSettingsComponent {
             rate_per_kl: '',
             standing_charge: '',
             minimum_charge: '',
-            tax_bps: 0,
+            tax_percent: null,
             effective_from: new Date().toISOString().slice(0, 10),
             effective_until: '',
             status: 'active',
@@ -330,7 +360,7 @@ export class BillingSettingsComponent {
         rate_per_kl_minor: rate,
         standing_charge_minor: standing,
         minimum_charge_minor: minimum,
-        tax_bps: Math.max(0, Math.round(d.tax_bps)),
+        tax_bps: Math.max(0, percentToBps(d.tax_percent ?? 0)),
         effective_from: new Date(d.effective_from + 'T00:00:00Z').toISOString(),
         effective_until: d.effective_until ? new Date(d.effective_until + 'T00:00:00Z').toISOString() : '',
         status: d.status as Tariff['status'],
@@ -341,7 +371,7 @@ export class BillingSettingsComponent {
       this.status.set({ ok: true, text: 'Tariff saved.' });
       this.tariffs.set(await this.billing.listTariffs(this.shell.siteId()));
     } catch (e) {
-      this.tariffError.set(e instanceof Error ? e.message : String(e));
+      this.tariffError.set(pbMessage(e));
     } finally {
       this.busy.set(false);
     }
@@ -360,7 +390,7 @@ export class BillingSettingsComponent {
       this.status.set({ ok: true, text: `Tariff ${t.name} deleted.` });
       this.tariffs.set(await this.billing.listTariffs(this.shell.siteId()));
     } catch (e) {
-      this.status.set({ ok: false, text: e instanceof Error ? e.message : String(e) });
+      this.status.set({ ok: false, text: pbMessage(e) });
     }
   }
 }

@@ -133,6 +133,10 @@ export interface Invoice {
   status: 'draft' | 'issued' | 'partially_paid' | 'paid' | 'overdue' | 'disputed' | 'written_off' | '';
   issued_at: string;
   due_date: string;
+  /** Set by the arrears automation when the tenant is warned (migration 59). */
+  warned_at: string;
+  /** Set by the arrears automation when the valve is closed for arrears (migration 59). */
+  closed_at: string;
 }
 
 export interface InvoiceLine {
@@ -146,7 +150,8 @@ export interface InvoiceLine {
   quality: 'actual' | 'estimated' | '';
 }
 
-export interface PaymentAllocation {
+/** One allocation line in the /payments/manual response (NOT the collection). */
+export interface PaymentAllocationResult {
   id: string;
   invoice: string;
   amount_minor: number;
@@ -155,8 +160,16 @@ export interface PaymentAllocation {
 export interface PaymentResult {
   id: string;
   processing_status: string;
-  allocations: PaymentAllocation[];
+  allocations: PaymentAllocationResult[];
 }
+
+export interface InvoicePage {
+  items: Invoice[];
+  totalItems: number;
+}
+
+/** Client-side status chips mapped to invoice-status filters ('unpaid' = issued + partially_paid). */
+export type InvoiceStatusFilter = 'all' | 'unpaid' | 'overdue' | 'paid';
 
 const API = '/api/farmon/billing';
 
@@ -248,11 +261,10 @@ export class BillingService {
   }
 
   /** End an occupancy: stamps liable_until + flips status to ended. */
-  async endOccupancy(id: string, moveOutReadingMl?: number): Promise<void> {
+  async endOccupancy(id: string): Promise<void> {
     await this.pb.collection('occupancies').update(id, {
       status: 'ended',
       liable_until: new Date().toISOString(),
-      ...(moveOutReadingMl !== undefined ? { move_out_reading_ml: moveOutReadingMl } : {}),
     });
   }
 
@@ -325,12 +337,15 @@ export class BillingService {
     });
   }
 
-  /** Queue a valve command. The typed confirmation is enforced server-side too. */
-  async meterValve(meterId: string, action: 'open' | 'close'): Promise<{ id: string; status: string }> {
+  /**
+   * Queue a valve command. `confirm` is the operator's typed confirmation,
+   * sent verbatim — the server requires it to equal the uppercased action.
+   */
+  async meterValve(meterId: string, action: 'open' | 'close', confirm: string): Promise<{ id: string; status: string }> {
     return this.pb.send<{ id: string; status: string }>(`${API}/meters/${meterId}/valve`, {
       method: 'POST',
       requestKey: null,
-      body: { action, confirm: action.toUpperCase() },
+      body: { action, confirm },
     });
   }
 
@@ -349,6 +364,37 @@ export class BillingService {
       sort: '-last_seen',
       requestKey: 'billing:sightings',
     });
+  }
+
+  /** Downlink commands awaiting meter contact (queued or sent), site-wide. */
+  async listPendingValveCommands(siteId: string): Promise<MeterCommand[]> {
+    return this.pb.collection('meter_commands').getFullList<MeterCommand>({
+      filter: this.pb.filter("site = {:s} && (status = 'queued' || status = 'sent')", { s: siteId }),
+      sort: '-created',
+      requestKey: `billing:pending-commands:${siteId}`,
+    });
+  }
+
+  /** Count of downlink commands awaiting meter contact (nav badge). */
+  async countPendingValveCommands(siteId: string): Promise<number> {
+    const r = await this.pb.collection('meter_commands').getList<MeterCommand>(1, 1, {
+      filter: this.pb.filter("site = {:s} && (status = 'queued' || status = 'sent')", { s: siteId }),
+      requestKey: `billing:pending-commands-count:${siteId}`,
+    });
+    return r.totalItems;
+  }
+
+  /** Failed/expired downlink commands in the last `days` (attention surface). */
+  async countFailedValveCommands(siteId: string, days = 7): Promise<number> {
+    const since = new Date(Date.now() - days * 86_400_000).toISOString();
+    const r = await this.pb.collection('meter_commands').getList<MeterCommand>(1, 1, {
+      filter: this.pb.filter(
+        "site = {:s} && (status = 'failed' || status = 'expired') && created >= {:d}",
+        { s: siteId, d: since },
+      ),
+      requestKey: `billing:failed-commands:${siteId}:${days}`,
+    });
+    return r.totalItems;
   }
 
   /** Recent meter health/security events for the overview feed. */
@@ -378,16 +424,29 @@ export class BillingService {
     });
   }
 
-  /** Invoices for the site, optionally narrowed to one cycle. */
-  async listInvoices(siteId: string, cycleId?: string): Promise<Invoice[]> {
-    return this.pb.collection('invoices').getFullList<Invoice>({
-      filter: this.pb.filter(
-        cycleId ? 'site = {:s} && cycle = {:c}' : 'site = {:s}',
-        cycleId ? { s: siteId, c: cycleId } : { s: siteId },
-      ),
+  /**
+   * Invoices for the site, newest first, PAGED (getFullList was unbounded).
+   * Cycle / account / status narrow server-side so paging stays correct.
+   * requestKey is null: paged refetches (load-more, filter changes) must not
+   * auto-cancel each other.
+   */
+  async listInvoices(
+    siteId: string,
+    opts: { cycleId?: string; accountId?: string; status?: InvoiceStatusFilter; page?: number; perPage?: number } = {},
+  ): Promise<InvoicePage> {
+    const { cycleId, accountId, status, page = 1, perPage = 100 } = opts;
+    const clauses = ['site = {:s}'];
+    const params: Record<string, string> = { s: siteId };
+    if (cycleId) { clauses.push('cycle = {:c}'); params['c'] = cycleId; }
+    if (accountId) { clauses.push('tenant_account = {:a}'); params['a'] = accountId; }
+    if (status === 'unpaid') clauses.push("(status = 'issued' || status = 'partially_paid')");
+    else if (status && status !== 'all') { clauses.push('status = {:st}'); params['st'] = status; }
+    const r = await this.pb.collection('invoices').getList<Invoice>(page, perPage, {
+      filter: this.pb.filter(clauses.join(' && '), params),
       sort: '-created',
-      requestKey: `billing:invoices:${siteId}:${cycleId ?? 'all'}`,
+      requestKey: null,
     });
+    return { items: r.items, totalItems: r.totalItems };
   }
 
   /** Outstanding invoices across the site (for the overview debt roll-up). */
@@ -398,6 +457,15 @@ export class BillingService {
         { s: siteId },
       ),
       requestKey: `billing:outstanding:${siteId}`,
+    });
+  }
+
+  /** Overdue invoices only (shell nav badge count + attention banner total). */
+  async listOverdueInvoices(siteId: string): Promise<Invoice[]> {
+    return this.pb.collection('invoices').getFullList<Invoice>({
+      filter: this.pb.filter("site = {:s} && status = 'overdue'", { s: siteId }),
+      sort: '-created',
+      requestKey: `billing:overdue:${siteId}`,
     });
   }
 

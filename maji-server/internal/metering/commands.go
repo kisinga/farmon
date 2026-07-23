@@ -3,6 +3,7 @@ package metering
 import (
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/pocketbase/dbx"
@@ -15,6 +16,16 @@ const (
 	CmdValveClose  = "valve_close"
 	CmdSetInterval = "set_interval"
 )
+
+// isUniqueViolation reports whether err is a unique-constraint violation
+// (e.g. the pending-valve partial index or the readings dedupe index).
+// PocketBase converts SQLite UNIQUE failures into validator errors of the
+// form "meter: Value must be unique." (one entry per indexed column) —
+// verified against the test app; the raw "UNIQUE constraint failed" driver
+// string never reaches the caller.
+func isUniqueViolation(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "Value must be unique")
+}
 
 // EnqueueCommand appends a command to the meter's FIFO downlink queue. It is
 // delivered at the meter's next contact (the meter sleeps between uplinks).
@@ -57,10 +68,22 @@ func NextQueued(app core.App, meterID string) (*core.Record, error) {
 // HasPendingValve reports whether a valve command is already in flight
 // (queued, or sent but not yet acked) for the meter.
 func HasPendingValve(app core.App, meterID string) bool {
+	rec, err := PendingValve(app, meterID)
+	return err == nil && rec != nil
+}
+
+// PendingValve returns the meter's in-flight valve command (queued, or sent
+// but not yet acked), or (nil, nil) when none. Callers that act on the
+// pending command's direction (e.g. cancelling a queued close after payment)
+// use this instead of HasPendingValve.
+func PendingValve(app core.App, meterID string) (*core.Record, error) {
 	recs, err := app.FindRecordsByFilter("meter_commands",
 		"meter = {:m} && (status = 'queued' || status = 'sent') && (type = 'valve_open' || type = 'valve_close')",
 		"-created", 1, 0, dbx.Params{"m": meterID})
-	return err == nil && len(recs) > 0
+	if err != nil || len(recs) == 0 {
+		return nil, err
+	}
+	return recs[0], nil
 }
 
 // RunExpirySweeper expires stale commands every 5 minutes. Fire-and-forget
@@ -99,6 +122,32 @@ func expireStale(app core.App, ttl time.Duration, now time.Time) error {
 		insertEvent(app, rec.GetString("site"), rec.GetString("meter"),
 			"command_expired", "warning",
 			fmt.Sprintf("command %s (%s) expired undelivered after %s", rec.Id, rec.GetString("type"), ttl),
+			now)
+	}
+	return nil
+}
+
+// ExpireOrphanedSent sweeps commands left in 'sent' by a server restart (the
+// pending-ack table is in-memory, so a restart strands them: nothing will
+// ever requeue or ack them). Each is marked expired with a meter_events row.
+// Called once from StartListener before the packet loop starts.
+func ExpireOrphanedSent(app core.App, now time.Time) error {
+	recs, err := app.FindRecordsByFilter("meter_commands",
+		"status = 'sent'", "created", 500, 0)
+	if err != nil {
+		return err
+	}
+	if len(recs) == 500 {
+		log.Printf("metering: orphaned sent sweep: page full (500) — more 'sent' rows may remain")
+	}
+	for _, rec := range recs {
+		rec.Set("status", "expired")
+		if err := app.Save(rec); err != nil {
+			return err
+		}
+		insertEvent(app, rec.GetString("site"), rec.GetString("meter"),
+			"command_expired", "warning",
+			fmt.Sprintf("command %s (%s) expired: server restarted with the command in flight (ack never observed)", rec.Id, rec.GetString("type")),
 			now)
 	}
 	return nil

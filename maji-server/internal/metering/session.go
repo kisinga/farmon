@@ -3,10 +3,13 @@ package metering
 import (
 	"crypto/rand"
 	"encoding/binary"
+	"encoding/hex"
+	"fmt"
 	"log"
 	"net"
 	"time"
 
+	"github.com/kisinga/majiflow/internal/alerts"
 	"github.com/pocketbase/pocketbase/core"
 )
 
@@ -74,6 +77,7 @@ func (l *listener) flushOne(meter *core.Record, src *net.UDPAddr) {
 	now := time.Now().UTC()
 	cmd.Set("status", "sent")
 	cmd.Set("sent_at", now)
+	cmd.Set("attempts", cmd.GetInt("attempts")+1)
 	if err := l.app.Save(cmd); err != nil {
 		log.Printf("metering: mark command %s sent: %v", cmd.Id, err)
 	}
@@ -94,8 +98,12 @@ func (l *listener) flushOne(meter *core.Record, src *net.UDPAddr) {
 // unambiguously (two meters sharing an IP make the fallback a guess that
 // could ack the wrong valve).
 func (l *listener) resolveAck(f Frame, src *net.UDPAddr) {
+	// Always decode what we can: the objects drive IMEI matching and the
+	// valve-command echo verification. A decode error leaves objs nil — the
+	// ack is then handled by the source-IP fallback, as before.
+	objs, _ := DecodeObjects(f.Payload)
 	imei := ""
-	if objs, err := DecodeObjects(f.Payload); err == nil {
+	if objs != nil {
 		imei = objs.IMEI()
 	}
 	var pa *pendingAck
@@ -131,6 +139,34 @@ func (l *listener) resolveAck(f Frame, src *net.UDPAddr) {
 		return
 	}
 	now := time.Now().UTC()
+	// Keep the raw payload for live-device validation of the echo semantics.
+	cmd.Set("ack_raw", hex.EncodeToString(f.Payload))
+
+	// Echo verification: when the ack carries /81/0 key 0 (the valve command
+	// echo — 1=close, 0=open per the vendor fixtures), it must match the
+	// command we sent. A mismatch means the meter executed (or reports)
+	// something else: fail loudly, leave valve_state untouched, and stop the
+	// queue rather than flushing the next command into a confused session.
+	if echo, ok := valveCmdEcho(objs); ok {
+		if want, check := expectedValveEcho(cmd.GetString("type")); check && echo != want {
+			cmd.Set("status", "failed")
+			cmd.Set("error", fmt.Sprintf("ack echo mismatch: sent %s but meter echoed valve cmd %d", cmd.GetString("type"), echo))
+			if err := l.app.Save(cmd); err != nil {
+				log.Printf("metering: mark command %s failed: %v", cmd.Id, err)
+			}
+			insertEvent(l.app, cmd.GetString("site"), cmd.GetString("meter"),
+				"command_failed", "critical",
+				fmt.Sprintf("command %s (%s) ack echo mismatch: meter echoed valve cmd %d", cmd.Id, cmd.GetString("type"), echo),
+				now)
+			log.Printf("metering: command %s (%s) ack echo mismatch (echoed %d) from meter %s",
+				cmd.Id, cmd.GetString("type"), echo, pa.meterID)
+			// A mismatch signals device misbehavior — alert the owners too
+			// (goroutine: alerting does network I/O, never block the loop).
+			go l.alertCommandFailed(cmd)
+			return
+		}
+	}
+
 	cmd.Set("status", "acked")
 	cmd.Set("acked_at", now)
 	if err := l.app.Save(cmd); err != nil {
@@ -163,7 +199,9 @@ func (l *listener) resolveAck(f Frame, src *net.UDPAddr) {
 }
 
 // requeueExpiredAcks returns timed-out commands to the queue; they are
-// retried at the meter's next contact (spec §3.3 step 4).
+// retried at the meter's next contact (spec §3.3 step 4). A command that has
+// exhausted MeterCmdMaxAttempts is failed instead, with a critical event and
+// a best-effort alert to the site owners.
 func (l *listener) requeueExpiredAcks() {
 	now := time.Now()
 	for _, p := range l.pending {
@@ -171,14 +209,94 @@ func (l *listener) requeueExpiredAcks() {
 			continue
 		}
 		delete(l.pending, p.meterID)
-		if cmd, err := l.app.FindRecordById("meter_commands", p.cmdID); err == nil && cmd != nil {
-			cmd.Set("status", "queued")
+		cmd, err := l.app.FindRecordById("meter_commands", p.cmdID)
+		if err != nil || cmd == nil {
+			continue
+		}
+		if max := l.cfg.MeterCmdMaxAttempts; max > 0 && cmd.GetInt("attempts") >= max {
+			cmd.Set("status", "failed")
+			cmd.Set("error", "ack timeout: max attempts reached")
 			if err := l.app.Save(cmd); err != nil {
-				log.Printf("metering: requeue command %s: %v", p.cmdID, err)
+				log.Printf("metering: fail command %s: %v", p.cmdID, err)
 			}
+			insertEvent(l.app, cmd.GetString("site"), cmd.GetString("meter"),
+				"command_failed", "critical",
+				fmt.Sprintf("command %s (%s) failed: no ack after %d attempt(s)", cmd.Id, cmd.GetString("type"), cmd.GetInt("attempts")),
+				now)
+			log.Printf("metering: command %s (meter %s) failed: no ack after %d attempt(s)",
+				p.cmdID, p.meterID, cmd.GetInt("attempts"))
+			// Alerting does network I/O (SMTP/HTTP) — never block the packet
+			// loop on it.
+			go l.alertCommandFailed(cmd)
+			continue
+		}
+		cmd.Set("status", "queued")
+		if err := l.app.Save(cmd); err != nil {
+			log.Printf("metering: requeue command %s: %v", p.cmdID, err)
 		}
 		log.Printf("metering: ack timeout for command %s (meter %s); requeued", p.cmdID, p.meterID)
 	}
+}
+
+// alertCommandFailed notifies the site's owners that a command can no longer
+// be delivered. Best-effort: any failure is logged, never propagated — this
+// runs inside the packet loop.
+func (l *listener) alertCommandFailed(cmd *core.Record) {
+	emails := siteOwnerEmails(l.app, cmd.GetString("site"))
+	if len(emails) == 0 {
+		return
+	}
+	subject := "Meter command failed: " + cmd.GetString("type")
+	body := fmt.Sprintf(
+		"Command %s (%s) for meter %s was sent %d time(s) without an acknowledgement from the meter and has been marked failed. The meter may be unreachable; investigate its connectivity.",
+		cmd.Id, cmd.GetString("type"), cmd.GetString("meter"), cmd.GetInt("attempts"))
+	if err := alerts.SendExternal(l.app, emails, nil, subject, body); err != nil {
+		log.Printf("metering: alert command %s failure: %v", cmd.Id, err)
+	}
+}
+
+// siteOwnerEmails resolves the emails of a site's co-owners (sites.owner is
+// a multi-relation to users). Failures return what could be resolved.
+func siteOwnerEmails(app core.App, siteID string) []string {
+	if siteID == "" {
+		return nil
+	}
+	site, err := app.FindRecordById("sites", siteID)
+	if err != nil || site == nil {
+		return nil
+	}
+	var emails []string
+	for _, uid := range site.GetStringSlice("owner") {
+		u, err := app.FindRecordById("users", uid)
+		if err == nil && u != nil {
+			if e := u.GetString("email"); e != "" {
+				emails = append(emails, e)
+			}
+		}
+	}
+	return emails
+}
+
+// valveCmdEcho extracts the /81/0 key-0 valve command echo from an ack
+// payload (1=close, 0=open per the vendor fixtures; flagged for live-unit
+// validation). ok is false when the ack carries no such echo.
+func valveCmdEcho(objs Objects) (uint64, bool) {
+	if m := objs.Find(BnValve); m != nil {
+		return m.num(KeyValveCmd)
+	}
+	return 0, false
+}
+
+// expectedValveEcho maps a valve command type to the echo value the meter
+// should report; ok is false for non-valve commands (nothing to verify).
+func expectedValveEcho(cmdType string) (uint64, bool) {
+	switch cmdType {
+	case CmdValveClose:
+		return 1, true
+	case CmdValveOpen:
+		return 0, true
+	}
+	return 0, false
 }
 
 // payloadSeconds reads the interval argument of a set_interval command.

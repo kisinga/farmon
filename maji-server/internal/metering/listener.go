@@ -30,6 +30,11 @@ func StartListener(app core.App, cfg config.Config) error {
 	if err != nil {
 		return err
 	}
+	// Commands left in 'sent' by a previous run are orphaned (the pending-ack
+	// table is in-memory) — expire them before taking new traffic.
+	if err := ExpireOrphanedSent(app, time.Now().UTC()); err != nil {
+		log.Printf("metering: orphaned sent sweep: %v", err)
+	}
 	go l.loop()
 	go RunExpirySweeper(app, cfg.MeterCmdTTLH)
 	log.Printf("metering: UDP listener on %s (cmd window %dms, cmd TTL %dh)",
@@ -75,6 +80,9 @@ func (l *listener) loop() {
 			continue
 		}
 		l.handlePacketSafe(bytes.Clone(buf[:n]), src)
+		// Under steady traffic the read deadline never fires, so ack timeouts
+		// are also checked after every successfully handled packet.
+		l.requeueExpiredAcks()
 	}
 }
 

@@ -15,9 +15,12 @@ import (
 // Arrears automation (spec §5): invoice overdue past grace_days → warning →
 // still unpaid after warn_days → valve_close queued for the meter's next
 // contact. Payment settling the account → valve_open. The rule NEVER closes
-// without a prior warning and is idempotent across restarts: warned_at /
-// closed_at on the invoice plus the metering package's pending-valve guard
-// make a repeated sweep a no-op.
+// without a prior warning and is idempotent across restarts: warned_at plus
+// the per-meter valve_state / pending-command checks make a repeated sweep a
+// no-op. closed_at on the invoice records INTENT ("closure initiated"), not
+// completion — physical state is per meter (meter_devices.valve_state +
+// pending meter_commands), so a partially-failed close is retried by later
+// sweeps until every meter is shut.
 
 // ArrearsRule is the reserved queued_by/allocated_by actor id for actions the
 // arrears automation takes (no human user).
@@ -96,36 +99,43 @@ func evaluateArrears(app core.App, inv, settings *core.Record, grace, warn time.
 		return
 	}
 
-	// (b) close only after warn_days have passed since the warning.
-	if now.Sub(warnedAt) <= warn || !inv.GetDateTime("closed_at").IsZero() {
+	// (b) close only after warn_days have passed since the warning. Physical
+	// state is per meter: every sweep retries any meter that is neither
+	// closed nor has a closure in flight, so a partial failure recovers on a
+	// later sweep (bounded downstream by the metering-level attempts cap).
+	if now.Sub(warnedAt) <= warn {
 		return
 	}
-	closed := false
+	closureInitiated := false
 	for _, meter := range accountMeters(app, inv.GetString("tenant_account")) {
 		if meter.GetString("valve_state") == "closed" {
-			closed = true
+			closureInitiated = true
+			continue
+		}
+		if metering.HasPendingValve(app, meter.Id) {
+			closureInitiated = true
 			continue
 		}
 		_, err := metering.EnqueueValve(app, meter, true, ArrearsRule, "rule")
 		switch {
 		case err == nil:
-			closed = true
+			closureInitiated = true
 			log.Printf("billing: arrears: queued valve_close for meter %s (invoice %s)", meter.Id, inv.Id)
 		case errors.Is(err, metering.ErrValveNoChange), errors.Is(err, metering.ErrValvePending):
 			// Idempotency: already closed or a command is in flight.
-			closed = true
+			closureInitiated = true
 		default:
 			log.Printf("billing: arrears close meter %s: %v", meter.Id, err)
 		}
 	}
-	if !closed {
-		// Nothing was actually closed or queued (e.g. not valve-capable) —
-		// leave closed_at unset so the next sweep retries.
-		return
-	}
-	inv.Set("closed_at", now)
-	if err := app.Save(inv); err != nil {
-		log.Printf("billing: arrears close save %s: %v", inv.Id, err)
+	// closed_at records intent ("closure initiated"): set once, the first
+	// time at least one meter is closed or has a closure queued, and never
+	// overwritten by later sweeps. The invoice is saved only when changed.
+	if closureInitiated && inv.GetDateTime("closed_at").IsZero() {
+		inv.Set("closed_at", now)
+		if err := app.Save(inv); err != nil {
+			log.Printf("billing: arrears close save %s: %v", inv.Id, err)
+		}
 	}
 }
 
@@ -161,9 +171,29 @@ func ReevaluateAfterPayment(app core.App, tenantAccountID string) {
 		return
 	}
 	reopened := false
+	allReopened := true
 	for _, meter := range accountMeters(app, tenantAccountID) {
-		if meter.GetString("valve_state") != "closed" && !metering.HasPendingValve(app, meter.Id) {
-			continue
+		// A queued-but-undelivered close is superseded by the payment: the
+		// account settled before the meter ever heard the command, so cancel
+		// it — otherwise the valve would close at the next contact with
+		// closed_at already cleared and nothing reopening it. A close
+		// already SENT can't be cancelled safely (the device may execute
+		// it), so that meter counts as not reopened.
+		if pending, _ := metering.PendingValve(app, meter.Id); pending != nil && pending.GetString("type") == metering.CmdValveClose {
+			if pending.GetString("status") != "queued" {
+				allReopened = false
+				log.Printf("billing: arrears reopen meter %s: close already sent, cannot cancel", meter.Id)
+				continue
+			}
+			if err := app.Delete(pending); err != nil {
+				allReopened = false
+				log.Printf("billing: arrears reopen meter %s: cancel pending close: %v", meter.Id, err)
+				continue
+			}
+			log.Printf("billing: arrears: cancelled pending valve_close for meter %s (account settled)", meter.Id)
+		}
+		if meter.GetString("valve_state") != "closed" {
+			continue // open with no close in flight — counts as reopened
 		}
 		_, err := metering.EnqueueValve(app, meter, false, ArrearsRule, "rule")
 		switch {
@@ -171,9 +201,16 @@ func ReevaluateAfterPayment(app core.App, tenantAccountID string) {
 			reopened = true
 			log.Printf("billing: arrears: queued valve_open for meter %s (account settled)", meter.Id)
 		case errors.Is(err, metering.ErrValveNoChange), errors.Is(err, metering.ErrValvePending):
+			// Already open or a command is in flight — counts as reopened.
 		default:
+			allReopened = false
 			log.Printf("billing: arrears reopen meter %s: %v", meter.Id, err)
 		}
+	}
+	if !allReopened {
+		// At least one meter could not be reopened — keep closed_at so a
+		// later payment or manual action re-triggers the reopen.
+		return
 	}
 	for _, inv := range closedByRule {
 		inv.Set("closed_at", "")

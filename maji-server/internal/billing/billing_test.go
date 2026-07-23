@@ -401,6 +401,9 @@ func TestArrearsEndToEnd(t *testing.T) {
 	if got := inv.GetString("status"); got != "paid" {
 		t.Fatalf("invoice status = %q, want paid", got)
 	}
+	if !inv.GetDateTime("closed_at").IsZero() {
+		t.Error("closed_at not cleared after every meter reopened")
+	}
 	if got := countCmds("valve_open"); got != 1 {
 		t.Fatalf("valve_open commands after payment = %d, want 1", got)
 	}
@@ -434,5 +437,201 @@ func TestArrearsDisabled(t *testing.T) {
 	}
 	if got := countRecords(t, app, "meter_commands", "meter = {:m}", dbx.Params{"m": meter.Id}); got != 0 {
 		t.Errorf("commands = %d, want 0", got)
+	}
+}
+
+// Partial close recovery: with two meters on the account, a meter whose
+// enqueue fails (here: not valve-capable at sweep time) does NOT block the
+// other meter's closure, and a later sweep retries it once it becomes
+// capable. closed_at records intent — set once and preserved across sweeps.
+func TestArrearsPartialCloseRecovery(t *testing.T) {
+	app := newTestApp(t)
+	site, unit, tenant, meter1 := seedAccount(t, app)
+	seedSettings(t, app, site.Id, 0, 0, true)
+	meter2 := save(t, app, "meter_devices", map[string]any{
+		"site": site.Id, "unit": unit.Id, "imei": "867724031700002", "sn": "sn-2",
+		"valve_capable": false, "valve_state": "open", "status": "active",
+	})
+	start, end := june2026()
+	cycle := seedCycle(t, app, site.Id, start, end, time.Date(2026, 7, 15, 0, 0, 0, 0, time.UTC), "issued")
+	inv := save(t, app, "invoices", map[string]any{
+		"site": site.Id, "tenant_account": tenant.Id, "cycle": cycle.Id,
+		"invoice_number": "INV-202606-0001", "currency": "KES",
+		"total_minor": 100000, "status": "overdue",
+		"due_date": time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC),
+	})
+	countCmds := func(meterID, typ string) int {
+		return countRecords(t, app, "meter_commands",
+			"meter = {:m} && type = {:t}", dbx.Params{"m": meterID, "t": typ})
+	}
+
+	// Sweep 1: warn only.
+	now1 := time.Date(2026, 7, 10, 10, 0, 0, 0, time.UTC)
+	RunArrearsSweep(app, now1)
+
+	// Sweep 2: meter1's close is queued; meter2's enqueue fails (not
+	// valve-capable). closed_at is still set — intent recorded.
+	now2 := now1.Add(26 * time.Hour)
+	RunArrearsSweep(app, now2)
+	if got := countCmds(meter1.Id, "valve_close"); got != 1 {
+		t.Fatalf("sweep 2 meter1 close commands = %d, want 1", got)
+	}
+	if got := countCmds(meter2.Id, "valve_close"); got != 0 {
+		t.Fatalf("sweep 2 meter2 close commands = %d, want 0 (enqueue failed)", got)
+	}
+	inv, _ = app.FindRecordById("invoices", inv.Id)
+	closedAt := inv.GetDateTime("closed_at").Time()
+	if closedAt.IsZero() {
+		t.Fatal("sweep 2: closed_at not set despite meter1 closure queued")
+	}
+
+	// meter1 acked its close; meter2 is replaced with a valve-capable model.
+	cmd1, _ := app.FindFirstRecordByFilter("meter_commands",
+		"meter = {:m} && type = 'valve_close'", dbx.Params{"m": meter1.Id})
+	cmd1.Set("status", "acked")
+	if err := app.Save(cmd1); err != nil {
+		t.Fatal(err)
+	}
+	meter1.Set("valve_state", "closed")
+	if err := app.Save(meter1); err != nil {
+		t.Fatal(err)
+	}
+	meter2.Set("valve_capable", true)
+	if err := app.Save(meter2); err != nil {
+		t.Fatal(err)
+	}
+
+	// Sweep 3: meter1 is closed (done); meter2 is retried and now queues.
+	RunArrearsSweep(app, now2.Add(26*time.Hour))
+	if got := countCmds(meter1.Id, "valve_close"); got != 1 {
+		t.Fatalf("sweep 3 meter1 close commands = %d, want 1 (no duplicate)", got)
+	}
+	if got := countCmds(meter2.Id, "valve_close"); got != 1 {
+		t.Fatalf("sweep 3 meter2 close commands = %d, want 1 (retried)", got)
+	}
+	inv, _ = app.FindRecordById("invoices", inv.Id)
+	if got := inv.GetDateTime("closed_at").Time(); !got.Equal(closedAt) {
+		t.Errorf("closed_at = %s, want preserved %s (set once)", got, closedAt)
+	}
+
+	// Sweep 4: meter2's command is in flight — nothing new, closed_at intact.
+	RunArrearsSweep(app, now2.Add(50*time.Hour))
+	if got := countCmds(meter2.Id, "valve_close"); got != 1 {
+		t.Fatalf("sweep 4 meter2 close commands = %d, want 1 (in-flight guard)", got)
+	}
+	inv, _ = app.FindRecordById("invoices", inv.Id)
+	if got := inv.GetDateTime("closed_at").Time(); !got.Equal(closedAt) {
+		t.Errorf("closed_at = %s, want preserved %s", got, closedAt)
+	}
+}
+
+// Reopen failure: every account meter must be reopened (or in flight) before
+// closed_at is cleared. One meter failing the open-enqueue keeps closed_at so
+// a later payment or manual action re-triggers the reopen.
+func TestReopenPartialFailureKeepsClosedAt(t *testing.T) {
+	app := newTestApp(t)
+	site, unit, tenant, meter1 := seedAccount(t, app)
+	seedSettings(t, app, site.Id, 0, 0, true)
+	meter2 := save(t, app, "meter_devices", map[string]any{
+		"site": site.Id, "unit": unit.Id, "imei": "867724031700002", "sn": "sn-2",
+		"valve_capable": true, "valve_state": "open", "status": "active",
+	})
+	start, end := june2026()
+	cycle := seedCycle(t, app, site.Id, start, end, time.Date(2026, 7, 15, 0, 0, 0, 0, time.UTC), "issued")
+	inv := save(t, app, "invoices", map[string]any{
+		"site": site.Id, "tenant_account": tenant.Id, "cycle": cycle.Id,
+		"invoice_number": "INV-202606-0001", "currency": "KES",
+		"total_minor": 100000, "status": "overdue",
+		"due_date": time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC),
+	})
+
+	// Warn, then close both meters; both ack.
+	now1 := time.Date(2026, 7, 10, 10, 0, 0, 0, time.UTC)
+	RunArrearsSweep(app, now1)
+	RunArrearsSweep(app, now1.Add(26*time.Hour))
+	for _, m := range []*core.Record{meter1, meter2} {
+		cmd, err := app.FindFirstRecordByFilter("meter_commands",
+			"meter = {:m} && type = 'valve_close'", dbx.Params{"m": m.Id})
+		if err != nil || cmd == nil {
+			t.Fatalf("close command for meter %s not found: %v", m.Id, err)
+		}
+		cmd.Set("status", "acked")
+		if err := app.Save(cmd); err != nil {
+			t.Fatal(err)
+		}
+		m.Set("valve_state", "closed")
+		if err := app.Save(m); err != nil {
+			t.Fatal(err)
+		}
+	}
+	inv, _ = app.FindRecordById("invoices", inv.Id)
+	if inv.GetDateTime("closed_at").IsZero() {
+		t.Fatal("closed_at not set after closing both meters")
+	}
+
+	// meter2 can no longer take valve commands (e.g. hardware fault reported
+	// back, model re-registered as valve-less).
+	meter2.Set("valve_capable", false)
+	if err := app.Save(meter2); err != nil {
+		t.Fatal(err)
+	}
+
+	// The tenant pays in full: meter1 reopens, meter2's enqueue fails →
+	// closed_at must be kept.
+	if _, _, err := CreateManualPayment(app, site.Id, tenant.Id, 100000, "", "rcpt-9", "tester", ""); err != nil {
+		t.Fatal(err)
+	}
+	inv, _ = app.FindRecordById("invoices", inv.Id)
+	if got := inv.GetString("status"); got != "paid" {
+		t.Fatalf("invoice status = %q, want paid", got)
+	}
+	if inv.GetDateTime("closed_at").IsZero() {
+		t.Error("closed_at cleared despite meter2 reopen failure")
+	}
+	if got := countRecords(t, app, "meter_commands",
+		"meter = {:m} && type = 'valve_open'", dbx.Params{"m": meter1.Id}); got != 1 {
+		t.Errorf("meter1 valve_open commands = %d, want 1", got)
+	}
+	if got := countRecords(t, app, "meter_commands",
+		"meter = {:m} && type = 'valve_open'", dbx.Params{"m": meter2.Id}); got != 0 {
+		t.Errorf("meter2 valve_open commands = %d, want 0 (enqueue failed)", got)
+	}
+}
+
+// Settled before delivery: a queued-but-unsent valve_close is superseded by
+// the payment — the sweep queued it, the tenant paid before the meter's next
+// contact, so the close must be cancelled (not left to execute with
+// closed_at cleared) and no open command is needed.
+func TestReopenCancelsQueuedClose(t *testing.T) {
+	app := newTestApp(t)
+	site, _, tenant, meter1 := seedAccount(t, app)
+	seedSettings(t, app, site.Id, 0, 0, true)
+	start, end := june2026()
+	cycle := seedCycle(t, app, site.Id, start, end, time.Date(2026, 7, 15, 0, 0, 0, 0, time.UTC), "issued")
+	inv := save(t, app, "invoices", map[string]any{
+		"site": site.Id, "tenant_account": tenant.Id, "cycle": cycle.Id,
+		"invoice_number": "INV-202606-0001", "currency": "KES",
+		"total_minor": 100000, "status": "overdue",
+		"due_date": time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC),
+	})
+
+	now1 := time.Date(2026, 7, 10, 10, 0, 0, 0, time.UTC)
+	RunArrearsSweep(app, now1)                   // warn
+	RunArrearsSweep(app, now1.Add(26*time.Hour)) // close queued, not acked
+	if got := countRecords(t, app, "meter_commands",
+		"meter = {:m} && type = 'valve_close'", dbx.Params{"m": meter1.Id}); got != 1 {
+		t.Fatalf("close commands = %d, want 1", got)
+	}
+
+	// The tenant pays in full before the meter's next contact.
+	if _, _, err := CreateManualPayment(app, site.Id, tenant.Id, 100000, "", "rcpt-10", "tester", ""); err != nil {
+		t.Fatal(err)
+	}
+	if got := countRecords(t, app, "meter_commands", "meter = {:m}", dbx.Params{"m": meter1.Id}); got != 0 {
+		t.Errorf("commands after payment = %d, want 0 (queued close cancelled, no open needed)", got)
+	}
+	inv, _ = app.FindRecordById("invoices", inv.Id)
+	if !inv.GetDateTime("closed_at").IsZero() {
+		t.Error("closed_at not cleared after queued close was cancelled")
 	}
 }

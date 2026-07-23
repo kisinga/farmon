@@ -13,6 +13,14 @@
 > - **Migrations:** landed as 57 (billing core), 58 (metering), 59 (financial spine).
 > - **Gating is two-layer:** the global `billing_module` feature flag (migration 54 kill-switch) PLUS per-site `tenant_billing` capability from `sites.addons`/`packs.capabilities`, evaluated server-side by `billing.HasCapability`; entitlement fields are admin-only writes again (`guardEntitlement*` in `sites_hooks.go`).
 > - **Listener lifecycle:** the UDP listener starts only on the cloud binary when `MAJI_METER_UDP_ADDR` is set (empty = disabled); `MAJI_METER_TZ` (default `UTC+3`) configures the time-calibration timezone. Port 5683 is also CoAP's IANA port — the vendor chose it; no CoAP is involved.
+>
+> **Hardening pass (post-review, folded back):**
+> - **Command attempts cap:** `meter_commands.attempts` counts sends; ack-timeout requeues stop at `MAJI_METER_CMD_MAX_ATTEMPTS` (default 3) → status `failed` + critical `meter_events` row + `alerts.SendExternal` to site owners. Migration 64 also adds `ack_raw` (hex of the ack payload, audit).
+> - **Orphaned `sent` sweep:** at listener startup, `ExpireOrphanedSent` expires all `sent` commands — a `sent` row from a previous process is unackable (the pending-ack map is in-memory) and would otherwise deadlock valve control for that meter (`HasPendingValve` counts `sent` as pending while `flushOne` only dequeues `queued`).
+> - **Ack verification:** `resolveAck` decodes the FuncCmdResult payload; a `/81/0` key-0 echo contradicting the commanded state fails the command (no `valve_state` update) instead of acking it. Acks without a valve echo still pass (live-device validation pending).
+> - **Pending-valve race closed:** partial unique index `idx_meter_commands_pending_valve` on `meter_commands(meter) WHERE status IN ('queued','sent') AND type IN ('valve_open','valve_close')`; `EnqueueValve` maps the violation to `ErrValvePending`. Note PocketBase surfaces unique violations as validator errors ("Value must be unique"), not raw SQLite strings.
+> - **Arrears intent/fact split:** `invoices.closed_at` = "closure initiated" (intent, set once); physical state is per meter (`valve_state` + pending commands). The sweep no longer skips closed invoices — it retries every un-closed meter until closed/pending (fixes permanent partial close), and reopen clears `closed_at` only when every meter is reopened/in-flight.
+> - **Billing routes are owner-only:** partners pass `requireSiteAccess` but billing routes use `requireSiteOwnership` (admin or site co-owner), matching the owner-only collection rules. Partners set up sites; they never see billing data.
 
 ## 0. What this is
 

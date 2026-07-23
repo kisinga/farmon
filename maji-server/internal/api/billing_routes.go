@@ -15,15 +15,17 @@ import (
 )
 
 // RegisterBilling mounts the tenant-billing meter routes under
-// /api/farmon/billing. Every route requires site access; the mutating ones
-// additionally require the site's tenant_billing capability.
+// /api/farmon/billing. Every route requires site OWNERSHIP (admin or site
+// co-owner — partners are excluded, matching the owner-only billing
+// collection rules); the mutating ones additionally require the site's
+// tenant_billing capability.
 func RegisterBilling(se *core.ServeEvent, cfg config.Config) {
 	g := se.Router.Group("/api/farmon/billing")
 
 	// GET /capability?site= — feature probe so the UI can gate billing pages.
 	g.GET("/capability", func(e *core.RequestEvent) error {
 		site := e.Request.URL.Query().Get("site")
-		if err := requireSiteAccess(e, site); err != nil {
+		if err := requireSiteOwnership(e, site); err != nil {
 			return err
 		}
 		return e.JSON(http.StatusOK, map[string]any{
@@ -47,7 +49,7 @@ func RegisterBilling(se *core.ServeEvent, cfg config.Config) {
 		if err := e.BindBody(&body); err != nil {
 			return apis.NewBadRequestError("invalid body", err)
 		}
-		if err := requireSiteAccess(e, body.Site); err != nil {
+		if err := requireSiteOwnership(e, body.Site); err != nil {
 			return err
 		}
 		if !billing.HasCapability(e.App, body.Site, billing.CapabilityTenantBilling) {
@@ -119,7 +121,7 @@ func RegisterBilling(se *core.ServeEvent, cfg config.Config) {
 		if err != nil || meter == nil {
 			return apis.NewNotFoundError("meter not found", nil)
 		}
-		if err := requireSiteAccess(e, meter.GetString("site")); err != nil {
+		if err := requireSiteOwnership(e, meter.GetString("site")); err != nil {
 			return err
 		}
 		if !billing.HasCapability(e.App, meter.GetString("site"), billing.CapabilityTenantBilling) {
@@ -162,7 +164,7 @@ func RegisterBilling(se *core.ServeEvent, cfg config.Config) {
 		if err != nil || meter == nil {
 			return apis.NewNotFoundError("meter not found", nil)
 		}
-		if err := requireSiteAccess(e, meter.GetString("site")); err != nil {
+		if err := requireSiteOwnership(e, meter.GetString("site")); err != nil {
 			return err
 		}
 		recs, err := e.App.FindRecordsByFilter("meter_commands", "meter = {:m}", "-created", 50, 0,
@@ -193,7 +195,7 @@ func RegisterBilling(se *core.ServeEvent, cfg config.Config) {
 		if err := e.BindBody(&body); err != nil {
 			return apis.NewBadRequestError("invalid body", err)
 		}
-		if err := requireSiteAccess(e, body.Site); err != nil {
+		if err := requireSiteOwnership(e, body.Site); err != nil {
 			return err
 		}
 		if !billing.HasCapability(e.App, body.Site, billing.CapabilityTenantBilling) {
@@ -229,7 +231,7 @@ func RegisterBilling(se *core.ServeEvent, cfg config.Config) {
 		if err != nil || cycle == nil {
 			return apis.NewNotFoundError("cycle not found", nil)
 		}
-		if err := requireSiteAccess(e, cycle.GetString("site")); err != nil {
+		if err := requireSiteOwnership(e, cycle.GetString("site")); err != nil {
 			return err
 		}
 		if !billing.HasCapability(e.App, cycle.GetString("site"), billing.CapabilityTenantBilling) {
