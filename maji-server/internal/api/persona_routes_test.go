@@ -95,11 +95,12 @@ func TestPersonaProbeAllowed(t *testing.T) {
 func TestPersonaProbeDenied(t *testing.T) {
 	headers := map[string]string{}
 	personaScenario(t, &tests.ApiScenario{
-		Name:           "non-allowlisted email gets 404 on the probe",
-		Method:         http.MethodGet,
-		URL:            "/api/farmon/persona",
-		Headers:        headers,
-		ExpectedStatus: 404,
+		Name:            "non-allowlisted email gets 404 on the probe",
+		Method:          http.MethodGet,
+		URL:             "/api/farmon/persona",
+		Headers:         headers,
+		ExpectedStatus:  404,
+		ExpectedContent: []string{"Persona switching is not available"},
 		BeforeTestFunc: func(t testing.TB, app *tests.TestApp, _ *core.ServeEvent) {
 			u := personaUser(t, app, "other@x.com", "admin")
 			headers["Authorization"] = partnerToken(t, u)
@@ -110,12 +111,13 @@ func TestPersonaProbeDenied(t *testing.T) {
 func TestPersonaSwitchDenied(t *testing.T) {
 	headers := map[string]string{"Content-Type": "application/json"}
 	personaScenario(t, &tests.ApiScenario{
-		Name:           "non-allowlisted email gets 404 on switch",
-		Method:         http.MethodPost,
-		URL:            "/api/farmon/persona",
-		Body:           strings.NewReader(`{"role":"customer"}`),
-		Headers:        headers,
-		ExpectedStatus: 404,
+		Name:            "non-allowlisted email gets 404 on switch",
+		Method:          http.MethodPost,
+		URL:             "/api/farmon/persona",
+		Body:            strings.NewReader(`{"role":"customer"}`),
+		Headers:         headers,
+		ExpectedStatus:  404,
+		ExpectedContent: []string{"Persona switching is not available"},
 		BeforeTestFunc: func(t testing.TB, app *tests.TestApp, _ *core.ServeEvent) {
 			u := personaUser(t, app, "other@x.com", "admin")
 			headers["Authorization"] = partnerToken(t, u)
@@ -128,11 +130,12 @@ func TestPersonaDisabledWithoutAllowlist(t *testing.T) {
 	headers := map[string]string{}
 	var scenario tests.ApiScenario
 	scenario = tests.ApiScenario{
-		Name:           "empty allowlist answers 404",
-		Method:         http.MethodGet,
-		URL:            "/api/farmon/persona",
-		Headers:        headers,
-		ExpectedStatus: 404,
+		Name:            "empty allowlist answers 404",
+		Method:          http.MethodGet,
+		URL:             "/api/farmon/persona",
+		Headers:         headers,
+		ExpectedStatus:  404,
+		ExpectedContent: []string{"Persona switching is not available"},
 		TestAppFactory: func(t testing.TB) *tests.TestApp {
 			app, err := tests.NewTestApp()
 			if err != nil {
@@ -155,11 +158,12 @@ func TestPersonaSwitchToPartner(t *testing.T) {
 	var userID, orgID string
 	var scenario tests.ApiScenario
 	scenario = tests.ApiScenario{
-		Name:           "admin switches to partner with an org",
-		Method:         http.MethodPost,
-		URL:            "/api/farmon/persona",
-		Headers:        headers,
-		ExpectedStatus: 200,
+		Name:            "admin switches to partner with an org",
+		Method:          http.MethodPost,
+		URL:             "/api/farmon/persona",
+		Headers:         headers,
+		ExpectedStatus:  200,
+		ExpectedContent: []string{`"role":"partner"`},
 		BeforeTestFunc: func(t testing.TB, app *tests.TestApp, _ *core.ServeEvent) {
 			d := seedPartners(t, app)
 			u := personaUser(t, app, "persona@x.com", "admin")
@@ -190,12 +194,13 @@ func TestPersonaSwitchBackToAdmin(t *testing.T) {
 	headers := map[string]string{"Content-Type": "application/json"}
 	var userID string
 	personaScenario(t, &tests.ApiScenario{
-		Name:           "allowlisted customer switches back to admin",
-		Method:         http.MethodPost,
-		URL:            "/api/farmon/persona",
-		Body:           strings.NewReader(`{"role":"admin"}`),
-		Headers:        headers,
-		ExpectedStatus: 200,
+		Name:            "allowlisted customer switches back to admin",
+		Method:          http.MethodPost,
+		URL:             "/api/farmon/persona",
+		Body:            strings.NewReader(`{"role":"admin"}`),
+		Headers:         headers,
+		ExpectedStatus:  200,
+		ExpectedContent: []string{`"role":"admin"`},
 		BeforeTestFunc: func(t testing.TB, app *tests.TestApp, _ *core.ServeEvent) {
 			u := personaUser(t, app, "persona@x.com", "customer")
 			userID = u.Id
@@ -219,11 +224,12 @@ func TestPersonaGrantSite(t *testing.T) {
 	var userID, siteID string
 	var scenario tests.ApiScenario
 	scenario = tests.ApiScenario{
-		Name:           "grant_site adds the caller to site owners",
-		Method:         http.MethodPost,
-		URL:            "/api/farmon/persona",
-		Headers:        headers,
-		ExpectedStatus: 200,
+		Name:            "grant_site adds the caller to site owners",
+		Method:          http.MethodPost,
+		URL:             "/api/farmon/persona",
+		Headers:         headers,
+		ExpectedStatus:  200,
+		ExpectedContent: []string{`"role":"customer"`},
 		BeforeTestFunc: func(t testing.TB, app *tests.TestApp, _ *core.ServeEvent) {
 			u := personaUser(t, app, "persona@x.com", "admin")
 			site := personaSite(t, app, "Grant Site", nil)
@@ -250,11 +256,12 @@ func TestPersonaRevokeSite(t *testing.T) {
 	var userID, siteID string
 	var scenario tests.ApiScenario
 	scenario = tests.ApiScenario{
-		Name:           "grant_site=false removes the caller from site owners",
-		Method:         http.MethodPost,
-		URL:            "/api/farmon/persona",
-		Headers:        headers,
-		ExpectedStatus: 200,
+		Name:            "grant_site=false removes the caller from site owners",
+		Method:          http.MethodPost,
+		URL:             "/api/farmon/persona",
+		Headers:         headers,
+		ExpectedStatus:  200,
+		ExpectedContent: []string{`"role":"customer"`},
 		BeforeTestFunc: func(t testing.TB, app *tests.TestApp, _ *core.ServeEvent) {
 			u := personaUser(t, app, "persona@x.com", "customer")
 			site := personaSite(t, app, "Revoke Site", []string{u.Id})
@@ -284,7 +291,7 @@ func TestPersonaRejectsBadRole(t *testing.T) {
 		Body:            strings.NewReader(`{"role":"superadmin"}`),
 		Headers:         headers,
 		ExpectedStatus:  400,
-		ExpectedContent: []string{"role must be"},
+		ExpectedContent: []string{"Role must be"},
 		BeforeTestFunc: func(t testing.TB, app *tests.TestApp, _ *core.ServeEvent) {
 			u := personaUser(t, app, "persona@x.com", "admin")
 			headers["Authorization"] = partnerToken(t, u)
@@ -295,12 +302,13 @@ func TestPersonaRejectsBadRole(t *testing.T) {
 func TestPersonaRejectsUnknownPartner(t *testing.T) {
 	headers := map[string]string{"Content-Type": "application/json"}
 	personaScenario(t, &tests.ApiScenario{
-		Name:           "unknown org id is a 404",
-		Method:         http.MethodPost,
-		URL:            "/api/farmon/persona",
-		Body:           strings.NewReader(`{"role":"partner","partner":"no_such_org_000"}`),
-		Headers:        headers,
-		ExpectedStatus: 404,
+		Name:            "unknown org id is a 404",
+		Method:          http.MethodPost,
+		URL:             "/api/farmon/persona",
+		Body:            strings.NewReader(`{"role":"partner","partner":"no_such_org_000"}`),
+		Headers:         headers,
+		ExpectedStatus:  404,
+		ExpectedContent: []string{"Partner organization not found"},
 		BeforeTestFunc: func(t testing.TB, app *tests.TestApp, _ *core.ServeEvent) {
 			u := personaUser(t, app, "persona@x.com", "admin")
 			headers["Authorization"] = partnerToken(t, u)

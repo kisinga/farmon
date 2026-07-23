@@ -53,6 +53,7 @@
     <div class="navbar-end gap-1">
       @if (auth.isAuthenticated()) {
         <app-alerts-center />
+        <app-persona-switcher />
       }
       @if (auth.isAdmin()) {
         <a routerLink="/settings" routerLinkActive="btn-active" class="btn btn-ghost btn-sm btn-square" title="Settings" aria-label="Settings">

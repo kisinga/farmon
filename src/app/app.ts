@@ -10,13 +10,14 @@ import { FeatureFlagsService } from './core/services/feature-flags.service';
 import { BrandingService } from './core/services/branding.service';
 import { ConfirmDialogComponent } from './shared/confirm-dialog/confirm-dialog.component';
 import { AlertsCenterComponent } from './shared/alerts-center.component';
+import { PersonaSwitcherComponent } from './shared/persona-switcher.component';
 import { BRAND_LOGO_SVG } from './shared/brand-logo';
 import { filter } from 'rxjs';
 
 @Component({
   selector: 'app-root',
   standalone: true,
-  imports: [RouterOutlet, RouterLink, RouterLinkActive, NgTemplateOutlet, ConfirmDialogComponent, AlertsCenterComponent],
+  imports: [RouterOutlet, RouterLink, RouterLinkActive, NgTemplateOutlet, ConfirmDialogComponent, AlertsCenterComponent, PersonaSwitcherComponent],
   templateUrl: './app.html',
   styleUrl: './app.css',
 })
